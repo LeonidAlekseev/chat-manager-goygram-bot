@@ -6,6 +6,7 @@ from zoneinfo import ZoneInfo
 import asyncpg
 from goygram import GoyGram
 
+from bot.account import Account, connect, open_client
 from bot.chats import handle_group_migration, handle_member_update
 from bot.commands import BOT_COMMANDS, reply_for
 from bot.intake import handle_private
@@ -14,14 +15,9 @@ from bot.mention import handle_all
 from bot.outbox import run_forever as run_outbox_forever
 from bot.polls import handle_poll_answer, purge_forever
 from bot.scheduler import run_forever
-from bot.settings import store_bot_username, wait_for_token, watch_settings
+from bot.settings import Settings, store_bot_username, wait_for_token, watch_settings
 
 log = logging.getLogger(__name__)
-
-
-def _log_user_stop(task: "asyncio.Task[None]") -> None:
-    if not task.cancelled():
-        log.error("user client stopped: %r", task.exception() or "exited")
 
 
 async def main() -> None:
@@ -29,18 +25,20 @@ async def main() -> None:
     db = await asyncpg.create_pool(os.environ["DATABASE_URL"])
     secret = os.environ["AUTH_SECRET"]
     settings = await wait_for_token(db, secret)
-    app = GoyGram(bot_token=settings.bot_token)
-    # Members need a user account (MTProto), separate from the bot; without it /all replies with an error.
-    user = (
-        GoyGram(api_id=settings.api_id, api_hash=settings.api_hash, session_name="members")
-        if settings.api_id and settings.api_hash
-        else None
-    )
+    try:
+        await _serve(db, secret, settings)
+    except Exception as e:
+        # Shown on the panel's Settings page; a crash loop (e.g. a wrong token) is otherwise invisible.
+        await db.execute("UPDATE settings SET bot_error = $1 WHERE id = 1", str(e) or type(e).__name__)
+        raise
+    finally:
+        await db.close()
 
-    # run() performs the MTProto login (interactive on first start); iter_participants needs it connected.
-    user_task = asyncio.create_task(user.run()) if user else None
-    if user_task:
-        user_task.add_done_callback(_log_user_stop)
+
+async def _serve(db: asyncpg.Pool, secret: str, settings: Settings) -> None:
+    app = GoyGram(bot_token=settings.bot_token)
+    # Members need a user account (MTProto), logged in from the panel; without it /all replies with an error.
+    user = Account(db, secret, connect=connect, open_client=open_client)
 
     @app.on_msg
     async def on_msg(msg):  # type: ignore[no-untyped-def]
@@ -69,6 +67,8 @@ async def main() -> None:
 
     await store_bot_username(db, app)
     await app.bot_req("setMyCommands", commands=[{"command": c, "description": d} for c, d in BOT_COMMANDS])
+    await db.execute("UPDATE settings SET bot_error = NULL WHERE id = 1")
+    account = asyncio.create_task(user.run())  # login steps, the user client, the bot's heartbeat
     tz = ZoneInfo(os.environ.get("TIMEZONE_NAME") or "Europe/Moscow")
     # GoyGram's bot_req stub is a set of per-method overloads that mypy won't match to the Protocol.
     scheduler = asyncio.create_task(run_forever(db, app, tz, user))  # type: ignore[arg-type]
@@ -86,12 +86,11 @@ async def main() -> None:
     finally:
         runner.cancel()
         watcher.cancel()
-        if user_task:
-            user_task.cancel()
+        account.cancel()
+        await user.stop()
         scheduler.cancel()
         outbox.cancel()
         retention.cancel()
-        await db.close()
 
 
 if __name__ == "__main__":

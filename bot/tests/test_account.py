@@ -1,11 +1,11 @@
 import asyncio
-import re
 import json
+import re
 
 import pytest
 from goygram.errors import rpc_error
 
-from bot.account import Account
+from bot.account import Account, GoyGramLogin
 from bot.mention import NO_SESSION, MentionError, fetch_user_ids
 from bot.settings import decrypt, encrypt
 
@@ -172,6 +172,7 @@ async def test_wrong_password_asks_for_it_again(adb, account, logins):
     [
         ("PHONE_CODE_EXPIRED", "Код просрочен, запросите новый."),
         ("FLOOD_WAIT_120", "Telegram ограничил попытки входа: повторите через 120 с."),
+        ("API_ID_INVALID", "Неверные API ID или API HASH: проверьте их на my.telegram.org."),
     ],
 )
 async def test_expired_code_or_flood_limit_starts_over(adb, account, logins, rpc, error):
@@ -254,3 +255,29 @@ async def test_stored_session_starts_the_client_and_logout_stops_it(adb, account
 async def test_tick_marks_the_bot_alive(adb, account):
     await account.tick()
     assert await adb.fetchval("SELECT now() - bot_seen_at < interval '5 seconds' FROM settings")
+
+
+class FakeApp:
+    """The slice of a GoyGram app that GoyGramLogin touches."""
+
+    def __init__(self, answers):
+        self.answers, self.calls = answers, []
+        self.mt = type("Mt", (), {"auth_key": b"\x01" * 4, "server_salt": b"\x02" * 2})()
+
+    async def mt_req(self, act, **kw):
+        self.calls.append((act, kw))
+        return self.answers[act]
+
+
+async def test_goygram_login_turns_error_answers_into_rpc_errors():
+    app = FakeApp({"auth_sign_in": {"error_message": "PHONE_CODE_INVALID"}})
+    with pytest.raises(Exception, match="PHONE_CODE_INVALID"):
+        await GoyGramLogin(app).sign_in("+7999", "h", "1")
+    assert app.calls[0][1]["retry"] == 0  # a flood wait reaches the panel instead of a silent sleep
+
+
+async def test_goygram_login_builds_the_vault_payload():
+    app = FakeApp({"auth_check_password": {"user": USER, "dc_id": 4}})
+    assert await GoyGramLogin(app).check_password("secret") == {
+        "user": USER, "auth_key": "01010101", "server_salt": "0202", "dc": 4,
+    }

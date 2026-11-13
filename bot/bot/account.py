@@ -3,11 +3,25 @@
 import asyncio
 import json
 import logging
+import tempfile
 from collections.abc import AsyncIterator, Awaitable, Callable
+from pathlib import Path
 from typing import Any
 
 import asyncpg
-from goygram.errors import FloodWaitError
+from goygram import GoyGram
+from goygram.errors import FloodWaitError, rpc_error
+from goygram.security import (
+    _current_dc_id,
+    _extension,
+    _extract_auth_blob,
+    _extract_error,
+    _extract_phone_code_hash,
+    _extract_user,
+    _field,
+    _mt_req_with_migrate,
+)
+from goygram.session import Session
 
 from bot.mention import NO_SESSION, MentionError
 from bot.settings import _open, decrypt, encrypt, load_settings
@@ -30,6 +44,7 @@ REASONS = {
     "PHONE_CODE_EXPIRED": "Код просрочен, запросите новый.",
     "PHONE_NUMBER_INVALID": "Неверный номер телефона.",
     "PHONE_NUMBER_BANNED": "Номер заблокирован в Telegram.",
+    "API_ID_INVALID": "Неверные API ID или API HASH: проверьте их на my.telegram.org.",
 }
 
 
@@ -146,3 +161,76 @@ class Account:
 def _log_client_stop(task: "asyncio.Task[None]") -> None:
     if not task.cancelled():
         log.error("user client stopped: %r", task.exception() or "exited")
+
+
+# GoyGram adapters. GoyGram's own phone login (goygram.security._mt_auth_flow) reads stdin, so the steps
+# below repeat its calls one at a time with its private helpers.
+# shortcut: private goygram API, pinned by uv.lock; re-check these imports when upgrading goygram.
+class GoyGramLogin:
+    def __init__(self, app: Any) -> None:
+        self.app = app
+
+    async def _call(self, act: str, **kw: Any) -> dict[str, Any]:
+        # retry=0: surface FLOOD_WAIT to the panel instead of sleeping on it; DC migration is still handled.
+        res = await _mt_req_with_migrate(self.app, act, retry=0, **kw)
+        if err := _extract_error(res):  # GoyGram returns some RPC errors as dicts instead of raising
+            raise rpc_error(400, err)
+        return res
+
+    async def send_code(self, phone: str) -> str:
+        settings = _extension().serialize_constructor("codeSettings", {"flags": 0})
+        code_hash = _extract_phone_code_hash(await self._call("auth_send_code", phone_number=phone, settings=settings))
+        if not code_hash:
+            raise RuntimeError("auth.sendCode did not return phone_code_hash")
+        return str(code_hash)
+
+    async def sign_in(self, phone: str, code_hash: str, code: str) -> dict[str, Any]:
+        return self._session(
+            await self._call("auth_sign_in", phone_number=phone, phone_code=code, phone_code_hash=code_hash)
+        )
+
+    async def check_password(self, password: str) -> dict[str, Any]:
+        return self._session(await self._call("auth_check_password", password=password))
+
+    def _session(self, final: dict[str, Any]) -> dict[str, Any]:
+        """The vault payload GoyGram writes after its own login, minus the phone and API data."""
+        user, key = _extract_user(final), _extract_auth_blob(final) or self.app.mt.auth_key
+        if user is None or key is None:
+            raise RuntimeError("Telegram did not return the user or the auth key")
+        return {
+            "user": user,
+            "auth_key": key.hex(),
+            "server_salt": self.app.mt.server_salt.hex(),
+            "dc": _field(final, "dc_id", "dc") or _current_dc_id(self.app),
+        }
+
+    async def close(self) -> None:
+        await self.app.mt.close()
+
+
+async def connect(api_id: int, api_hash: str) -> GoyGramLogin:
+    # The constructor probes data centres with blocking sockets; persist=False: the session goes to the DB.
+    session = Session("login", persist=False)
+    return GoyGramLogin(
+        await asyncio.to_thread(GoyGram, api_id=api_id, api_hash=api_hash, session_name="login", session=session)
+    )
+
+
+VAULT = Path(tempfile.gettempdir()) / "members.vault"
+
+
+class MembersClient(GoyGram):
+    async def run(self) -> None:
+        try:
+            await super().run()
+        finally:
+            VAULT.unlink(missing_ok=True)  # logout or restart: no session copy left on disk
+
+
+async def open_client(api_id: int, api_hash: str, data: dict[str, Any]) -> GoyGram:
+    """The user client for a stored session: GoyGram restores a session only from its vault file."""
+    session = Session("members", data=data, path=VAULT)
+    session.save()
+    return await asyncio.to_thread(
+        MembersClient, api_id=api_id, api_hash=api_hash, session_name="members", session=session
+    )

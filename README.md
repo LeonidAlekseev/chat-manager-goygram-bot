@@ -61,15 +61,15 @@ async for p in user.iter_participants(chat_id):  # channels.getParticipants, п�
 ```
 
 - Работает только для супергрупп (`inputPeerChannel`); для обычной группы `iter_participants` кидает `ValueError` — нужен `messages.getFullChat` через `user.mt_req(...)`. Аккаунт должен состоять в чате.
-- Первый запуск — интерактивный логин (телефон/код/2FA в stdin), результат — зашифрованный `members.vault` в текущем каталоге. В Docker: залогиниться один раз (`docker compose run bot ...`) и держать каталог с vault на volume, либо `Session.export_string()` → env и `GoyGram(..., session=<строка>, session_name="members")` (расшифровка привязана к `session_name`, имя должно совпадать). Курсоры апдейтов пишутся в `~/.goygram/cursors/`.
+- Встроенный вход `run()` интерактивный (stdin) и хранит сессию только в vault-файле. Поэтому бот входит по шагам сам (`bot/bot/account.py`: `auth.sendCode` → `auth.signIn` → `auth.checkPassword` через приватные хелперы `goygram.security`), хранит payload vault в БД и перед запуском клиента пишет его во временный `members.vault`.
 - Упоминания — скрытые ссылки `<a href="tg://user?id=UID">&#8205;</a>` как в старом боте.
 
 ## Сессия для `/all` и mention_all
 
 Список участников Bot API не отдаёт, поэтому нужен отдельный **пользовательский** аккаунт (MTProto), состоящий в нужных чатах. Работает только для супергрупп.
 
-1. Получите `API_ID` и `API_HASH` на https://my.telegram.org и внесите в `.env`.
-2. Один раз войдите интерактивно (телефон/код/2FA) в каталоге `bot`: `API_ID=... API_HASH=... uv run python -c "import asyncio; from goygram import GoyGram; asyncio.run(GoyGram(api_id=..., api_hash='...', session_name='members').run())"` — рядом появится `members.vault`.
-3. Для Docker экспортируйте сессию строкой (`Session.export_string()`) в `API_SESSION` в `.env`. Имя сессии должно оставаться `members`.
+1. Получите API ID и API HASH на https://my.telegram.org и сохраните их в панели (Настройки).
+2. Там же, в «Аккаунт Telegram», введите телефон, затем код из Telegram и пароль 2FA, если он включён. Бот выполняет шаги и запускает клиент без перезапуска. Сессия хранится в БД зашифрованной (`AUTH_SECRET`), код и пароль стираются сразу после использования.
+3. «Выйти» стирает сессию и останавливает клиент. Сессия остаётся в списке устройств Telegram, пока её не завершат в приложении.
 
-Без этих переменных `/all` отвечает в чате, что аккаунт не настроен.
+Без входа `/all` отвечает в чате, что аккаунт не настроен.
