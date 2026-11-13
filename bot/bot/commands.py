@@ -8,8 +8,9 @@ START_TEXT = """<b>Команды бота:</b>
 
 Перешлите сообщение в личку, чтобы узнать ID отправителя."""
 
-# (command, description) for setMyCommands; /all is handled in a later ticket.
+# (command, description) for setMyCommands.
 BOT_COMMANDS = [
+    ("all", "Позвать всех [GROUP]"),
     ("chatid", "Узнать чат ID [GROUP]"),
     ("myid", "Узнать свой ID [PRIVATE]"),
     ("start", "Запуск бота [PRIVATE]"),

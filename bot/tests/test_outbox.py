@@ -66,3 +66,12 @@ async def test_job_whose_template_was_deleted_is_an_error(world):
     await run_outbox(world, tg)
     assert tg.calls == []
     assert (await jobs(world))[0][1] == "error"
+
+
+async def test_mention_failure_is_recorded_but_the_job_stays_sent(world):
+    await world.execute("UPDATE templates SET mention_all = true")
+    await world.execute("INSERT INTO outbox (chat_id, template_id) VALUES (1, 1)")
+    tg = FakeTelegram()
+    await run_outbox(world, tg)  # no user client configured, so the mention step fails
+    [row] = await jobs(world)
+    assert row[1] == "sent" and row[4]

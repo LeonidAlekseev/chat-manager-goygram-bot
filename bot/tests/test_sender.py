@@ -99,3 +99,10 @@ async def test_telegram_error_is_logged_and_others_still_go_out(world):
     assert [c[1]["chat_id"] for c in tg.calls] == [-1002, -1005]
     first = (await logs(world))[0]
     assert first[:2] == (-1001, "error") and "bot was kicked" in first[4]
+
+
+async def test_mention_failure_keeps_status_sent_and_records_error(world):
+    await world.execute("UPDATE templates SET mention_all = true WHERE kind = 'poll'")
+    await run_due(world, FakeTelegram(), NOW)  # no user session
+    first = (await logs(world))[0]
+    assert first[1] == "sent" and first[2] == 101 and "API_ID" in first[4]

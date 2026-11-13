@@ -75,3 +75,13 @@ async for p in user.iter_participants(chat_id):  # channels.getParticipants, п�
 - Работает только для супергрупп (`inputPeerChannel`); для обычной группы `iter_participants` кидает `ValueError` — нужен `messages.getFullChat` через `user.mt_req(...)`. Аккаунт должен состоять в чате.
 - Первый запуск — интерактивный логин (телефон/код/2FA в stdin), результат — зашифрованный `members.vault` в текущем каталоге. В Docker: залогиниться один раз (`docker compose run bot ...`) и держать каталог с vault на volume, либо `Session.export_string()` → env и `GoyGram(..., session=<строка>, session_name="members")` (расшифровка привязана к `session_name`, имя должно совпадать). Курсоры апдейтов пишутся в `~/.goygram/cursors/`.
 - Упоминания — скрытые ссылки `<a href="tg://user?id=UID">&#8205;</a>` как в старом боте.
+
+## Сессия для `/all` и mention_all
+
+Список участников Bot API не отдаёт, поэтому нужен отдельный **пользовательский** аккаунт (MTProto), состоящий в нужных чатах. Работает только для супергрупп.
+
+1. Получите `API_ID` и `API_HASH` на https://my.telegram.org и внесите в `.env`.
+2. Один раз войдите интерактивно (телефон/код/2FA) в каталоге `bot`: `API_ID=... API_HASH=... uv run python -c "import asyncio; from goygram import GoyGram; asyncio.run(GoyGram(api_id=..., api_hash='...', session_name='members').run())"` — рядом появится `members.vault`.
+3. Для Docker экспортируйте сессию строкой (`Session.export_string()`) в `API_SESSION` в `.env`. Имя сессии должно оставаться `members`.
+
+Без этих переменных `/all` отвечает в чате, что аккаунт не настроен.
