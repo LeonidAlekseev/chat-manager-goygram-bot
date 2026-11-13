@@ -1,5 +1,6 @@
 "use client"
 
+import Link from "next/link"
 import { signOut, useSession } from "next-auth/react"
 import { LogOut } from "lucide-react"
 
@@ -38,6 +39,9 @@ export function UserDropdown() {
       <DropdownMenuContent forceMount>
         <DropdownMenuLabel className="truncate">{login}</DropdownMenuLabel>
         <DropdownMenuSeparator />
+        <DropdownMenuItem asChild>
+          <Link href="/profile">Профиль</Link>
+        </DropdownMenuItem>
         <DropdownMenuItem onSelect={() => signOut({ redirectTo: "/login" })}>
           <LogOut className="me-2 size-4" />
           Выйти
