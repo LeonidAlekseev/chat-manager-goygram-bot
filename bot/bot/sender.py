@@ -18,14 +18,20 @@ async def send_template(tg: Telegram, chat_id: int, t: Any, user: Any = None) ->
     `t` is a templates row (kind, text, options, anonymous, multiple, mention_all). With mention_all,
     a poll is followed by a separate mention message; a text carries the mentions itself.
     A mention failure never fails the send: it is returned as `mention_error` in the message.
+    A poll also returns the fetched chat members as `member_ids` (absent if they could not be fetched).
     """
     mentions: list[str] = []
     error = None
-    if t["mention_all"]:
+    ids: list[int] = []
+    poll = t["kind"] == "poll"
+    if t["mention_all"] or (poll and user is not None):  # a poll also snapshots members for "who didn't answer"
         try:
-            mentions = build_mention_messages(t["text"], await asyncio.wait_for(fetch_user_ids(user, chat_id), FETCH_TIMEOUT))
+            ids = await asyncio.wait_for(fetch_user_ids(user, chat_id), FETCH_TIMEOUT)
+            if t["mention_all"]:
+                mentions = build_mention_messages(t["text"], ids)
         except Exception as e:  # noqa: BLE001  MentionError or a Telegram/MTProto failure
-            error = str(e) or type(e).__name__
+            if t["mention_all"]:
+                error = str(e) or type(e).__name__
     if t["kind"] == "poll":
         msg = await tg.bot_req(
             "sendPoll",
@@ -45,4 +51,5 @@ async def send_template(tg: Telegram, chat_id: int, t: Any, user: Any = None) ->
         except Exception as e:  # noqa: BLE001
             error = str(e)
             break
-    return {**msg, "mention_error": error} if error else msg
+    extra = {**({"mention_error": error} if error else {}), **({"member_ids": ids} if poll and ids else {})}
+    return {**msg, **extra}

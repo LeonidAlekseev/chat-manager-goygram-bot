@@ -77,3 +77,13 @@ async def test_hung_member_fetch_times_out_and_plain_text_still_goes_out(monkeyp
     tg = Tg()
     msg = await send_template(tg, -1, TEXT, HangingUser())
     assert tg.calls == [("sendMessage", {"chat_id": -1, "text": "Привет"})] and msg["mention_error"] == "TimeoutError"
+
+
+async def test_poll_returns_member_ids_even_without_mention_all():
+    msg = await send_template(Tg(), -1, {**POLL, "mention_all": False}, User())
+    assert msg["member_ids"] == [5] and "mention_error" not in msg
+
+
+async def test_poll_without_session_has_no_member_ids_and_no_error():
+    msg = await send_template(Tg(), -1, {**POLL, "mention_all": False})
+    assert "member_ids" not in msg and "mention_error" not in msg

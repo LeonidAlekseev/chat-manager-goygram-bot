@@ -116,6 +116,28 @@ model SendLog {
   @@map("send_logs")
 }
 
+// Written by the bot from poll_answer updates. poll_id is Telegram's, matched to send_logs.poll_id;
+// an empty optionIds means the vote was retracted.
+model PollAnswer {
+  pollId    String   @map("poll_id")
+  userId    BigInt   @map("user_id")
+  name      String
+  optionIds Int[]    @map("option_ids")
+  updatedAt DateTime @default(now()) @map("updated_at")
+
+  @@id([pollId, userId])
+  @@map("poll_answers")
+}
+
+// Chat members at the time a poll was sent (the panel cannot call MTProto); no rows = list unavailable.
+model PollMember {
+  pollId String @map("poll_id")
+  userId BigInt @map("user_id")
+
+  @@id([pollId, userId])
+  @@map("poll_members")
+}
+
 // Manual sends queued by the panel, one row per chat; the bot claims a job by inserting its send_logs row.
 model Outbox {
   id         Int       @id @default(autoincrement())

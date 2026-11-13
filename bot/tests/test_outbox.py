@@ -75,3 +75,13 @@ async def test_mention_failure_is_recorded_but_the_job_stays_sent(world):
     await run_outbox(world, tg)  # no user client configured, so the mention step fails
     [row] = await jobs(world)
     assert row[1] == "sent" and row[4]
+
+
+async def test_poll_sent_from_the_outbox_snapshots_chat_members(world):
+    from tests.test_sender import FakeUser
+
+    await world.execute("TRUNCATE poll_members")
+    await world.execute("INSERT INTO outbox (chat_id, template_id) VALUES (1, 1)")
+    await run_outbox(world, FakeTelegram(), FakeUser())
+    rows = await world.fetch("SELECT poll_id, user_id FROM poll_members ORDER BY user_id")
+    assert [tuple(r) for r in rows] == [("poll-1", 5), ("poll-1", 6)]
