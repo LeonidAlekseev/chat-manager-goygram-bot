@@ -25,6 +25,7 @@ services:
       BASE_URL: ${BASE_URL}
       SUPERADMIN_LOGIN: ${SUPERADMIN_LOGIN}
       SUPERADMIN_PASSWORD: ${SUPERADMIN_PASSWORD}
+      TIMEZONE_NAME: ${TIMEZONE_NAME:-Europe/Moscow} # journal times
     ports:
       - "${WEB_PORT:-3000}:3000"
     healthcheck:
@@ -41,6 +42,7 @@ services:
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
       BOT_TOKEN: ${BOT_TOKEN}
+      TIMEZONE_NAME: ${TIMEZONE_NAME:-Europe/Moscow}
 
 volumes:
   db-data:

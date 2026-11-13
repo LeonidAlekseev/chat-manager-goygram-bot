@@ -26,12 +26,15 @@ model Manager {
 }
 
 model Chat {
-  id         Int      @id @default(autoincrement())
-  telegramId BigInt   @unique @map("telegram_id")
+  id         Int       @id @default(autoincrement())
+  telegramId BigInt    @unique @map("telegram_id")
   title      String
-  active     Boolean  @default(true)
-  createdAt  DateTime @default(now()) @map("created_at")
-  updatedAt  DateTime @default(now()) @updatedAt @map("updated_at")
+  active     Boolean   @default(true)
+  createdAt  DateTime  @default(now()) @map("created_at")
+  updatedAt  DateTime  @default(now()) @updatedAt @map("updated_at")
+  scheduleId Int?      @map("schedule_id") // a chat follows at most one schedule
+  schedule   Schedule? @relation(fields: [scheduleId], references: [id], onDelete: SetNull)
+  sendLogs   SendLog[]
 
   @@map("chats")
 }
@@ -53,28 +56,58 @@ model Template {
   legacyMid  String?        @unique @map("legacy_mid") // idempotency key of the old-bot migration
   createdAt  DateTime       @default(now()) @map("created_at")
   items      ScheduleItem[]
+  sendLogs   SendLog[]
 
   @@map("templates")
 }
 
-// Minimal shape needed to seed the old shifts; the schedule UI comes in a later ticket.
 model Schedule {
   id    Int            @id @default(autoincrement())
   name  String         @unique
   items ScheduleItem[]
+  chats Chat[]
 
   @@map("schedules")
 }
 
 model ScheduleItem {
-  id         Int      @id @default(autoincrement())
-  scheduleId Int      @map("schedule_id")
-  templateId Int      @map("template_id")
-  time       String // HH:MM
-  period     String   @default("day")
-  schedule   Schedule @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
-  template   Template @relation(fields: [templateId], references: [id], onDelete: Restrict)
+  id         Int       @id @default(autoincrement())
+  scheduleId Int       @map("schedule_id")
+  templateId Int       @map("template_id")
+  time       String // HH:MM in TIMEZONE_NAME
+  startDate  DateTime  @default(dbgenerated("CURRENT_DATE")) @map("start_date") @db.Date
+  period     String    @default("day") // none | day | week | twoweek | month
+  schedule   Schedule  @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+  template   Template  @relation(fields: [templateId], references: [id], onDelete: Restrict)
+  sendLogs   SendLog[]
 
   @@unique([scheduleId, templateId, time])
   @@map("schedule_items")
+}
+
+enum SendStatus {
+  pending
+  sent
+  error
+}
+
+// Written by the bot. (chat, item, slot) is the idempotency key: inserting it claims the send.
+model SendLog {
+  id             Int           @id @default(autoincrement())
+  chatId         Int           @map("chat_id")
+  scheduleItemId Int?          @map("schedule_item_id")
+  templateId     Int?          @map("template_id")
+  slot           DateTime      @db.Timestamptz(3)
+  status         SendStatus    @default(pending)
+  error          String?
+  messageId      BigInt?       @map("message_id")
+  pollId         String?       @map("poll_id")
+  createdAt      DateTime      @default(now()) @map("created_at")
+  chat           Chat          @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  scheduleItem   ScheduleItem? @relation(fields: [scheduleItemId], references: [id], onDelete: SetNull)
+  template       Template?     @relation(fields: [templateId], references: [id], onDelete: SetNull)
+
+  @@unique([chatId, scheduleItemId, slot])
+  @@index([createdAt])
+  @@map("send_logs")
 }

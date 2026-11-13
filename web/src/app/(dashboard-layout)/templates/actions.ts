@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache"
 import { auth } from "@/auth"
+import { Prisma } from "@prisma/client"
 import { z } from "zod"
 
 import { db } from "@/lib/db"
@@ -67,11 +68,16 @@ export async function deleteTemplate(
 ): Promise<{ error?: string }> {
   await requireAuth()
   const id = z.coerce.number().int().parse(formData.get("id"))
-  if (await db.scheduleItem.count({ where: { templateId: id } }))
-    return {
-      error: "Шаблон используется в расписании — сначала уберите его оттуда.",
-    }
-  await db.template.delete({ where: { id } })
+  try {
+    // the FK (ON DELETE RESTRICT) is the check, so an item added meanwhile can't slip through
+    await db.template.delete({ where: { id } })
+  } catch (e) {
+    if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2003")
+      return {
+        error: "Шаблон используется в расписании — сначала уберите его оттуда.",
+      }
+    throw e
+  }
   revalidatePath("/templates")
   return {}
 }
