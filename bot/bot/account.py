@@ -256,6 +256,9 @@ class MembersClient(GoyGram):
 
 async def open_client(api_id: int, api_hash: str, data: dict[str, Any]) -> GoyGram:
     """The user client for a stored session: GoyGram restores a session only from its vault file."""
+    # One client per process: earlier vaults are left by a killed process (SIGTERM skips run()'s cleanup).
+    for old in Path(tempfile.gettempdir()).glob("members-*"):
+        shutil.rmtree(old, ignore_errors=True)
     vault = Path(tempfile.mkdtemp(prefix="members-")) / "members.vault"  # mkdtemp: 0700, this client only
     session = Session("members", data=data, path=vault)
     session.save()

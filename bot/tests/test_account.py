@@ -364,20 +364,18 @@ class FakeMembers:
         self.kw = kw
 
 
-async def test_the_vault_is_a_private_directory_per_client(monkeypatch):
+async def test_the_vault_is_a_private_directory_per_client(monkeypatch, tmp_path):
+    monkeypatch.setattr(bot.account.tempfile, "tempdir", str(tmp_path))
     monkeypatch.setattr(bot.account, "MembersClient", FakeMembers)
-    a, b = await open_client(2040, "hash", PAYLOAD), await open_client(2040, "hash", PAYLOAD)
-    try:
-        assert a.vault != b.vault and a.vault.is_file()
-        assert stat.S_IMODE(os.stat(a.vault.parent).st_mode) == 0o700
-        assert a.kw["session"].path == a.vault
-    finally:
-        for c in (a, b):
-            c.vault.unlink()
-            c.vault.parent.rmdir()
+    a = await open_client(2040, "hash", PAYLOAD)
+    assert a.vault.is_file() and a.kw["session"].path == a.vault
+    assert stat.S_IMODE(os.stat(a.vault.parent).st_mode) == 0o700
+    b = await open_client(2040, "hash", PAYLOAD)  # after a logout or a new login
+    assert b.vault.parent != a.vault.parent and not a.vault.parent.exists()
 
 
-async def test_the_vault_is_deleted_when_the_client_stops(monkeypatch):
+async def test_the_vault_is_deleted_when_the_client_stops(monkeypatch, tmp_path):
+    monkeypatch.setattr(bot.account.tempfile, "tempdir", str(tmp_path))
     monkeypatch.setattr(bot.account, "MembersClient", FakeMembers)
     client = await open_client(2040, "hash", PAYLOAD)
 
@@ -391,7 +389,8 @@ async def test_the_vault_is_deleted_when_the_client_stops(monkeypatch):
     assert not client.vault.parent.exists()
 
 
-async def test_a_failed_client_start_leaves_no_vault(monkeypatch):
+async def test_a_failed_client_start_leaves_no_vault(monkeypatch, tmp_path):
+    monkeypatch.setattr(bot.account.tempfile, "tempdir", str(tmp_path))
     made = []
 
     def broken(**kw):
@@ -402,3 +401,13 @@ async def test_a_failed_client_start_leaves_no_vault(monkeypatch):
     with pytest.raises(ConnectionError):
         await open_client(2040, "hash", PAYLOAD)
     assert not made[0].parent.exists()
+
+
+async def test_vaults_left_by_a_killed_process_are_removed(monkeypatch, tmp_path):
+    monkeypatch.setattr(bot.account.tempfile, "tempdir", str(tmp_path))
+    monkeypatch.setattr(bot.account, "MembersClient", FakeMembers)
+    stale = tmp_path / "members-old"
+    stale.mkdir()
+    (stale / "members.vault").write_text("key")  # docker stop: SIGTERM skips the cleanup in run()
+    client = await open_client(2040, "hash", PAYLOAD)
+    assert not stale.exists() and client.vault.parent.parent == tmp_path
