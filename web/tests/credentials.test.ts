@@ -44,6 +44,17 @@ describe("superadmin login from env", () => {
     expect(await verifyCredentials("root", "new-pass")).not.toBeNull()
   })
 
+  it("re-enables a superadmin disabled in the DB on restart", async () => {
+    const env = { SUPERADMIN_LOGIN: "root", SUPERADMIN_PASSWORD: "s3cret-pass" }
+    await ensureSuperadmin(env)
+    await db.manager.update({
+      where: { login: "root" },
+      data: { active: false },
+    })
+    await ensureSuperadmin(env)
+    expect(await verifyCredentials("root", "s3cret-pass")).not.toBeNull()
+  })
+
   it("refuses to start without superadmin env", async () => {
     await expect(ensureSuperadmin({})).rejects.toThrow("SUPERADMIN_LOGIN")
   })

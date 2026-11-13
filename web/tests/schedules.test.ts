@@ -223,6 +223,59 @@ describe("schedules", () => {
     expect(others.map((c) => c.scheduleId)).toEqual([s.id, s.id])
   })
 
+  it("a copy saved in the firing minute carries the chat's send log, so it does not resend", async () => {
+    const s = await shared()
+    const [item] = await db.scheduleItem.findMany({
+      where: { scheduleId: s.id },
+    })
+    const slot = new Date()
+    for (const chatId of [chats[0], chats[1]])
+      await db.sendLog.create({
+        data: { chatId, scheduleItemId: item.id, slot },
+      })
+    await saveSchedule(
+      null,
+      form({ id: s.id, name: s.name, chatId: chats[0], scope: "this" }, [
+        { ...morning, templateId: tpl, period: "week", itemId: item.id },
+      ])
+    )
+    const copy = await db.chat.findUniqueOrThrow({ where: { id: chats[0] } })
+    const [copyItem] = await db.scheduleItem.findMany({
+      where: { scheduleId: copy.scheduleId! },
+    })
+    const logs = await db.sendLog.findMany({ orderBy: { chatId: "asc" } })
+    // this chat's claim moved to the copy's item; the other chat's stays on the original
+    expect(logs.map((l) => l.scheduleItemId)).toEqual([copyItem.id, item.id])
+  })
+
+  it("two items with the same template can swap times", async () => {
+    await saveSchedule(null, form({ name: "S" }))
+    const s = await db.schedule.findFirstOrThrow()
+    const a = { ...morning, templateId: tpl, time: "08:00" }
+    const b = { ...morning, templateId: tpl, time: "09:00" }
+    await saveSchedule(null, form({ id: s.id, name: "S" }, [a, b]))
+    const [ia, ib] = await db.scheduleItem.findMany({
+      where: { scheduleId: s.id },
+      orderBy: { time: "asc" },
+    })
+    const r = await saveSchedule(
+      null,
+      form({ id: s.id, name: "S" }, [
+        { ...a, time: "09:00", itemId: ia.id },
+        { ...b, time: "08:00", itemId: ib.id },
+      ])
+    )
+    expect(r.error).toBeUndefined()
+    const after = await db.scheduleItem.findMany({
+      where: { scheduleId: s.id },
+      orderBy: { time: "asc" },
+    })
+    expect(after.map((i) => [i.id, i.time])).toEqual([
+      [ib.id, "08:00"],
+      [ia.id, "09:00"],
+    ])
+  })
+
   it("'only in this chat' keeps a name the manager changed", async () => {
     const s = await shared()
     await saveSchedule(

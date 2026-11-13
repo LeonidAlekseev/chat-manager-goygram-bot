@@ -49,21 +49,27 @@ export async function createManager(
 }
 
 // Empty password keeps the current one.
-export async function updateManager(formData: FormData) {
+export async function updateManager(
+  _prev: ActionState,
+  formData: FormData
+): Promise<{ error?: string }> {
   await requireSuperadmin()
-  const { id, name, password } = z
+  const parsed = z
     .object({
       id: z.coerce.number().int(),
       name: Name,
       password: Password.or(z.literal("")),
     })
-    .parse(Object.fromEntries(formData))
+    .safeParse(Object.fromEntries(formData))
+  if (!parsed.success) return { error: INVALID }
+  const { id, name, password } = parsed.data
   // role filter: the env superadmin is never editable from the panel
   await db.manager.updateMany({
     where: { id, role: "manager" },
     data: { name, ...(password && { passwordHash: await hash(password) }) },
   })
   revalidatePath("/managers")
+  return {}
 }
 
 export async function setManagerActive(formData: FormData) {

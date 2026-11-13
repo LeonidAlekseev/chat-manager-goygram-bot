@@ -1,9 +1,17 @@
 "use server"
 
+import { headers } from "next/headers"
 import { signIn } from "@/auth"
 import { AuthError } from "next-auth"
 
+import { MAX_LOGIN_LENGTH, isLoginBlocked, loginKey } from "@/lib/loginLimit"
+
 export async function login(_prev: string | null, formData: FormData) {
+  if (String(formData.get("login") ?? "").length > MAX_LOGIN_LENGTH)
+    return "Неверный логин или пароль"
+  // Only for the message: auth.ts enforces the limit itself.
+  if (isLoginBlocked(loginKey(formData.get("login"), await headers())))
+    return "Слишком много неудачных попыток. Повторите через 15 минут."
   try {
     await signIn("credentials", {
       ...Object.fromEntries(formData),

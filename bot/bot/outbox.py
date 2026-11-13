@@ -15,7 +15,7 @@ async def run_outbox(db: asyncpg.Pool, tg: Telegram, user: Any = None) -> None:
     """Sends every panel job that has no log row yet.
 
     Inserting the job's log row claims it, so a restart never sends a job twice. A crash between the
-    claim and the send leaves a `pending` row and the job is skipped.
+    claim and the send leaves a `pending` row: the job is skipped, and fail_stuck later marks it an error.
     """
     rows = await db.fetch(
         "SELECT o.id, o.chat_id, c.telegram_id, c.active, o.template_id, "

@@ -1,4 +1,4 @@
-import { Cairo, Lato } from "next/font/google"
+import localFont from "next/font/local"
 
 import { cn } from "@/lib/utils"
 
@@ -25,17 +25,16 @@ export const metadata: Metadata = {
 
 // Define fonts for the application
 // More info: https://nextjs.org/docs/app/building-your-application/optimizing/fonts
-const latoFont = Lato({
-  subsets: ["latin"],
-  weight: ["100", "300", "400", "700", "900"],
-  style: ["normal", "italic"],
+// Self-hosted (SIL OFL, see fonts/OFL-Lato.txt) so the build never needs Google Fonts.
+const latoFont = localFont({
+  src: [
+    { path: "./fonts/Lato-Light.ttf", weight: "300", style: "normal" },
+    { path: "./fonts/Lato-Regular.ttf", weight: "400", style: "normal" },
+    { path: "./fonts/Lato-Italic.ttf", weight: "400", style: "italic" },
+    { path: "./fonts/Lato-Bold.ttf", weight: "700", style: "normal" },
+    { path: "./fonts/Lato-Black.ttf", weight: "900", style: "normal" },
+  ],
   variable: "--font-lato",
-})
-const cairoFont = Cairo({
-  subsets: ["arabic"],
-  weight: ["400", "700"],
-  style: ["normal"],
-  variable: "--font-cairo",
 })
 
 export default function RootLayout(props: { children: ReactNode }) {
@@ -45,10 +44,9 @@ export default function RootLayout(props: { children: ReactNode }) {
     <html lang="ru" dir="ltr" suppressHydrationWarning>
       <body
         className={cn(
-          "[&:lang(ru)]:font-lato [&:lang(ar)]:font-cairo", // Set font styles based on the language
+          "font-lato",
           "bg-background text-foreground antialiased overscroll-none", // Set background, text, , anti-aliasing styles, and overscroll behavior
-          latoFont.variable, // Include Lato font variable
-          cairoFont.variable // Include Cairo font variable
+          latoFont.variable
         )}
       >
         <Providers locale="en">
