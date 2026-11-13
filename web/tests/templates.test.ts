@@ -101,6 +101,48 @@ describe("templates", () => {
     expect(r.error).toBeTruthy()
   })
 
+  it("edits only the name and mention-all of a copy template", async () => {
+    const t = await db.template.create({
+      data: {
+        name: "Ключ",
+        kind: "copy",
+        text: "превью",
+        sourceChatId: 42,
+        sourceMessageId: 7,
+        mediaType: "photo",
+      },
+    })
+    const r = await saveTemplate(
+      null,
+      form({
+        id: String(t.id),
+        name: "Новое имя",
+        kind: "text",
+        text: "подмена",
+        mentionAll: "on",
+      })
+    )
+    expect(r.error).toBeUndefined()
+    expect(
+      await db.template.findUniqueOrThrow({ where: { id: t.id } })
+    ).toMatchObject({
+      name: "Новое имя",
+      mentionAll: true,
+      kind: "copy",
+      text: "превью",
+      sourceMessageId: BigInt(7),
+    })
+  })
+
+  it("does not create a copy template from the form", async () => {
+    const r = await saveTemplate(
+      null,
+      form({ name: "x", kind: "copy", text: "x" })
+    )
+    expect(r.error).toBeTruthy()
+    expect(await db.template.count()).toBe(0)
+  })
+
   it("deletes an unused template", async () => {
     await saveTemplate(null, form(poll))
     const t = await db.template.findFirstOrThrow()

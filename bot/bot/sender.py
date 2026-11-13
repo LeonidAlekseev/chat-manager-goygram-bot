@@ -1,7 +1,7 @@
 import asyncio
 from typing import Any, Protocol
 
-from bot.mention import build_mention_messages, fetch_user_ids
+from bot.mention import DEFAULT_TEXT, build_mention_messages, fetch_user_ids
 
 FETCH_TIMEOUT = 30  # a hung MTProto call must not stall the sequential scheduler
 
@@ -15,8 +15,9 @@ class Telegram(Protocol):
 async def send_template(tg: Telegram, chat_id: int, t: Any, user: Any = None) -> dict[str, Any]:
     """Sends one template to one chat; returns the sent Bot API Message.
 
-    `t` is a templates row (kind, text, options, anonymous, multiple, mention_all). With mention_all,
-    a poll is followed by a separate mention message; a text carries the mentions itself.
+    `t` is a templates row (kind, text, options, anonymous, multiple, mention_all; a copy also has
+    source_chat_id and source_message_id). With mention_all, a poll or copy is followed by a separate
+    mention message; a text carries the mentions itself.
     A mention failure never fails the send: it is returned as `mention_error` in the message.
     A mention poll also returns the members it fetched as `member_ids`; other polls fetch none here,
     so the send is not held up (the caller snapshots their members after all sends).
@@ -25,10 +26,12 @@ async def send_template(tg: Telegram, chat_id: int, t: Any, user: Any = None) ->
     error = None
     ids: list[int] = []
     poll = t["kind"] == "poll"
+    copy = t["kind"] == "copy"
     if t["mention_all"]:
         try:
             ids = await fetch_members(user, chat_id)
-            mentions = build_mention_messages(t["text"], ids)
+            # a copy's text is only a preview, so its mentions go out under the default text
+            mentions = build_mention_messages(DEFAULT_TEXT if copy else t["text"], ids)
         except Exception as e:  # noqa: BLE001  MentionError or a Telegram/MTProto failure
             error = str(e) or type(e).__name__
     if poll:
@@ -40,6 +43,9 @@ async def send_template(tg: Telegram, chat_id: int, t: Any, user: Any = None) ->
             is_anonymous=t["anonymous"],
             allows_multiple_answers=t["multiple"],
         )
+    elif copy:
+        msg = await tg.bot_req(
+            "copyMessage", chat_id=chat_id, from_chat_id=t["source_chat_id"], message_id=t["source_message_id"])
     elif mentions:
         msg = await tg.bot_req("sendMessage", chat_id=chat_id, text=mentions.pop(0), parse_mode="HTML")
     else:

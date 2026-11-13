@@ -19,14 +19,18 @@ async function currentLogin() {
 export async function createLinkCode(
   _prev: unknown,
   _formData: FormData
-): Promise<{ command: string }> {
+): Promise<{ command: string; url: string | null }> {
   const code = randomBytes(16).toString("base64url")
   await db.manager.update({
     where: { login: await currentLogin() },
     data: { linkCode: code, linkCodeExpiresAt: new Date(Date.now() + TTL_MS) },
   })
   revalidatePath("/profile")
-  return { command: `/start link_${code}` }
+  const bot = (await db.settings.findUnique({ where: { id: 1 } }))?.botUsername
+  return {
+    command: `/start link_${code}`,
+    url: bot ? `https://t.me/${bot}?start=link_${code}` : null,
+  }
 }
 
 export async function unlinkTelegram() {
