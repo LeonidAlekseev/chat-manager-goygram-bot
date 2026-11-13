@@ -25,6 +25,7 @@ services:
       BASE_URL: ${BASE_URL}
       SUPERADMIN_LOGIN: ${SUPERADMIN_LOGIN}
       SUPERADMIN_PASSWORD: ${SUPERADMIN_PASSWORD}
+      TIMEZONE_NAME: ${TIMEZONE_NAME:-Europe/Moscow} # journal times
     ports:
       - "${WEB_PORT:-3000}:3000"
     healthcheck:
@@ -44,6 +45,7 @@ services:
       API_ID: ${API_ID:-}
       API_HASH: ${API_HASH:-}
       API_SESSION: ${API_SESSION:-}
+      TIMEZONE_NAME: ${TIMEZONE_NAME:-Europe/Moscow}
 
 volumes:
   db-data:
