@@ -1,4 +1,8 @@
-import { loginStep, logout } from "@/app/(dashboard-layout)/settings/actions"
+import {
+  loginStep,
+  logout,
+  restart,
+} from "@/app/(dashboard-layout)/settings/actions"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
 import { decrypt, encrypt } from "@/lib/crypto"
@@ -39,6 +43,7 @@ describe("MTProto login in the panel", () => {
     expect(decrypt(row.input!)).toBe("+79990001122")
     expect((await accountView()).login).toEqual({
       pending: true,
+      stuck: true, // no bot heartbeat in this test
       state: null,
       error: null,
     })
@@ -92,18 +97,56 @@ describe("MTProto login in the panel", () => {
       loginStep(null, form({ step: "phone", value: "+79990001122" }))
     ).rejects.toThrow("Forbidden")
     await expect(logout()).rejects.toThrow("Forbidden")
+    await expect(restart()).rejects.toThrow("Forbidden")
   })
 
-  it("logout erases the session and the wizard", async () => {
+  it("logout asks the bot to end the session in Telegram", async () => {
     await db.settings.create({
       data: { apiSession: encrypt("{}"), apiAccount: "Анна (@anna)" },
     })
-    await db.mtprotoLogin.create({ data: { state: "password" } })
     await logout()
+    const row = await db.mtprotoLogin.findUniqueOrThrow({ where: { id: 1 } })
+    expect(row.step).toBe("logout")
+    expect(row.input).not.toBeNull() // the bot takes only a step with input
+    const view = await accountView()
+    expect(view.account).toBe("Анна (@anna)") // the bot wipes it after auth.logOut
+    expect(view.login.pending).toBe(true)
+  })
+
+  it("«Начать заново» erases the session and the wizard in the panel", async () => {
+    await db.settings.create({
+      data: { apiSession: encrypt("{}"), apiAccount: "Анна (@anna)" },
+    })
+    await db.mtprotoLogin.create({ data: { step: "logout", input: "x" } })
+    await restart()
     const s = await db.settings.findUniqueOrThrow({ where: { id: 1 } })
     expect([s.apiSession, s.apiAccount]).toEqual([null, null])
     expect(await db.mtprotoLogin.count()).toBe(0)
     expect((await accountView()).account).toBeNull()
+  })
+
+  it("refuses a new step while the bot has not answered the last one", async () => {
+    await withApi()
+    await db.mtprotoLogin.create({ data: { step: "phone", input: "x" } })
+    const r = await loginStep(null, form({ step: "code", value: "12345" }))
+    expect(r?.error).toMatch(/предыдущ/)
+    await logout()
+    const row = await db.mtprotoLogin.findUniqueOrThrow({ where: { id: 1 } })
+    expect([row.step, row.input]).toEqual(["phone", "x"])
+  })
+
+  it.each([
+    ["a fresh step, bot alive", 0, true, false],
+    ["a step pending over 2 minutes", 3 * 60_000, true, true],
+    ["a fresh step, bot silent", 0, false, true],
+  ])("%s → stuck: %s", async (_, age, alive, stuck) => {
+    await db.settings.create({
+      data: { botSeenAt: alive ? new Date() : null },
+    })
+    await db.mtprotoLogin.create({
+      data: { step: "code", input: "x", updatedAt: new Date(Date.now() - age) },
+    })
+    expect((await accountView()).login).toMatchObject({ pending: true, stuck })
   })
 
   it("shows the account the bot logged in", async () => {

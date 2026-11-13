@@ -85,6 +85,18 @@ const Step = z.discriminatedUnion("step", [
 ])
 
 // The bot takes the step, clears it with the input and answers in state/error (bot/bot/account.py).
+// One step at a time: a stuck one is cleared with «Начать заново» (restart).
+async function ask(step: string, value: string) {
+  const pending = await db.mtprotoLogin.findFirst({
+    where: { id: 1, step: { not: null } },
+  })
+  if (pending) return { error: "Бот ещё выполняет предыдущий шаг." }
+  const data = { step, input: encrypt(value), error: null }
+  await db.mtprotoLogin.upsert({ where: { id: 1 }, create: data, update: data })
+  revalidatePath("/settings")
+  return { saved: true }
+}
+
 export async function loginStep(
   _prev: ActionState,
   formData: FormData
@@ -95,20 +107,17 @@ export async function loginStep(
   const s = await db.settings.findUnique({ where: { id: 1 } })
   if (!s?.apiId || !s.apiHash)
     return { error: "Сначала сохраните API ID и API HASH." }
-  const data = {
-    step: parsed.data.step,
-    input: encrypt(parsed.data.value),
-    error: null,
-  }
-  await db.mtprotoLogin.upsert({ where: { id: 1 }, create: data, update: data })
-  revalidatePath("/settings")
-  return { saved: true }
+  return ask(parsed.data.step, parsed.data.value)
 }
 
-// The bot sees the session gone and stops the user client.
-// shortcut: no auth.logOut, so Telegram still lists the session until it is ended in the app's
-// Settings → Devices; send a logout step to the bot if that matters.
+// «Выйти»: the bot calls auth.logOut, then wipes the session (and reports if Telegram failed).
 export async function logout() {
+  await superadmin()
+  await ask("logout", "")
+}
+
+// «Начать заново»: forgets the wizard and any session in the panel alone, e.g. when the bot is down.
+export async function restart() {
   await superadmin()
   await db.settings.updateMany({
     data: { apiSession: null, apiAccount: null },

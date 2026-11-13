@@ -60,7 +60,6 @@ model Template {
   anonymous  Boolean        @default(false)
   multiple   Boolean        @default(false)
   mentionAll Boolean        @default(false) @map("mention_all")
-  legacyMid  String?        @unique @map("legacy_mid") // idempotency key of the old-bot migration
   // kind = copy: the source message in the manager's private chat with the bot.
   sourceChatId    BigInt? @map("source_chat_id")
   sourceMessageId BigInt? @map("source_message_id")

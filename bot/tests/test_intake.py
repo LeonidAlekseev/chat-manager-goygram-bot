@@ -37,7 +37,7 @@ async def test_any_other_message_becomes_a_copy_template(db, manager):
     assert (t["kind"], t["name"], t["text"], t["source_chat_id"], t["source_message_id"], t["media_type"]) == (
         "copy", "Не забудьте ключ от кассы сегодня", "Не забудьте ключ от кассы сегодня обязательно вечером",
         42, 7, "text")
-    assert t["author_id"] == manager and "/templates" in reply
+    assert t["author_id"] == manager and f'href="https://panel.example.com/templates?id={t["id"]}#t-{t["id"]}"' in reply
 
 
 async def test_media_uses_the_caption_and_falls_back_to_the_media_type(db, manager):

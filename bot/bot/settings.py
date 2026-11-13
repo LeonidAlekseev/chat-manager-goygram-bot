@@ -2,22 +2,24 @@
 
 import asyncio
 import base64
-import hashlib
 import logging
 import os
 from typing import Any, NamedTuple
 
 import asyncpg
 from cryptography.exceptions import InvalidTag
+from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 
 log = logging.getLogger(__name__)
 
 
 # Format shared with the panel (web/src/lib/crypto.ts): base64(iv[12] | ciphertext | tag[16]),
-# AES-256-GCM, key = SHA-256(AUTH_SECRET).
+# AES-256-GCM, key = HKDF-SHA256(AUTH_SECRET, no salt, info "chat-manager settings v1").
 def _aes(secret: str) -> AESGCM:
-    return AESGCM(hashlib.sha256(secret.encode()).digest())
+    hkdf = HKDF(algorithm=hashes.SHA256(), length=32, salt=None, info=b"chat-manager settings v1")
+    return AESGCM(hkdf.derive(secret.encode()))
 
 
 def encrypt(plain: str, secret: str) -> str:

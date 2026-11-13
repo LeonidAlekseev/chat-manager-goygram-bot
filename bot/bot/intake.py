@@ -37,16 +37,16 @@ async def handle_private(db: asyncpg.Pool, message: dict[str, Any], panel_url: s
         return reply_for(message) or REFUSAL
     if poll := message.get("poll"):
         name = text = poll["question"]
-        await db.execute(
+        tid = await db.fetchval(
             "INSERT INTO templates (name, kind, text, options, anonymous, multiple, author_id) "
-            "VALUES ($1, 'poll', $2, $3, false, $4, $5)",
+            "VALUES ($1, 'poll', $2, $3, false, $4, $5) RETURNING id",
             name[:255], text, [o["text"] for o in poll["options"]], bool(poll.get("allows_multiple_answers")), author)
     else:
         name, text, media = _copy_fields(message)
-        await db.execute(
+        tid = await db.fetchval(
             "INSERT INTO templates (name, kind, text, source_chat_id, source_message_id, media_type, author_id) "
-            "VALUES ($1, 'copy', $2, $3, $4, $5, $6)",
+            "VALUES ($1, 'copy', $2, $3, $4, $5, $6) RETURNING id",
             name, text, message["chat"]["id"], message["message_id"], media, author)
-    link = f'\n<a href="{panel_url.rstrip("/")}/templates">Открыть в панели</a>' if panel_url else ""
+    link = f'\n<a href="{panel_url.rstrip("/")}/templates?id={tid}#t-{tid}">Открыть в панели</a>' if panel_url else ""
     return f"Шаблон «{html.escape(name, quote=False)}» сохранён.{link}"
 

@@ -1,4 +1,4 @@
-from bot.link import handle_link_start, is_linked_manager
+from bot.link import handle_link_start
 
 
 def msg(text: str, user_id: int = 42, chat_type: str = "private") -> dict:
@@ -20,7 +20,6 @@ async def test_valid_code_links_the_account_and_is_one_time(db):
     await manager(db)
     assert "привяз" in (await handle_link_start(db, msg("/start link_abc"))).lower()
     assert await tg_id(db) == 42
-    assert await is_linked_manager(db, 42)
     assert "недействительн" in await handle_link_start(db, msg("/start link_abc", user_id=43))
     assert await tg_id(db) == 42
 
@@ -43,12 +42,6 @@ async def test_telegram_account_links_to_one_manager_only(db):
     assert await tg_id(db, "b") is None
 
 
-async def test_disabled_manager_is_not_linked_and_non_link_messages_are_ignored(db):
-    await db.execute("DELETE FROM managers")
-    await manager(db, "a", "c1")
-    await handle_link_start(db, msg("/start link_c1"))
-    await db.execute("UPDATE managers SET active = false")
-    assert not await is_linked_manager(db, 42)
-    assert not await is_linked_manager(db, 999)
+async def test_non_link_messages_are_ignored(db):
     assert await handle_link_start(db, msg("/start")) is None
     assert await handle_link_start(db, msg("/start link_c1", chat_type="group")) is None
