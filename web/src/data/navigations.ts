@@ -7,6 +7,7 @@ export const navigationsData: NavigationType[] = [
       { title: "Чаты", href: "/chats", iconName: "MessagesSquare" },
       { title: "Шаблоны", href: "/templates", iconName: "FileText" },
       { title: "Расписания", href: "/schedules", iconName: "CalendarClock" },
+      { title: "Отправка", href: "/send", iconName: "Send" },
       { title: "Журнал", href: "/logs", iconName: "ScrollText" },
     ],
   },
