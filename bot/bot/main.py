@@ -8,6 +8,7 @@ from goygram import GoyGram
 
 from bot.chats import handle_group_migration, handle_member_update
 from bot.commands import BOT_COMMANDS, reply_for
+from bot.outbox import run_forever as run_outbox_forever
 from bot.scheduler import run_forever
 
 
@@ -34,10 +35,12 @@ async def main() -> None:
     tz = ZoneInfo(os.environ.get("TIMEZONE_NAME") or "Europe/Moscow")
     # GoyGram's bot_req stub is a set of per-method overloads that mypy won't match to the Protocol.
     scheduler = asyncio.create_task(run_forever(db, app, tz))  # type: ignore[arg-type]
+    outbox = asyncio.create_task(run_outbox_forever(db, app))  # type: ignore[arg-type]
     try:
         await app.run()
     finally:
         scheduler.cancel()
+        outbox.cancel()
         await db.close()
 
 
