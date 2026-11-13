@@ -85,3 +85,18 @@ async def test_poll_sent_from_the_outbox_snapshots_chat_members(world):
     await run_outbox(world, FakeTelegram(), FakeUser())
     rows = await world.fetch("SELECT poll_id, user_id FROM poll_members ORDER BY user_id")
     assert [tuple(r) for r in rows] == [("poll-1", 5), ("poll-1", 6)]
+
+
+async def test_job_for_a_chat_the_bot_left_is_an_error_and_not_sent(world):
+    await world.execute("INSERT INTO outbox (chat_id, text) VALUES (1, 'a'), (2, 'b')")
+    await world.execute("UPDATE chats SET active = false WHERE id = 1")
+    tg = FakeTelegram()
+    await run_outbox(world, tg)
+    assert [c[1]["chat_id"] for c in tg.calls] == [-1002]
+    assert [r[1] for r in await jobs(world)] == ["error", "sent"]
+
+
+async def test_custom_text_is_kept_on_the_log_row(world):
+    await world.execute("INSERT INTO outbox (chat_id, text) VALUES (1, 'Сегодня короткий день')")
+    await run_outbox(world, FakeTelegram())
+    assert tuple(await world.fetchrow("SELECT text, options FROM send_logs")) == ("Сегодня короткий день", [])

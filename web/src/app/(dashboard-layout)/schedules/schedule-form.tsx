@@ -83,6 +83,7 @@ export function ScheduleForm({
       />
       {rows.map((r) => (
         <div key={r.key} className="flex flex-wrap items-center gap-2">
+          <input type="hidden" name="itemId" value={r.id ?? ""} />
           <select
             name="templateId"
             defaultValue={r.templateId}

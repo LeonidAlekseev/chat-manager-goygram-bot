@@ -30,7 +30,9 @@ export default async function PollAnswersPage({
   const members = await db.pollMember.findMany({
     where: { pollId: log.pollId },
   })
-  const options = log.template?.options ?? []
+  // the snapshot taken at send time; rows sent before it existed fall back to the template
+  const text = log.text ?? log.template?.text
+  const options = log.text != null ? log.options : (log.template?.options ?? [])
   // Retracted votes are kept as rows with no options; they count as "no answer".
   const voted = answers.filter((a) => a.optionIds.length > 0)
   const answeredIds = new Set(voted.map((a) => a.userId))
@@ -41,7 +43,7 @@ export default async function PollAnswersPage({
     <section className="container p-4">
       <Card>
         <CardHeader>
-          <CardTitle>{log.template?.text ?? "Опрос"}</CardTitle>
+          <CardTitle>{text ?? "Опрос"}</CardTitle>
           <p className="text-sm text-muted-foreground">
             {log.chat.title} ·{" "}
             <Link href="/logs" className="underline">

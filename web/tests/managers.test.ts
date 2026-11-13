@@ -31,7 +31,7 @@ describe("managers CRUD", () => {
   })
 
   it("superadmin creates a manager who can sign in with a hashed password", async () => {
-    await createManager(form(newManager))
+    await createManager(null, form(newManager))
     const m = await db.manager.findUniqueOrThrow({ where: { login: "anna" } })
     expect(m).toMatchObject({ name: "Анна", role: "manager", active: true })
     expect(m.passwordHash).not.toContain("longenough1")
@@ -43,14 +43,25 @@ describe("managers CRUD", () => {
 
   it.each([["manager"], [null]])("refuses create for %s", async (role) => {
     asRole(role)
-    await expect(createManager(form(newManager))).rejects.toThrow("Forbidden")
+    await expect(createManager(null, form(newManager))).rejects.toThrow(
+      "Forbidden"
+    )
     expect(await db.manager.count()).toBe(0)
   })
 
-  it("rejects a short password", async () => {
-    await expect(
-      createManager(form({ ...newManager, password: "short" }))
-    ).rejects.toThrow()
+  it("reports invalid input instead of throwing", async () => {
+    const r = await createManager(
+      null,
+      form({ ...newManager, password: "short" })
+    )
+    expect(r.error).toMatch(/Пароль/)
+    expect(await db.manager.count()).toBe(0)
+  })
+
+  it("reports a taken login instead of throwing", async () => {
+    expect(await createManager(null, form(newManager))).toEqual({})
+    const r = await createManager(null, form({ ...newManager, name: "Другая" }))
+    expect(r.error).toMatch(/занят/)
   })
 
   it("updates the name and, when given, the password", async () => {
@@ -107,7 +118,7 @@ describe("disabled manager", () => {
   })
 
   it("cannot sign in, and an already issued session stops resolving", async () => {
-    await createManager(form(newManager))
+    await createManager(null, form(newManager))
     const m = await db.manager.findUniqueOrThrow({ where: { login: "anna" } })
     expect(await activeSessionUser(m.id)).toMatchObject({ role: "manager" })
 

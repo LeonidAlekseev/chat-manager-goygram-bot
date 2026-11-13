@@ -21,6 +21,7 @@ docker compose up -d --build
 - `/start` — список команд, `/myid` — свой ID, пересланное в личку сообщение — ID отправителя (лички).
 - `/chatid` — ID группы.
 - Бота добавили в группу → чат появляется в панели («Чаты»); удалили → помечается неактивным. Переименование в панели не перетирается при повторном добавлении.
+- Ответы на опросы и снимки участников чата хранятся год: бот удаляет записи старше 365 дней при старте и затем раз в 30 дней.
 
 ## Разработка и тесты
 
@@ -34,6 +35,8 @@ uv run ruff check . && uv run mypy bot
 # панель: prisma migrate deploy в тестовую БД
 cd web && pnpm install && TEST_DATABASE_URL=postgresql://postgres:test@localhost:5432/web_test pnpm test
 pnpm lint && pnpm typecheck
+# smoke-тест в браузере (вход → шаблон → расписание → привязка чата); пишет в указанную БД
+pnpm build && pnpm exec playwright install chromium && DATABASE_URL=postgresql://postgres:test@localhost:5432/web_test pnpm e2e
 ```
 
 Изменение схемы: `cd web && pnpm exec prisma migrate dev --name <что>` — бот подхватит таблицы через SQL.

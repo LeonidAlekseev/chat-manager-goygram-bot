@@ -9,7 +9,8 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
-import { createManager, setManagerActive, updateManager } from "./actions"
+import { setManagerActive, updateManager } from "./actions"
+import { CreateManagerForm } from "./create-manager-form"
 
 export const metadata: Metadata = { title: "Менеджеры" }
 
@@ -29,20 +30,7 @@ export default async function ManagersPage() {
           <CardTitle>Новый менеджер</CardTitle>
         </CardHeader>
         <CardContent>
-          <form action={createManager} className="flex flex-wrap gap-2">
-            <Input name="login" placeholder="Логин" required maxLength={64} />
-            <Input name="name" placeholder="Имя" required maxLength={255} />
-            <Input
-              name="password"
-              type="password"
-              placeholder="Пароль (от 8 символов)"
-              required
-              minLength={8}
-              maxLength={72}
-              autoComplete="new-password"
-            />
-            <Button type="submit">Создать</Button>
-          </form>
+          <CreateManagerForm />
         </CardContent>
       </Card>
       <Card>

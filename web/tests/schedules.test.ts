@@ -13,6 +13,7 @@ vi.mock("@/auth", () => ({ auth: async () => session.current }))
 vi.mock("next/cache", () => ({ revalidatePath: () => {} }))
 
 type Item = {
+  itemId?: number
   templateId: number
   time: string
   startDate: string
@@ -27,6 +28,7 @@ function form(
   for (const [k, v] of Object.entries(fields))
     if (v !== undefined) f.append(k, String(v))
   for (const i of items) {
+    f.append("itemId", String(i.itemId ?? ""))
     f.append("templateId", String(i.templateId))
     f.append("time", i.time)
     f.append("startDate", i.startDate)
@@ -247,6 +249,65 @@ describe("schedules", () => {
     )
     expect(await db.schedule.count()).toBe(1)
     expect(await itemsOf(s.id)).toEqual(edited)
+  })
+
+  it("an edit keeps existing items by id, so a save in the firing minute does not resend", async () => {
+    const s = await shared()
+    const [item] = await db.scheduleItem.findMany({
+      where: { scheduleId: s.id },
+    })
+    await db.sendLog.create({
+      data: { chatId: chats[0], scheduleItemId: item.id, slot: new Date() },
+    })
+    const extra = {
+      templateId: tpl2,
+      time: "09:00",
+      startDate: "2026-03-01",
+      period: "week",
+    }
+    const r = await saveSchedule(
+      null,
+      form({ id: s.id, name: s.name }, [
+        { ...morning, templateId: tpl, period: "week", itemId: item.id },
+        extra,
+      ])
+    )
+    expect(r.error).toBeUndefined()
+    const after = await db.scheduleItem.findMany({
+      where: { scheduleId: s.id },
+      orderBy: { time: "asc" },
+    })
+    expect(after.map((i) => [i.id === item.id, i.period])).toEqual([
+      [true, "week"],
+      [false, "week"],
+    ])
+    expect((await db.sendLog.findFirstOrThrow()).scheduleItemId).toBe(item.id)
+
+    // a row left out of the form is removed
+    await saveSchedule(
+      null,
+      form({ id: s.id, name: s.name }, [{ ...extra, itemId: after[1].id }])
+    )
+    expect(
+      (await db.scheduleItem.findMany({ where: { scheduleId: s.id } })).map(
+        (i) => i.id
+      )
+    ).toEqual([after[1].id])
+  })
+
+  it("'only in this chat' picks a free name when the copy's name is taken", async () => {
+    const s = await shared()
+    await saveSchedule(null, form({ name: "Смена 08:00 (ПВЗ 1)" }))
+    const r = await saveSchedule(
+      null,
+      form({ id: s.id, name: s.name, chatId: chats[0], scope: "this" }, [])
+    )
+    expect(r.error).toBeUndefined()
+    const chat = await db.chat.findUniqueOrThrow({
+      where: { id: chats[0] },
+      include: { schedule: true },
+    })
+    expect(chat.schedule?.name).toBe("Смена 08:00 (ПВЗ 1) 2")
   })
 
   it("deletes a schedule and unbinds its chats", async () => {
