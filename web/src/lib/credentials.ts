@@ -20,7 +20,7 @@ export async function ensureSuperadmin(
   await db.manager.upsert({
     where: { login },
     create: { login, passwordHash, role: "superadmin" },
-    update: { passwordHash, role: "superadmin" },
+    update: { passwordHash, role: "superadmin", active: true },
   })
 }
 

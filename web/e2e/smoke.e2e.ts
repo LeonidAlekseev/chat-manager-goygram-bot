@@ -7,6 +7,11 @@ test("login → create template → create schedule → bind chat", async ({
   page,
 }) => {
   const name = `E2E ${Date.now()}`
+  // Match the item's own summary: on a reused DB older schedules list this template in their <select>.
+  const item = () =>
+    page.locator("details").filter({
+      has: page.locator("summary", { hasText: name }),
+    })
   await page.goto("/login")
   await page.getByLabel("Логин").fill(LOGIN)
   await page.getByLabel("Пароль").fill(PASSWORD)
@@ -21,9 +26,7 @@ test("login → create template → create schedule → bind chat", async ({
   await tpl.getByRole("button", { name: "Создать" }).click()
   await expect(page.locator("summary", { hasText: name })).toBeVisible()
   // The bot's «Открыть в панели» link opens the template it saved.
-  const domId = await page
-    .locator("details", { hasText: name })
-    .getAttribute("id")
+  const domId = await item().getAttribute("id")
   await page.goto(`/templates?id=${domId!.slice(2)}`)
   await expect(page.locator(`#${domId}`)).toHaveAttribute("open", "")
 
@@ -34,7 +37,7 @@ test("login → create template → create schedule → bind chat", async ({
   await sch.getByLabel("Шаблон").selectOption({ label: name })
   await sch.getByRole("button", { name: "Создать" }).click()
 
-  const created = page.locator("details", { hasText: name })
+  const created = item()
   await created.locator("summary").click()
   await created.getByLabel(CHAT).check()
   await created.getByRole("button", { name: "Сохранить привязку" }).click()
