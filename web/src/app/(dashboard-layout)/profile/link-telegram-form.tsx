@@ -14,8 +14,19 @@ export function LinkTelegramForm() {
       </Button>
       {state && (
         <p className="text-sm">
-          Отправьте боту в личные сообщения (действует 15 минут):{" "}
-          <code className="font-mono">{state.command}</code>
+          {state.url ? (
+            <>
+              Откройте ссылку и нажмите «Запустить» (действует 15 минут):{" "}
+              <a href={state.url} className="underline">
+                {state.url}
+              </a>
+            </>
+          ) : (
+            <>
+              Отправьте боту в личные сообщения (действует 15 минут):{" "}
+              <code className="font-mono">{state.command}</code>
+            </>
+          )}
         </p>
       )}
     </form>

@@ -167,3 +167,17 @@ model Outbox {
 
   @@map("outbox")
 }
+
+// One row (id = 1), edited by the superadmin. bot_token and api_hash are AES-256-GCM ciphertext
+// (src/lib/crypto.ts, bot/bot/settings.py). The bot restarts when any of these values change.
+model Settings {
+  id        Int      @id @default(1)
+  botToken  String?  @map("bot_token")
+  apiId     Int?     @map("api_id")
+  apiHash   String?  @map("api_hash")
+  // Written by the bot (getMe) at startup; not a secret.
+  botUsername String? @map("bot_username")
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at")
+
+  @@map("settings")
+}
