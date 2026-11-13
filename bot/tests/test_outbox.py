@@ -100,3 +100,21 @@ async def test_custom_text_is_kept_on_the_log_row(world):
     await world.execute("INSERT INTO outbox (chat_id, text) VALUES (1, 'Сегодня короткий день')")
     await run_outbox(world, FakeTelegram())
     assert tuple(await world.fetchrow("SELECT text, options FROM send_logs")) == ("Сегодня короткий день", [])
+
+
+async def test_stuck_pending_rows_become_errors_and_are_never_resent(world):
+    from bot.scheduler import fail_stuck
+
+    await world.execute("INSERT INTO outbox (chat_id, text) VALUES (1, 'a'), (2, 'b')")
+    await world.execute(
+        "INSERT INTO send_logs (chat_id, slot, outbox_id, created_at) VALUES "
+        "(1, now(), 1, now() - interval '6 minutes'), (2, now(), 2, now() - interval '1 minute'), "
+        "(1, now() - interval '1 day', NULL, now() - interval '10 minutes')"  # a scheduled send, no outbox job
+    )
+    await fail_stuck(world)
+    rows = await world.fetch("SELECT status::text, error FROM send_logs ORDER BY id")
+    stuck = "Отправка прервана (бот перезапустился)"
+    assert [tuple(r) for r in rows] == [("error", stuck), ("pending", None), ("error", stuck)]
+    tg = FakeTelegram()
+    await run_outbox(world, tg)
+    assert tg.calls == []

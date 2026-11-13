@@ -45,6 +45,18 @@ async def _write(db: asyncpg.Pool, sql: str, *args: Any) -> None:
         log.exception("send log write failed: %s", sql[:40])
 
 
+STUCK_MINUTES = 5  # a send takes seconds; an older pending row means the bot died after the claim
+
+
+async def fail_stuck(db: asyncpg.Pool) -> None:
+    """Marks pending rows left by a crash as errors; they are never re-sent, so no duplicates."""
+    await db.execute(
+        "UPDATE send_logs SET status = 'error', error = 'Отправка прервана (бот перезапустился)' "
+        "WHERE status = 'pending' AND created_at < now() - make_interval(mins => $1)",
+        STUCK_MINUTES,
+    )
+
+
 async def deliver(db: asyncpg.Pool, tg: Telegram, log_id: int, telegram_id: int, t: Any, user: Any = None) -> str | None:
     """Sends template row `t` and records the outcome on the already-claimed log row.
 
@@ -100,7 +112,7 @@ async def run_due(db: asyncpg.Pool, tg: Telegram, now: datetime, user: Any = Non
     """Sends every item due at `now` (aware, in TIMEZONE_NAME) to the active chats bound to its schedule.
 
     Inserting the (chat, item, slot) log row claims the send, so a restart within the minute sends
-    nothing twice. A crash between the claim and the send leaves a `pending` row and the send is skipped.
+    nothing twice. A crash between the claim and the send leaves a `pending` row: the send is skipped, and fail_stuck later marks it an error.
     """
     slot = now.replace(second=0, microsecond=0, fold=0)  # a repeated DST hour maps to one slot
     rows = await db.fetch(
@@ -129,6 +141,7 @@ async def run_due(db: asyncpg.Pool, tg: Telegram, now: datetime, user: Any = Non
 async def run_forever(db: asyncpg.Pool, tg: Telegram, tz: tzinfo, user: Any = None) -> None:
     while True:
         try:
+            await fail_stuck(db)  # the first tick is at startup
             await run_due(db, tg, datetime.now(tz), user)
         except Exception:
             log.exception("scheduler tick failed")
