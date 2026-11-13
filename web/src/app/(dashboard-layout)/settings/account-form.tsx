@@ -82,7 +82,7 @@ export function AccountForm({
           )}
         </div>
       </form>
-      {step !== "phone" && (
+      {(step !== "phone" || login.pending) && (
         <form action={logout}>
           <Button type="submit" variant="link" className="px-0">
             Начать заново

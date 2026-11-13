@@ -281,3 +281,36 @@ async def test_goygram_login_builds_the_vault_payload():
     assert await GoyGramLogin(app).check_password("secret") == {
         "user": USER, "auth_key": "01010101", "server_salt": "0202", "dc": 4,
     }
+
+
+async def test_the_step_stays_pending_until_the_bot_answers(adb, account, logins):
+    seen = []
+
+    async def slow_send_code(phone):
+        seen.append(await login_row(adb))  # what the panel sees while Telegram is being asked
+        return "hash-1"
+
+    async def connect(*a):
+        return await _with(FakeLogin(*a), send_code=slow_send_code)
+
+    account.connect = connect
+    await ask(adb, "phone", "+79990001122")
+    await account.tick()
+    assert seen == [{"step": "phone", "input": None, "state": None, "error": None}]
+    assert await login_row(adb) == {"step": None, "input": None, "state": "code", "error": None}
+
+
+async def test_a_failed_client_start_is_retried(adb, account, clients):
+    real, fails = account.open_client, [ConnectionError("dc probe failed")]
+
+    async def flaky(*a):
+        if fails:
+            raise fails.pop()
+        return await real(*a)
+
+    account.open_client = flaky
+    await adb.execute("UPDATE settings SET api_session = $1", encrypt(json.dumps(PAYLOAD), SECRET))
+    with pytest.raises(ConnectionError):
+        await account.tick()
+    await account.tick()
+    assert len(clients) == 1

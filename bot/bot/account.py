@@ -28,11 +28,12 @@ from bot.settings import _open, decrypt, encrypt, load_settings
 
 log = logging.getLogger(__name__)
 
-# Taking the step clears it with its input, so a code or password never stays in the DB.
+# Taking the step clears its input, so a code or password never stays in the DB; the step itself stays
+# until the answer is written (_report), so the panel keeps waiting meanwhile.
 CLAIM = (
-    "UPDATE mtproto_login l SET step = NULL, input = NULL, error = NULL, updated_at = now() "
+    "UPDATE mtproto_login l SET input = NULL, error = NULL, updated_at = now() "
     "FROM (SELECT step, input FROM mtproto_login WHERE id = 1 FOR UPDATE) old "
-    "WHERE l.id = 1 AND old.step IS NOT NULL RETURNING old.step, old.input"
+    "WHERE l.id = 1 AND old.input IS NOT NULL RETURNING old.step, old.input"
 )
 
 
@@ -92,12 +93,12 @@ class Account:
         session = await self.db.fetchval("SELECT api_session FROM settings WHERE id = 1")
         if session != self._session:  # a login, or «Выйти» in the panel
             await self._stop_client()
-            self._session = session
             if plain := _open(session, self.secret):
                 s = await load_settings(self.db, self.secret)
                 self.client = await self.open_client(s.api_id, s.api_hash, json.loads(plain))  # type: ignore[arg-type]
                 self._task = asyncio.create_task(self.client.run())
                 self._task.add_done_callback(_log_client_stop)
+            self._session = session  # only now: a failed start is retried on the next tick
 
     async def stop(self) -> None:
         await self._drop()
@@ -154,10 +155,12 @@ class Account:
 
     async def _report(self, state: str | None, error: str | None = None) -> None:
         await self.db.execute(
-            "UPDATE mtproto_login SET state = $1, error = $2, updated_at = now() WHERE id = 1", state, error
+            "UPDATE mtproto_login SET step = NULL, state = $1, error = $2, updated_at = now() WHERE id = 1", state, error
         )
 
 
+# shortcut: a stopped client (crash, session ended in Telegram) is only logged; the panel still shows the
+# account. Clear api_session here if admins need to see it, but not on transient network errors.
 def _log_client_stop(task: "asyncio.Task[None]") -> None:
     if not task.cancelled():
         log.error("user client stopped: %r", task.exception() or "exited")
