@@ -1,7 +1,8 @@
 __pycache__
 .venv
-venv
 .env
-env
 *.session
-src/database/data/*.json
+*.vault
+.pytest_cache
+.mypy_cache
+.ruff_cache
