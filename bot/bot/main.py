@@ -8,14 +8,34 @@ from goygram import GoyGram
 
 from bot.chats import handle_group_migration, handle_member_update
 from bot.commands import BOT_COMMANDS, reply_for
+from bot.mention import handle_all
 from bot.polls import handle_poll_answer
 from bot.scheduler import run_forever
+
+log = logging.getLogger(__name__)
+
+
+def _log_user_stop(task: "asyncio.Task[None]") -> None:
+    if not task.cancelled():
+        log.error("user client stopped: %r", task.exception() or "exited")
 
 
 async def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
     db = await asyncpg.create_pool(os.environ["DATABASE_URL"])
     app = GoyGram(bot_token=os.environ["BOT_TOKEN"])
+    # Members need a user account (MTProto), separate from the bot; without it /all replies with an error.
+    user = (
+        GoyGram(api_id=int(os.environ["API_ID"]), api_hash=os.environ["API_HASH"],
+                session=os.environ.get("API_SESSION") or None, session_name="members")
+        if os.environ.get("API_ID") and os.environ.get("API_HASH")
+        else None
+    )
+
+    # run() performs the MTProto login (interactive on first start); iter_participants needs it connected.
+    user_task = asyncio.create_task(user.run()) if user else None
+    if user_task:
+        user_task.add_done_callback(_log_user_stop)
 
     @app.on_msg
     async def on_msg(msg):  # type: ignore[no-untyped-def]
@@ -23,6 +43,7 @@ async def main() -> None:
         if not message:
             return
         await handle_group_migration(db, message)
+        await handle_all(app, user, message)
         text = reply_for(message)
         if text:
             await msg.respond(text, parse_mode="HTML")
@@ -40,10 +61,12 @@ async def main() -> None:
     await app.bot_req("setMyCommands", commands=[{"command": c, "description": d} for c, d in BOT_COMMANDS])
     tz = ZoneInfo(os.environ.get("TIMEZONE_NAME") or "Europe/Moscow")
     # GoyGram's bot_req stub is a set of per-method overloads that mypy won't match to the Protocol.
-    scheduler = asyncio.create_task(run_forever(db, app, tz))  # type: ignore[arg-type]
+    scheduler = asyncio.create_task(run_forever(db, app, tz, user))  # type: ignore[arg-type]
     try:
         await app.run()
     finally:
+        if user_task:
+            user_task.cancel()
         scheduler.cancel()
         await db.close()
 
