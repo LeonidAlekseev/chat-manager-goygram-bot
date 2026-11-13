@@ -16,6 +16,9 @@ export const navigationsData: NavigationType[] = [
 export const adminNavigationsData: NavigationType[] = [
   {
     title: "Администрирование",
-    items: [{ title: "Менеджеры", href: "/managers", iconName: "Users" }],
+    items: [
+      { title: "Менеджеры", href: "/managers", iconName: "Users" },
+      { title: "Настройки", href: "/settings", iconName: "Settings" },
+    ],
   },
 ]

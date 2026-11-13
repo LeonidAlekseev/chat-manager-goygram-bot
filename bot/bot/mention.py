@@ -5,7 +5,7 @@ DEFAULT_TEXT = "Сообщение для всех"
 MAX_LEN = 4096  # Bot API limit, counted after entity parsing: a hidden link is 1 char
 MAX_ENTITIES = 100  # Telegram caps entities per message
 ADMIN_STATUSES = {"creator", "administrator"}
-NO_SESSION = "Не настроен аккаунт для списка участников: задайте API_ID, API_HASH и сессию (см. README)."
+NO_SESSION = "Не настроен аккаунт для списка участников: задайте API_ID и API_HASH в панели (Настройки)."
 BASIC_GROUP = "Список участников доступен только для супергрупп; обычную группу нужно преобразовать в супергруппу."
 
 
