@@ -23,5 +23,5 @@ async def pool():
 
 @pytest.fixture
 async def db(pool):
-    await pool.execute("TRUNCATE chats")
+    await pool.execute("TRUNCATE chats CASCADE")
     return pool

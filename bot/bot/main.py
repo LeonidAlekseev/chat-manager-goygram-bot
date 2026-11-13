@@ -1,12 +1,14 @@
 import asyncio
 import logging
 import os
+from zoneinfo import ZoneInfo
 
 import asyncpg
 from goygram import GoyGram
 
 from bot.chats import handle_group_migration, handle_member_update
 from bot.commands import BOT_COMMANDS, reply_for
+from bot.scheduler import run_forever
 
 
 async def main() -> None:
@@ -29,9 +31,13 @@ async def main() -> None:
         await handle_member_update(db, evt.raw["raw"])
 
     await app.bot_req("setMyCommands", commands=[{"command": c, "description": d} for c, d in BOT_COMMANDS])
+    tz = ZoneInfo(os.environ.get("TIMEZONE_NAME") or "Europe/Moscow")
+    # GoyGram's bot_req stub is a set of per-method overloads that mypy won't match to the Protocol.
+    scheduler = asyncio.create_task(run_forever(db, app, tz))  # type: ignore[arg-type]
     try:
         await app.run()
     finally:
+        scheduler.cancel()
         await db.close()
 
 

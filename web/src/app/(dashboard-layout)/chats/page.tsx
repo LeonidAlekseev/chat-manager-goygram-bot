@@ -1,3 +1,4 @@
+import Link from "next/link"
 import { redirect } from "next/navigation"
 import { auth } from "@/auth"
 
@@ -18,6 +19,7 @@ export default async function ChatsPage() {
   if (!(await auth())) redirect("/login")
   const chats = await db.chat.findMany({
     orderBy: [{ active: "desc" }, { title: "asc" }],
+    include: { schedule: { select: { name: true } } },
   })
 
   return (
@@ -38,6 +40,7 @@ export default async function ChatsPage() {
                   <th className="py-2 font-medium">Название</th>
                   <th className="py-2 font-medium">Telegram ID</th>
                   <th className="py-2 font-medium">Статус</th>
+                  <th className="py-2 font-medium">Расписание</th>
                 </tr>
               </thead>
               <tbody>
@@ -67,6 +70,14 @@ export default async function ChatsPage() {
                       ) : (
                         <Badge variant="secondary">Бот удалён</Badge>
                       )}
+                    </td>
+                    <td className="py-2 ps-4">
+                      <Link
+                        href={`/chats/${chat.id}`}
+                        className="underline underline-offset-4"
+                      >
+                        {chat.schedule?.name ?? "Настроить"}
+                      </Link>
                     </td>
                   </tr>
                 ))}
