@@ -1,0 +1,38 @@
+version: "3.8"
+
+services: 
+  dev:
+    image: aiogram_chat_manager/project:latest-dev
+    container_name: aiogram-chat-manager
+    working_dir: /home/project
+    entrypoint: python project/app.py
+    build: 
+      target: development
+      context: .
+      dockerfile: Dockerfile
+    volumes:
+      - .:/home/project
+    
+    environment: 
+      - MODE=development
+      
+    logging:
+      driver: "json-file"
+      options:
+        max-file: "1"
+        max-size: "32m"
+
+  prod:
+    image: aiogram_chat_manager/project:latest-prod
+    container_name: aiogram-chat-manager
+    working_dir: /production/project
+    build: 
+      target: production
+      context: .
+      dockerfile: Dockerfile
+
+    logging:
+      driver: "json-file"
+      options:
+        max-file: "1"
+        max-size: "32m"
