@@ -58,3 +58,61 @@ export async function saveSettings(
   revalidatePath("/settings")
   return { saved: true }
 }
+
+const superadmin = async () => {
+  if ((await auth())?.user?.role !== "superadmin") throw new Error("Forbidden")
+}
+
+const Step = z.discriminatedUnion("step", [
+  z.object({
+    step: z.literal("phone"),
+    value: z
+      .string()
+      .transform((v) => "+" + v.replace(/\D/g, ""))
+      .refine(
+        (v) => /^\+\d{8,15}$/.test(v),
+        "Телефон в международном формате, например +79990001122."
+      ),
+  }),
+  z.object({
+    step: z.literal("code"),
+    value: z.string().trim().min(1, "Введите код из Telegram."),
+  }),
+  z.object({
+    step: z.literal("password"),
+    value: z.string().min(1, "Введите пароль двухэтапной проверки."),
+  }),
+])
+
+// The bot takes the step, clears it with the input and answers in state/error (bot/bot/account.py).
+export async function loginStep(
+  _prev: ActionState,
+  formData: FormData
+): Promise<ActionState> {
+  await superadmin()
+  const parsed = Step.safeParse(Object.fromEntries(formData))
+  if (!parsed.success) return { error: parsed.error.issues[0].message }
+  const s = await db.settings.findUnique({ where: { id: 1 } })
+  if (!s?.apiId || !s.apiHash)
+    return { error: "Сначала сохраните API ID и API HASH." }
+  const data = {
+    step: parsed.data.step,
+    input: encrypt(parsed.data.value),
+    error: null,
+  }
+  await db.mtprotoLogin.upsert({ where: { id: 1 }, create: data, update: data })
+  revalidatePath("/settings")
+  return { saved: true }
+}
+
+// The bot sees the session gone and stops the user client.
+// shortcut: no auth.logOut, so Telegram still lists the session until it is ended in the app's
+// Settings → Devices; send a logout step to the bot if that matters.
+export async function logout() {
+  await superadmin()
+  await db.settings.updateMany({
+    data: { apiSession: null, apiAccount: null },
+  })
+  await db.mtprotoLogin.deleteMany()
+  revalidatePath("/settings")
+}

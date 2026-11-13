@@ -20,3 +20,27 @@ export async function settingsView() {
     botUsername: s?.botUsername ?? null,
   }
 }
+
+// The bot writes bot_seen_at every few seconds (bot/bot/account.py).
+const ALIVE_MS = 60_000
+
+export async function accountView() {
+  const [s, login] = await Promise.all([
+    db.settings.findUnique({ where: { id: 1 } }),
+    db.mtprotoLogin.findUnique({ where: { id: 1 } }),
+  ])
+  const alive = !!s?.botSeenAt && Date.now() - +s.botSeenAt < ALIVE_MS
+  return {
+    account: s?.apiAccount ?? null,
+    bot: s?.botError
+      ? `ошибка: ${s.botError}`
+      : alive
+        ? "работает"
+        : "не запущен",
+    login: {
+      pending: !!login?.step,
+      state: login?.state ?? null,
+      error: login?.error ?? null,
+    },
+  }
+}

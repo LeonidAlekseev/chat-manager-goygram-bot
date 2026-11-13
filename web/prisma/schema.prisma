@@ -171,13 +171,31 @@ model Outbox {
 // One row (id = 1), edited by the superadmin. bot_token and api_hash are AES-256-GCM ciphertext
 // (src/lib/crypto.ts, bot/bot/settings.py). The bot restarts when any of these values change.
 model Settings {
-  id        Int      @id @default(1)
-  botToken  String?  @map("bot_token")
-  apiId     Int?     @map("api_id")
-  apiHash   String?  @map("api_hash")
+  id          Int       @id @default(1)
+  botToken    String?   @map("bot_token")
+  apiId       Int?      @map("api_id")
+  apiHash     String?   @map("api_hash")
   // Written by the bot (getMe) at startup; not a secret.
-  botUsername String? @map("bot_username")
-  updatedAt DateTime @default(now()) @updatedAt @map("updated_at")
+  botUsername String?   @map("bot_username")
+  // Encrypted MTProto session JSON and "Name (@username)", written by the bot after login.
+  apiSession  String?   @map("api_session")
+  apiAccount  String?   @map("api_account")
+  // Bot status: last tick of its loop, and why it last crashed (cleared on a good start).
+  botSeenAt   DateTime? @map("bot_seen_at")
+  botError    String?   @map("bot_error")
+  updatedAt   DateTime  @default(now()) @updatedAt @map("updated_at")
 
   @@map("settings")
+}
+
+// The login wizard (one row): the panel asks a step, the bot answers with state/error.
+model MtprotoLogin {
+  id        Int      @id @default(1)
+  step      String? // phone | code | password, NULL once the bot took it
+  input     String? // encrypted phone, code or password; cleared with step
+  state     String? // what the bot waits for next: code | password
+  error     String?
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at")
+
+  @@map("mtproto_login")
 }
