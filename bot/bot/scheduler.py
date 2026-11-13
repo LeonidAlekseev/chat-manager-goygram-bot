@@ -105,7 +105,8 @@ async def run_due(db: asyncpg.Pool, tg: Telegram, now: datetime, user: Any = Non
     slot = now.replace(second=0, microsecond=0, fold=0)  # a repeated DST hour maps to one slot
     rows = await db.fetch(
         "SELECT c.id AS chat_id, c.telegram_id, i.id AS item_id, i.time, i.start_date, i.period, "
-        "t.id AS template_id, t.kind::text AS kind, t.text, t.options, t.anonymous, t.multiple, t.mention_all "
+        "t.id AS template_id, t.kind::text AS kind, t.text, t.options, t.anonymous, t.multiple, t.mention_all, "
+        "t.source_chat_id, t.source_message_id "
         "FROM chats c JOIN schedule_items i ON i.schedule_id = c.schedule_id "
         "JOIN templates t ON t.id = i.template_id "
         "WHERE c.active AND i.time = $1 ORDER BY c.id, i.id",

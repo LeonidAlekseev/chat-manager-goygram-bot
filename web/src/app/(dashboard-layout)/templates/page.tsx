@@ -13,7 +13,10 @@ export const metadata: Metadata = { title: "Шаблоны" }
 
 export default async function TemplatesPage() {
   if (!(await auth())) redirect("/login")
-  const templates = await db.template.findMany({ orderBy: { id: "asc" } })
+  const templates = await db.template.findMany({
+    orderBy: { id: "asc" },
+    include: { author: { select: { name: true, login: true } } },
+  })
 
   return (
     <section className="container grid gap-4 p-4">
@@ -38,8 +41,17 @@ export default async function TemplatesPage() {
               <summary className="flex cursor-pointer items-center gap-2">
                 {t.name}
                 <Badge variant="secondary">
-                  {t.kind === "poll" ? "Опрос" : "Текст"}
+                  {t.kind === "poll"
+                    ? "Опрос"
+                    : t.kind === "copy"
+                      ? `Копия · ${t.mediaType}`
+                      : "Текст"}
                 </Badge>
+                {t.author && (
+                  <span className="text-sm text-muted-foreground">
+                    {t.author.name || t.author.login}
+                  </span>
+                )}
               </summary>
               <div className="mt-3 grid gap-3">
                 <TemplateForm t={t} />
