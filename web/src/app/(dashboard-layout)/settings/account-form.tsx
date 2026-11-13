@@ -11,6 +11,9 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { loginStep, logout, restart } from "./actions"
 
+const DISCONNECT_CONFIRM =
+  "Сессия Telegram будет завершена, придётся снова вводить код из Telegram. Продолжить?"
+
 const STEPS = {
   phone: { label: "Телефон аккаунта", button: "Получить код", type: "tel" },
   code: { label: "Код из Telegram", button: "Войти", type: "text" },
@@ -57,10 +60,17 @@ export function AccountForm({
   if (view.account)
     return (
       <div className="grid gap-2">
-        <form action={logout} className="flex items-center gap-4">
+        <form
+          action={logout}
+          onSubmit={(e) => {
+            // window.confirm: the project has no AlertDialog component.
+            if (!window.confirm(DISCONNECT_CONFIRM)) e.preventDefault()
+          }}
+          className="flex items-center gap-4"
+        >
           <p className="text-sm">Вход выполнен: {view.account}</p>
           <Button type="submit" variant="outline" disabled={login.pending}>
-            Выйти
+            Отключить аккаунт Telegram
           </Button>
           {waiting}
         </form>
