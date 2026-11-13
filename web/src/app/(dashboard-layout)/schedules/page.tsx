@@ -7,7 +7,8 @@ import { db } from "@/lib/db"
 
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { bindChats, deleteSchedule } from "./actions"
+import { bindChats } from "./actions"
+import { DeleteScheduleForm } from "./delete-schedule-form"
 import { toItemView } from "./item-view"
 import { ScheduleForm } from "./schedule-form"
 
@@ -99,12 +100,10 @@ export default async function SchedulesPage() {
                     Сохранить привязку
                   </Button>
                 </form>
-                <form action={deleteSchedule}>
-                  <input type="hidden" name="id" value={s.id} />
-                  <Button type="submit" variant="outline">
-                    Удалить расписание
-                  </Button>
-                </form>
+                <DeleteScheduleForm
+                  id={s.id}
+                  chats={chats.filter((c) => c.scheduleId === s.id).length}
+                />
               </div>
             </details>
           ))}

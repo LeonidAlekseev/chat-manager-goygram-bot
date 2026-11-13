@@ -72,9 +72,13 @@ describe("managers CRUD", () => {
         passwordHash: await bcrypt.hash("old-pass-1", 4),
       },
     })
-    await updateManager(form({ id: String(m.id), name: "Боря", password: "" }))
+    await updateManager(
+      null,
+      form({ id: String(m.id), name: "Боря", password: "" })
+    )
     expect(await verifyCredentials("b", "old-pass-1")).not.toBeNull()
     await updateManager(
+      null,
       form({ id: String(m.id), name: "Боря", password: "new-pass-12" })
     )
     expect(await verifyCredentials("b", "old-pass-1")).toBeNull()
@@ -84,13 +88,25 @@ describe("managers CRUD", () => {
     ).toBe("Боря")
   })
 
+  it("updateManager returns an error on invalid input instead of throwing", async () => {
+    const m = await db.manager.create({
+      data: { login: "v", name: "V", passwordHash: "x" },
+    })
+    for (const bad of [
+      { id: String(m.id), name: " ", password: "" },
+      { id: String(m.id), name: "V", password: "short" },
+      { id: "abc", name: "V", password: "" },
+    ])
+      expect((await updateManager(null, form(bad))).error).toMatch(/Пароль/)
+  })
+
   it("refuses update and disable for a manager", async () => {
     const m = await db.manager.create({
       data: { login: "c", name: "C", passwordHash: "x" },
     })
     asRole("manager")
     await expect(
-      updateManager(form({ id: String(m.id), name: "Z", password: "" }))
+      updateManager(null, form({ id: String(m.id), name: "Z", password: "" }))
     ).rejects.toThrow("Forbidden")
     await expect(
       setManagerActive(form({ id: String(m.id), active: "false" }))

@@ -78,12 +78,16 @@ export async function saveSchedule(
   })
   if (!parsed.success) return { error: parsed.error.issues[0].message }
   const { id, name, chatId, scope, items } = parsed.data
-  const fresh = items.map((i) => ({ ...i, id: undefined }))
 
   try {
     await db.$transaction(async (tx) => {
       if (!id) {
-        await tx.schedule.create({ data: { name, items: { create: fresh } } })
+        await tx.schedule.create({
+          data: {
+            name,
+            items: { create: items.map((i) => ({ ...i, id: undefined })) },
+          },
+        })
         return
       }
       const others = chatId
@@ -94,7 +98,10 @@ export async function saveSchedule(
       if (scope === "this" && others > 0) {
         // copy-on-write: this chat gets its own edited copy, the others keep the original
         const [orig, chat] = await Promise.all([
-          tx.schedule.findUniqueOrThrow({ where: { id } }),
+          tx.schedule.findUniqueOrThrow({
+            where: { id },
+            include: { items: { select: { id: true } } },
+          }),
           tx.chat.findUniqueOrThrow({ where: { id: chatId } }),
         ])
         // an unchanged name gets the chat's title, plus a number if that is taken too
@@ -108,9 +115,19 @@ export async function saveSchedule(
           )
             copyName = `${name} (${chat.title}) ${n}`
         }
-        const copy = await tx.schedule.create({
-          data: { name: copyName, items: { create: fresh } },
-        })
+        const copy = await tx.schedule.create({ data: { name: copyName } })
+        const origIds = new Set(orig.items.map((i) => i.id))
+        for (const { id: oldId, ...data } of items) {
+          const { id: newId } = await tx.scheduleItem.create({
+            data: { ...data, scheduleId: copy.id },
+          })
+          // the chat's claims follow its item, so a save in the firing minute does not resend
+          if (oldId && origIds.has(oldId))
+            await tx.sendLog.updateMany({
+              where: { chatId, scheduleItemId: oldId },
+              data: { scheduleItemId: newId },
+            })
+        }
         await tx.chat.update({
           where: { id: chatId },
           data: { scheduleId: copy.id },
@@ -125,6 +142,13 @@ export async function saveSchedule(
           id: { notIn: items.flatMap((i) => (i.id ? [i.id] : [])) },
         },
       })
+      // park kept items on unique times first, so items can swap times without a unique clash
+      for (const { id: itemId } of items)
+        if (itemId)
+          await tx.scheduleItem.updateMany({
+            where: { id: itemId, scheduleId: id },
+            data: { time: `~${itemId}` },
+          })
       for (const { id: itemId, ...data } of items)
         if (itemId)
           await tx.scheduleItem.updateMany({
