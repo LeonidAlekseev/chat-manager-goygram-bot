@@ -113,7 +113,7 @@ async def test_stuck_pending_rows_become_errors_and_are_never_resent(world):
     )
     await fail_stuck(world)
     rows = await world.fetch("SELECT status::text, error FROM send_logs ORDER BY id")
-    stuck = "Отправка прервана (бот перезапустился)"
+    stuck = "Статус неизвестен: отправка прервана (бот перезапустился)"
     assert [tuple(r) for r in rows] == [("error", stuck), ("pending", None), ("error", stuck)]
     tg = FakeTelegram()
     await run_outbox(world, tg)
