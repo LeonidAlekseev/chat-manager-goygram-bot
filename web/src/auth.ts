@@ -5,6 +5,12 @@ import type { SessionUser } from "@/lib/credentials"
 import type { DefaultSession } from "next-auth"
 
 import { activeSessionUser, verifyCredentials } from "@/lib/credentials"
+import {
+  isLoginBlocked,
+  loginKey,
+  recordLoginFailure,
+  resetLoginFailures,
+} from "@/lib/loginLimit"
 
 import Credentials from "next-auth/providers/credentials"
 
@@ -46,13 +52,18 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   providers: [
     Credentials({
       credentials: { login: {}, password: {} },
-      async authorize(raw) {
+      // The limit lives here, not in the login action, so POSTing to /api/auth/callback/credentials cannot bypass it.
+      async authorize(raw, request) {
         const parsed = LoginSchema.safeParse(raw)
         if (!parsed.success) return null
+        const key = loginKey(parsed.data.login, request.headers)
+        if (isLoginBlocked(key)) return null
         const user = await verifyCredentials(
           parsed.data.login,
           parsed.data.password
         )
+        if (user) resetLoginFailures(key)
+        else recordLoginFailure(key)
         return (
           user && { id: String(user.id), name: user.login, role: user.role }
         )
