@@ -36,7 +36,7 @@ async def run_due(db: asyncpg.Pool, tg: Telegram, now: datetime) -> None:
     Inserting the (chat, item, slot) log row claims the send, so a restart within the minute sends
     nothing twice. A crash between the claim and the send leaves a `pending` row and the send is skipped.
     """
-    slot = now.replace(second=0, microsecond=0)
+    slot = now.replace(second=0, microsecond=0, fold=0)  # a repeated DST hour maps to one slot
     rows = await db.fetch(
         "SELECT c.id AS chat_id, c.telegram_id, i.id AS item_id, i.time, i.start_date, i.period, "
         "t.id AS template_id, t.kind::text AS kind, t.text, t.options, t.anonymous, t.multiple, t.mention_all "
