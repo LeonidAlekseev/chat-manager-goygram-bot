@@ -12,7 +12,7 @@ export default defineConfig({
   globalSetup: "./e2e/global-setup.ts",
   use: { baseURL: `http://127.0.0.1:${PORT}` },
   webServer: {
-    command: `prisma migrate deploy && pnpm start -p ${PORT}`, // fresh DB: the server creates the superadmin on start,
+    command: `pnpm exec prisma migrate deploy && pnpm start -p ${PORT}`, // fresh DB: the server creates the superadmin on start,
     url: `http://127.0.0.1:${PORT}/login`,
     reuseExistingServer: !process.env.CI,
     env: {

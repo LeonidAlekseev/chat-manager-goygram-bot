@@ -51,7 +51,7 @@ STUCK_MINUTES = 5  # a send takes seconds; an older pending row means the bot di
 async def fail_stuck(db: asyncpg.Pool) -> None:
     """Marks pending rows left by a crash as errors; they are never re-sent, so no duplicates."""
     await db.execute(
-        "UPDATE send_logs SET status = 'error', error = 'Отправка прервана (бот перезапустился)' "
+        "UPDATE send_logs SET status = 'error', error = 'Статус неизвестен: отправка прервана (бот перезапустился)' "
         "WHERE status = 'pending' AND created_at < now() - make_interval(mins => $1)",
         STUCK_MINUTES,
     )
@@ -142,6 +142,9 @@ async def run_forever(db: asyncpg.Pool, tg: Telegram, tz: tzinfo, user: Any = No
     while True:
         try:
             await fail_stuck(db)  # the first tick is at startup
+        except Exception:
+            log.exception("fail_stuck failed")  # must not skip this tick's sends
+        try:
             await run_due(db, tg, datetime.now(tz), user)
         except Exception:
             log.exception("scheduler tick failed")
