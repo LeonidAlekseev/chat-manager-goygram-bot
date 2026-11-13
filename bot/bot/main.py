@@ -8,6 +8,7 @@ from goygram import GoyGram
 
 from bot.chats import handle_group_migration, handle_member_update
 from bot.commands import BOT_COMMANDS, reply_for
+from bot.polls import handle_poll_answer
 from bot.scheduler import run_forever
 
 
@@ -29,6 +30,12 @@ async def main() -> None:
     @app.on_member
     async def on_member(evt):  # type: ignore[no-untyped-def]
         await handle_member_update(db, evt.raw["raw"])
+
+    # allowed_updates=[] (GoyGram's default) is Telegram's default set, which includes poll_answer.
+    @app.on_update
+    async def on_update(evt):  # type: ignore[no-untyped-def]
+        if evt.update_type == "poll_answer":
+            await handle_poll_answer(db, evt.raw["raw"])
 
     await app.bot_req("setMyCommands", commands=[{"command": c, "description": d} for c, d in BOT_COMMANDS])
     tz = ZoneInfo(os.environ.get("TIMEZONE_NAME") or "Europe/Moscow")

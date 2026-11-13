@@ -1,3 +1,4 @@
+import Link from "next/link"
 import { redirect } from "next/navigation"
 import { auth } from "@/auth"
 
@@ -121,6 +122,14 @@ export default async function LogsPage({
                     </td>
                     <td className="py-2 break-all text-destructive">
                       {l.error}
+                      {l.pollId && (
+                        <Link
+                          href={`/logs/${l.id}`}
+                          className="text-foreground underline"
+                        >
+                          Ответы
+                        </Link>
+                      )}
                     </td>
                   </tr>
                 ))}
