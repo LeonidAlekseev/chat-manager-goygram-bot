@@ -1,0 +1,5 @@
+# Local run without Caddy's public domain: docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
+services:
+  web:
+    ports:
+      - "${WEB_PORT:-3000}:3000"
