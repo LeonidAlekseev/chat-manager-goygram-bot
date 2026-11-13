@@ -34,3 +34,46 @@ model Chat {
 
   @@map("chats")
 }
+
+enum TemplateKind {
+  poll
+  text
+}
+
+model Template {
+  id         Int            @id @default(autoincrement())
+  name       String
+  kind       TemplateKind
+  text       String // poll question or message body
+  options    String[]
+  anonymous  Boolean        @default(false)
+  multiple   Boolean        @default(false)
+  mentionAll Boolean        @default(false) @map("mention_all")
+  legacyMid  String?        @unique @map("legacy_mid") // idempotency key of the old-bot migration
+  createdAt  DateTime       @default(now()) @map("created_at")
+  items      ScheduleItem[]
+
+  @@map("templates")
+}
+
+// Minimal shape needed to seed the old shifts; the schedule UI comes in a later ticket.
+model Schedule {
+  id    Int            @id @default(autoincrement())
+  name  String         @unique
+  items ScheduleItem[]
+
+  @@map("schedules")
+}
+
+model ScheduleItem {
+  id         Int      @id @default(autoincrement())
+  scheduleId Int      @map("schedule_id")
+  templateId Int      @map("template_id")
+  time       String // HH:MM
+  period     String   @default("day")
+  schedule   Schedule @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+  template   Template @relation(fields: [templateId], references: [id], onDelete: Restrict)
+
+  @@unique([scheduleId, templateId, time])
+  @@map("schedule_items")
+}
