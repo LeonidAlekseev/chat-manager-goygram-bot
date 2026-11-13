@@ -1,6 +1,9 @@
+import asyncio
 from typing import Any, Protocol
 
 from bot.mention import build_mention_messages, fetch_user_ids
+
+FETCH_TIMEOUT = 30  # a hung MTProto call must not stall the sequential scheduler
 
 
 class Telegram(Protocol):
@@ -20,9 +23,9 @@ async def send_template(tg: Telegram, chat_id: int, t: Any, user: Any = None) ->
     error = None
     if t["mention_all"]:
         try:
-            mentions = build_mention_messages(t["text"], await fetch_user_ids(user, chat_id))
+            mentions = build_mention_messages(t["text"], await asyncio.wait_for(fetch_user_ids(user, chat_id), FETCH_TIMEOUT))
         except Exception as e:  # noqa: BLE001  MentionError or a Telegram/MTProto failure
-            error = str(e)
+            error = str(e) or type(e).__name__
     if t["kind"] == "poll":
         msg = await tg.bot_req(
             "sendPoll",

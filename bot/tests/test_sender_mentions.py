@@ -1,3 +1,5 @@
+import asyncio
+
 from bot.sender import send_template
 
 POLL = {"kind": "poll", "text": "Q", "options": ["a"], "anonymous": False, "multiple": False, "mention_all": True}
@@ -50,3 +52,28 @@ async def test_missing_session_reports_error_but_poll_is_sent():
     tg = Tg()
     msg = await send_template(tg, -1, POLL)
     assert [c[0] for c in tg.calls] == ["sendPoll"] and "API_ID" in msg["mention_error"]
+
+
+class BigUser:
+    async def iter_participants(self, chat_id):
+        for i in range(250):
+            yield {"user_id": i + 1}
+
+
+class HangingUser:
+    async def iter_participants(self, chat_id):
+        await asyncio.sleep(3600)
+        yield {}
+
+
+async def test_text_with_many_members_splits_and_first_part_is_the_returned_message():
+    tg = Tg()
+    msg = await send_template(tg, -1, TEXT, BigUser())
+    assert [c[1]["text"].count("tg://") for c in tg.calls] == [100, 100, 50] and msg["message_id"] == 1
+
+
+async def test_hung_member_fetch_times_out_and_plain_text_still_goes_out(monkeypatch):
+    monkeypatch.setattr("bot.sender.FETCH_TIMEOUT", 0.01)
+    tg = Tg()
+    msg = await send_template(tg, -1, TEXT, HangingUser())
+    assert tg.calls == [("sendMessage", {"chat_id": -1, "text": "Привет"})] and msg["mention_error"] == "TimeoutError"

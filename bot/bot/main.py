@@ -11,6 +11,13 @@ from bot.commands import BOT_COMMANDS, reply_for
 from bot.mention import handle_all
 from bot.scheduler import run_forever
 
+log = logging.getLogger(__name__)
+
+
+def _log_user_stop(task: "asyncio.Task[None]") -> None:
+    if not task.cancelled():
+        log.error("user client stopped: %r", task.exception() or "exited")
+
 
 async def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
@@ -26,6 +33,8 @@ async def main() -> None:
 
     # run() performs the MTProto login (interactive on first start); iter_participants needs it connected.
     user_task = asyncio.create_task(user.run()) if user else None
+    if user_task:
+        user_task.add_done_callback(_log_user_stop)
 
     @app.on_msg
     async def on_msg(msg):  # type: ignore[no-untyped-def]
