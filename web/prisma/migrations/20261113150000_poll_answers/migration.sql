@@ -8,3 +8,11 @@ CREATE TABLE "poll_answers" (
 
     CONSTRAINT "poll_answers_pkey" PRIMARY KEY ("poll_id","user_id")
 );
+
+-- CreateTable
+CREATE TABLE "poll_members" (
+    "poll_id" TEXT NOT NULL,
+    "user_id" BIGINT NOT NULL,
+
+    CONSTRAINT "poll_members_pkey" PRIMARY KEY ("poll_id","user_id")
+);

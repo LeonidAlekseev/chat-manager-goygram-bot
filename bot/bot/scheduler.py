@@ -62,10 +62,16 @@ async def run_due(db: asyncpg.Pool, tg: Telegram, now: datetime, user: Any = Non
             log.exception("send to %s failed", r["telegram_id"])
             await db.execute("UPDATE send_logs SET status = 'error', error = $2 WHERE id = $1", log_id, str(e))
             continue
+        poll_id = (msg.get("poll") or {}).get("id")
         await db.execute(
             "UPDATE send_logs SET status = 'sent', message_id = $2, poll_id = $3, error = $4 WHERE id = $1",
-            log_id, msg["message_id"], (msg.get("poll") or {}).get("id"), msg.get("mention_error"),
+            log_id, msg["message_id"], poll_id, msg.get("mention_error"),
         )
+        if poll_id and msg.get("member_ids"):
+            await db.execute(
+                "INSERT INTO poll_members (poll_id, user_id) SELECT $1, unnest($2::bigint[]) ON CONFLICT DO NOTHING",
+                poll_id, msg["member_ids"],
+            )
 
 
 async def run_forever(db: asyncpg.Pool, tg: Telegram, tz: tzinfo, user: Any = None) -> None:

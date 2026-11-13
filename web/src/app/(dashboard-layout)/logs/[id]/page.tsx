@@ -27,9 +27,15 @@ export default async function PollAnswersPage({
     where: { pollId: log.pollId },
     orderBy: { updatedAt: "asc" },
   })
+  const members = await db.pollMember.findMany({
+    where: { pollId: log.pollId },
+  })
   const options = log.template?.options ?? []
   // Retracted votes are kept as rows with no options; they count as "no answer".
   const voted = answers.filter((a) => a.optionIds.length > 0)
+  const answeredIds = new Set(voted.map((a) => a.userId))
+  const names = new Map(answers.map((a) => [a.userId, a.name]))
+  const missing = members.filter((m) => !answeredIds.has(m.userId))
 
   return (
     <section className="container p-4">
@@ -56,9 +62,22 @@ export default async function PollAnswersPage({
               ))}
             </ul>
           )}
-          <p className="text-sm text-muted-foreground">
-            Список участников чата недоступен — «не ответили» не показываем.
-          </p>
+          {members.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              Список участников чата недоступен — «не ответили» не показываем.
+            </p>
+          ) : (
+            <>
+              <h3 className="mt-2 font-medium">
+                Не ответили ({missing.length})
+              </h3>
+              <p className="text-sm break-words">
+                {missing
+                  .map((m) => names.get(m.userId) ?? String(m.userId))
+                  .join(", ") || "—"}
+              </p>
+            </>
+          )}
         </CardContent>
       </Card>
     </section>

@@ -124,3 +124,12 @@ model PollAnswer {
   @@id([pollId, userId])
   @@map("poll_answers")
 }
+
+// Chat members at the time a poll was sent (the panel cannot call MTProto); no rows = list unavailable.
+model PollMember {
+  pollId String @map("poll_id")
+  userId BigInt @map("user_id")
+
+  @@id([pollId, userId])
+  @@map("poll_members")
+}

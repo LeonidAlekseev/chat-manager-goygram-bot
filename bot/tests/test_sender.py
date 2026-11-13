@@ -106,3 +106,16 @@ async def test_mention_failure_keeps_status_sent_and_records_error(world):
     await run_due(world, FakeTelegram(), NOW)  # no user session
     first = (await logs(world))[0]
     assert first[1] == "sent" and first[2] == 101 and "API_ID" in first[4]
+
+
+class FakeUser:
+    async def iter_participants(self, chat_id):
+        yield {"user_id": 5}
+        yield {"user_id": 6}
+
+
+async def test_poll_send_snapshots_chat_members_for_the_answers_page(world):
+    await world.execute("TRUNCATE poll_members")
+    await run_due(world, FakeTelegram(), NOW, FakeUser())
+    rows = await world.fetch("SELECT poll_id, user_id FROM poll_members ORDER BY poll_id, user_id")
+    assert [tuple(r) for r in rows] == [("poll-1", 5), ("poll-1", 6), ("poll-2", 5), ("poll-2", 6)]
