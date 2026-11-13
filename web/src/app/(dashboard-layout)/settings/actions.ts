@@ -110,7 +110,7 @@ export async function loginStep(
   return ask(parsed.data.step, parsed.data.value)
 }
 
-// «Выйти»: the bot calls auth.logOut, then wipes the session (and reports if Telegram failed).
+// «Отключить аккаунт Telegram»: the bot calls auth.logOut, then wipes the session (and reports if Telegram failed).
 export async function logout() {
   await superadmin()
   await ask("logout", "")
