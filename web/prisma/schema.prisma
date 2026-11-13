@@ -21,6 +21,11 @@ model Manager {
   role         Role     @default(manager)
   active       Boolean  @default(true)
   createdAt    DateTime @default(now()) @map("created_at")
+  // Telegram link: the bot sets telegramUserId when the manager sends it /start link_<linkCode>.
+  telegramUserId    BigInt?   @unique @map("telegram_user_id")
+  linkCode          String?   @unique @map("link_code")
+  linkCodeExpiresAt DateTime? @map("link_code_expires_at") @db.Timestamptz(3)
+  templates         Template[]
 
   @@map("managers")
 }
@@ -43,18 +48,24 @@ model Chat {
 enum TemplateKind {
   poll
   text
+  copy // a message forwarded to the bot; sent with copyMessage
 }
 
 model Template {
   id         Int            @id @default(autoincrement())
   name       String
   kind       TemplateKind
-  text       String // poll question or message body
+  text       String // poll question, message body, or the preview of a copy
   options    String[]
   anonymous  Boolean        @default(false)
   multiple   Boolean        @default(false)
   mentionAll Boolean        @default(false) @map("mention_all")
-  legacyMid  String?        @unique @map("legacy_mid") // idempotency key of the old-bot migration
+  // kind = copy: the source message in the manager's private chat with the bot.
+  sourceChatId    BigInt? @map("source_chat_id")
+  sourceMessageId BigInt? @map("source_message_id")
+  mediaType       String? @map("media_type")
+  authorId        Int?    @map("author_id")
+  author          Manager? @relation(fields: [authorId], references: [id], onDelete: SetNull)
   createdAt  DateTime       @default(now()) @map("created_at")
   items      ScheduleItem[]
   sendLogs   SendLog[]
@@ -154,4 +165,36 @@ model Outbox {
   sendLog    SendLog?
 
   @@map("outbox")
+}
+
+// One row (id = 1), edited by the superadmin. bot_token and api_hash are AES-256-GCM ciphertext
+// (src/lib/crypto.ts, bot/bot/settings.py). The bot restarts when any of these values change.
+model Settings {
+  id          Int       @id @default(1)
+  botToken    String?   @map("bot_token")
+  apiId       Int?      @map("api_id")
+  apiHash     String?   @map("api_hash")
+  // Written by the bot (getMe) at startup; not a secret.
+  botUsername String?   @map("bot_username")
+  // Encrypted MTProto session JSON and "Name (@username)", written by the bot after login.
+  apiSession  String?   @map("api_session")
+  apiAccount  String?   @map("api_account")
+  // Bot status: last tick of its loop, and why it last crashed (cleared on a good start).
+  botSeenAt   DateTime? @map("bot_seen_at")
+  botError    String?   @map("bot_error")
+  updatedAt   DateTime  @default(now()) @updatedAt @map("updated_at")
+
+  @@map("settings")
+}
+
+// The login wizard (one row): the panel asks a step, the bot answers with state/error.
+model MtprotoLogin {
+  id        Int      @id @default(1)
+  step      String? // phone | code | password, NULL once the bot took it
+  input     String? // encrypted phone, code or password; cleared with step
+  state     String? // what the bot waits for next: code | password
+  error     String?
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at")
+
+  @@map("mtproto_login")
 }

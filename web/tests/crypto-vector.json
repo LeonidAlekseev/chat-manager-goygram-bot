@@ -1,0 +1,5 @@
+{
+  "secret": "shared-test-secret",
+  "plaintext": "123456:ABC-токен",
+  "ciphertext": "AAECAwQFBgcICQoLuwEzHcFTSEwHZyKBG/K21HWrppXJ2XRPvvxzjy6Hqppxl79KRg=="
+}
