@@ -1,6 +1,6 @@
 import pytest
 
-from bot.polls import handle_poll_answer
+from bot.polls import handle_poll_answer, purge_old_polls
 
 
 @pytest.fixture(autouse=True)
@@ -57,3 +57,18 @@ async def test_other_updates_are_ignored(db):
 async def test_vote_from_an_anonymous_voter_chat_is_ignored(db):
     await handle_poll_answer(db, {"poll_answer": {"poll_id": "p1", "voter_chat": {"id": -1}, "option_ids": [0]}})
     assert await answers(db) == []
+
+
+async def test_retention_deletes_answers_and_members_older_than_a_year(db):
+    await db.execute("TRUNCATE poll_members")
+    await db.execute(
+        "INSERT INTO poll_answers (poll_id, user_id, name, option_ids, updated_at) VALUES "
+        "('old', 1, 'a', '{0}', now() - interval '366 days'), ('new', 1, 'a', '{0}', now() - interval '364 days')"
+    )
+    await db.execute(
+        "INSERT INTO poll_members (poll_id, user_id, created_at) VALUES "
+        "('old', 1, now() - interval '366 days'), ('new', 1, now() - interval '364 days')"
+    )
+    await purge_old_polls(db)
+    assert [r[0] for r in await db.fetch("SELECT poll_id FROM poll_answers")] == ["new"]
+    assert [r[0] for r in await db.fetch("SELECT poll_id FROM poll_members")] == ["new"]

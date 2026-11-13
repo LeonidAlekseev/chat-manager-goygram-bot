@@ -10,7 +10,7 @@ from bot.chats import handle_group_migration, handle_member_update
 from bot.commands import BOT_COMMANDS, reply_for
 from bot.mention import handle_all
 from bot.outbox import run_forever as run_outbox_forever
-from bot.polls import handle_poll_answer
+from bot.polls import handle_poll_answer, purge_forever
 from bot.scheduler import run_forever
 
 log = logging.getLogger(__name__)
@@ -64,6 +64,7 @@ async def main() -> None:
     # GoyGram's bot_req stub is a set of per-method overloads that mypy won't match to the Protocol.
     scheduler = asyncio.create_task(run_forever(db, app, tz, user))  # type: ignore[arg-type]
     outbox = asyncio.create_task(run_outbox_forever(db, app, user))  # type: ignore[arg-type]
+    retention = asyncio.create_task(purge_forever(db))
     try:
         await app.run()
     finally:
@@ -71,6 +72,7 @@ async def main() -> None:
             user_task.cancel()
         scheduler.cancel()
         outbox.cancel()
+        retention.cancel()
         await db.close()
 
 

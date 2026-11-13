@@ -1,6 +1,10 @@
+import asyncio
+import logging
 from typing import Any
 
 import asyncpg
+
+log = logging.getLogger(__name__)
 
 
 async def handle_poll_answer(db: asyncpg.Pool, update: dict[str, Any]) -> None:
@@ -15,3 +19,18 @@ async def handle_poll_answer(db: asyncpg.Pool, update: dict[str, Any]) -> None:
         "ON CONFLICT (poll_id, user_id) DO UPDATE SET name = EXCLUDED.name, option_ids = EXCLUDED.option_ids, updated_at = now()",
         a["poll_id"], u["id"], name, a["option_ids"],
     )
+
+
+async def purge_old_polls(db: asyncpg.Pool) -> None:
+    """Retention: poll answers and member snapshots are kept for a year."""
+    await db.execute("DELETE FROM poll_answers WHERE updated_at < now() - interval '365 days'")
+    await db.execute("DELETE FROM poll_members WHERE created_at < now() - interval '365 days'")
+
+
+async def purge_forever(db: asyncpg.Pool) -> None:
+    while True:  # on start, then monthly
+        try:
+            await purge_old_polls(db)
+        except Exception:
+            log.exception("poll retention failed")
+        await asyncio.sleep(30 * 86400)

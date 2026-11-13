@@ -12,6 +12,7 @@ export type ActionState = { error?: string } | null
 const PERIODS = ["none", "day", "week", "twoweek", "month"] as const
 
 const Item = z.object({
+  id: z.coerce.number().int().optional(), // absent for a new row
   templateId: z.coerce.number().int(),
   time: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Время — ЧЧ:ММ"),
   startDate: z
@@ -60,6 +61,7 @@ export async function saveSchedule(
   await requireAuth()
   const col = (k: string) => formData.getAll(k).map(String)
   const times = col("time")
+  const itemIds = col("itemId")
   const parsed = Schema.safeParse({
     ...Object.fromEntries(
       ["id", "name", "chatId", "scope"]
@@ -67,6 +69,7 @@ export async function saveSchedule(
         .map((k) => [k, formData.get(k)])
     ),
     items: col("templateId").map((templateId, i) => ({
+      id: itemIds[i] || undefined,
       templateId,
       time: times[i],
       startDate: col("startDate")[i],
@@ -75,11 +78,12 @@ export async function saveSchedule(
   })
   if (!parsed.success) return { error: parsed.error.issues[0].message }
   const { id, name, chatId, scope, items } = parsed.data
+  const fresh = items.map((i) => ({ ...i, id: undefined }))
 
   try {
     await db.$transaction(async (tx) => {
       if (!id) {
-        await tx.schedule.create({ data: { name, items: { create: items } } })
+        await tx.schedule.create({ data: { name, items: { create: fresh } } })
         return
       }
       const others = chatId
@@ -93,11 +97,19 @@ export async function saveSchedule(
           tx.schedule.findUniqueOrThrow({ where: { id } }),
           tx.chat.findUniqueOrThrow({ where: { id: chatId } }),
         ])
+        // an unchanged name gets the chat's title, plus a number if that is taken too
+        let copyName = name
+        if (name === orig.name) {
+          copyName = `${name} (${chat.title})`
+          for (
+            let n = 2;
+            await tx.schedule.count({ where: { name: copyName } });
+            n++
+          )
+            copyName = `${name} (${chat.title}) ${n}`
+        }
         const copy = await tx.schedule.create({
-          data: {
-            name: name === orig.name ? `${name} (${chat.title})` : name,
-            items: { create: items },
-          },
+          data: { name: copyName, items: { create: fresh } },
         })
         await tx.chat.update({
           where: { id: chatId },
@@ -105,12 +117,21 @@ export async function saveSchedule(
         })
         return
       }
-      // shortcut: items are replaced, so their send-log links go null and a save in the very
-      // minute an item fired could fire it again; upgrade to per-item upserts if that bites.
-      await tx.schedule.update({
-        where: { id },
-        data: { name, items: { deleteMany: {}, create: items } },
+      // Items keep their ids, so the bot's (chat, item, slot) claim survives a save in the firing minute.
+      await tx.schedule.update({ where: { id }, data: { name } })
+      await tx.scheduleItem.deleteMany({
+        where: {
+          scheduleId: id,
+          id: { notIn: items.flatMap((i) => (i.id ? [i.id] : [])) },
+        },
       })
+      for (const { id: itemId, ...data } of items)
+        if (itemId)
+          await tx.scheduleItem.updateMany({
+            where: { id: itemId, scheduleId: id },
+            data,
+          })
+        else await tx.scheduleItem.create({ data: { ...data, scheduleId: id } })
     })
   } catch (e) {
     return friendly(e)

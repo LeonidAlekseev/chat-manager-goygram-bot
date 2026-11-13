@@ -105,6 +105,8 @@ model SendLog {
   messageId      BigInt?       @map("message_id")
   pollId         String?       @map("poll_id")
   outboxId       Int?          @unique @map("outbox_id") // set for manual sends; unique = one send per job
+  text           String? // snapshot of the poll question / message text at send time
+  options        String[]      @default([]) // snapshot of the poll options
   createdAt      DateTime      @default(now()) @map("created_at")
   chat           Chat          @relation(fields: [chatId], references: [id], onDelete: Cascade)
   scheduleItem   ScheduleItem? @relation(fields: [scheduleItemId], references: [id], onDelete: SetNull)
@@ -130,9 +132,11 @@ model PollAnswer {
 }
 
 // Chat members at the time a poll was sent (the panel cannot call MTProto); no rows = list unavailable.
+// The bot deletes poll_members and poll_answers rows older than a year.
 model PollMember {
-  pollId String @map("poll_id")
-  userId BigInt @map("user_id")
+  pollId    String   @map("poll_id")
+  userId    BigInt   @map("user_id")
+  createdAt DateTime @default(now()) @map("created_at")
 
   @@id([pollId, userId])
   @@map("poll_members")

@@ -1,6 +1,8 @@
+import asyncio
 from datetime import date, datetime
 from zoneinfo import ZoneInfo
 
+import asyncpg
 import pytest
 
 from bot.scheduler import run_due
@@ -119,3 +121,68 @@ async def test_poll_send_snapshots_chat_members_for_the_answers_page(world):
     await run_due(world, FakeTelegram(), NOW, FakeUser())
     rows = await world.fetch("SELECT poll_id, user_id FROM poll_members ORDER BY poll_id, user_id")
     assert [tuple(r) for r in rows] == [("poll-1", 5), ("poll-1", 6), ("poll-2", 5), ("poll-2", 6)]
+
+
+class FlakyDb:
+    """The pool, except that recording a successful send fails once."""
+
+    def __init__(self, pool):
+        self.pool, self.failed = pool, False
+
+    def __getattr__(self, name):
+        return getattr(self.pool, name)
+
+    async def execute(self, sql, *args):
+        if "status = 'sent'" in sql and not self.failed:
+            self.failed = True
+            raise asyncpg.PostgresError("connection lost")
+        return await self.pool.execute(sql, *args)
+
+
+async def test_db_error_after_a_send_is_logged_and_the_tick_goes_on(world):
+    await world.execute("TRUNCATE poll_members")
+    tg = FakeTelegram()
+    await run_due(FlakyDb(world), tg, NOW, FakeUser())
+    assert [c[1]["chat_id"] for c in tg.calls] == [-1001, -1002, -1005]
+    assert [r[1] for r in await logs(world)] == ["pending", "sent", "sent"]
+    # members are still recorded for the poll whose status update failed
+    assert await world.fetchval("SELECT count(*) FROM poll_members WHERE poll_id = 'poll-1'") == 2
+
+
+class RecordingUser:
+    def __init__(self, events):
+        self.events = events
+
+    async def iter_participants(self, chat_id):
+        self.events.append(("fetch", chat_id))
+        yield {"user_id": 5}
+
+
+async def test_members_are_fetched_only_after_every_send_went_out(world):
+    tg = FakeTelegram()
+    events: list = tg.calls
+    await run_due(world, tg, NOW, RecordingUser(events))
+    assert [e[0] for e in events] == ["sendPoll", "sendPoll", "sendMessage", "fetch", "fetch"]
+
+
+async def test_log_row_keeps_what_was_sent(world):
+    await run_due(world, FakeTelegram(), NOW)
+    await world.execute("UPDATE templates SET text = 'изменён', options = '{x}'")
+    rows = await world.fetch("SELECT text, options FROM send_logs ORDER BY id")
+    assert [tuple(r) for r in rows] == [
+        ("Смена открыта?", ["Да", "Нет"]), ("Смена открыта?", ["Да", "Нет"]), ("Не забудьте ключ", []),
+    ]
+
+
+class HangingUser:
+    async def iter_participants(self, chat_id):
+        await asyncio.sleep(3600)
+        yield {}
+
+
+async def test_hung_member_fetches_share_one_budget_so_the_next_tick_is_not_late(world, monkeypatch):
+    monkeypatch.setattr("bot.sender.FETCH_TIMEOUT", 0.3)
+    monkeypatch.setattr("bot.scheduler.FETCH_TIMEOUT", 0.3)
+    start = asyncio.get_running_loop().time()
+    await run_due(world, FakeTelegram(), NOW, HangingUser())  # two polls: 0.6 s if fetched one by one
+    assert asyncio.get_running_loop().time() - start < 0.5

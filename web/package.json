@@ -16,6 +16,7 @@
     "format": "prettier --ignore-path .gitignore --write .",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
+    "e2e": "playwright test",
     "postinstall": "prisma generate"
   },
   "engines": {
@@ -65,6 +66,7 @@
   "devDependencies": {
     "@eslint/compat": "1.2.7",
     "@ianvs/prettier-plugin-sort-imports": "4.4.1",
+    "@playwright/test": "^1.65.0",
     "@tailwindcss/postcss": "4.0.17",
     "@tailwindcss/typography": "0.5.15",
     "@types/eslint__eslintrc": "2.1.2",

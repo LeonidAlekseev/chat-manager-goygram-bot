@@ -46,6 +46,7 @@ export default async function LogsPage({
       include: {
         chat: { select: { title: true } },
         template: { select: { name: true } },
+        outbox: { select: { text: true } },
       },
     }),
   ])
@@ -108,8 +109,11 @@ export default async function LogsPage({
                       {fmt.format(l.slot)}
                     </td>
                     <td className="py-2 pe-4">{l.chat.title}</td>
-                    <td className="py-2 pe-4">
-                      {l.template?.name ?? "— удалён —"}
+                    <td className="py-2 pe-4" title={l.text ?? undefined}>
+                      {l.template?.name ??
+                        (l.outbox?.text != null
+                          ? "Ручной текст"
+                          : "— удалён —")}
                     </td>
                     <td className="py-2 pe-4">
                       <Badge
