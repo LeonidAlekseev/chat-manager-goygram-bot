@@ -24,3 +24,11 @@ async def handle_member_update(db: asyncpg.Pool, update: dict[str, Any]) -> None
         chat.get("title") or str(chat["id"]),
         active,
     )
+
+
+async def handle_group_migration(db: asyncpg.Pool, message: dict[str, Any]) -> None:
+    """A basic group upgraded to a supergroup gets a new id; Telegram sends no new my_chat_member."""
+    new_id = message.get("migrate_to_chat_id")
+    if new_id:
+        await db.execute("UPDATE chats SET telegram_id = $2, updated_at = now() WHERE telegram_id = $1",
+                         message["chat"]["id"], new_id)

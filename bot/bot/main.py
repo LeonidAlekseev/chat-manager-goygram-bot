@@ -5,7 +5,7 @@ import os
 import asyncpg
 from goygram import GoyGram
 
-from bot.chats import handle_member_update
+from bot.chats import handle_group_migration, handle_member_update
 from bot.commands import BOT_COMMANDS, reply_for
 
 
@@ -17,7 +17,10 @@ async def main() -> None:
     @app.on_msg
     async def on_msg(msg):  # type: ignore[no-untyped-def]
         message = msg.raw["raw"].get("message")
-        text = reply_for(message) if message else None
+        if not message:
+            return
+        await handle_group_migration(db, message)
+        text = reply_for(message)
         if text:
             await msg.respond(text, parse_mode="HTML")
 

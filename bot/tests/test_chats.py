@@ -1,4 +1,4 @@
-from bot.chats import handle_member_update
+from bot.chats import handle_group_migration, handle_member_update
 
 
 def my_chat_member(chat_id: int, title: str, status: str) -> dict:
@@ -40,3 +40,9 @@ async def test_readding_bot_reactivates_and_keeps_panel_title(db):
 async def test_other_member_changes_are_ignored(db):
     await handle_member_update(db, {"update_id": 2, "chat_member": {"chat": {"id": -1}}})
     assert await chats(db) == []
+
+
+async def test_group_upgraded_to_supergroup_keeps_the_chat_under_its_new_id(db):
+    await handle_member_update(db, my_chat_member(-555, "ПВЗ", "member"))
+    await handle_group_migration(db, {"chat": {"id": -555, "type": "group"}, "migrate_to_chat_id": -100555})
+    assert await chats(db) == [(-100555, "ПВЗ", True)]
