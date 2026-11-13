@@ -79,6 +79,21 @@ describe("sendNow", () => {
     expect(await db.outbox.count()).toBe(0)
   })
 
+  it("rejects an unknown chat or template", async () => {
+    expect(
+      (await sendNow(null, form({ text: "x", chatIds: "999999" }))).error
+    ).toBeTruthy()
+    expect(
+      (
+        await sendNow(
+          null,
+          form({ templateId: "999999", chatIds: String(chats[0]) })
+        )
+      ).error
+    ).toBeTruthy()
+    expect(await db.outbox.count()).toBe(0)
+  })
+
   it("refuses when not signed in", async () => {
     session.current = null
     await expect(
