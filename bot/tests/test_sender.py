@@ -1,3 +1,4 @@
+import asyncio
 from datetime import date, datetime
 from zoneinfo import ZoneInfo
 
@@ -171,3 +172,17 @@ async def test_log_row_keeps_what_was_sent(world):
     assert [tuple(r) for r in rows] == [
         ("Смена открыта?", ["Да", "Нет"]), ("Смена открыта?", ["Да", "Нет"]), ("Не забудьте ключ", []),
     ]
+
+
+class HangingUser:
+    async def iter_participants(self, chat_id):
+        await asyncio.sleep(3600)
+        yield {}
+
+
+async def test_hung_member_fetches_share_one_budget_so_the_next_tick_is_not_late(world, monkeypatch):
+    monkeypatch.setattr("bot.sender.FETCH_TIMEOUT", 0.3)
+    monkeypatch.setattr("bot.scheduler.FETCH_TIMEOUT", 0.3)
+    start = asyncio.get_running_loop().time()
+    await run_due(world, FakeTelegram(), NOW, HangingUser())  # two polls: 0.6 s if fetched one by one
+    assert asyncio.get_running_loop().time() - start < 0.5

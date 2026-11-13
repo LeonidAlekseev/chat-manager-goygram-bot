@@ -6,7 +6,7 @@ from typing import Any
 
 import asyncpg
 
-from bot.sender import Telegram, fetch_members, send_template
+from bot.sender import FETCH_TIMEOUT, Telegram, fetch_members, send_template
 
 log = logging.getLogger(__name__)
 
@@ -79,16 +79,21 @@ async def _save_members(db: asyncpg.Pool, poll_id: str, ids: list[int]) -> None:
 async def snapshot_members(db: asyncpg.Pool, user: Any, polls: list[tuple[str, int]]) -> None:
     """Stores the chat members of just-sent (poll_id, telegram_id) polls for "who didn't answer".
 
-    Runs after every send of the tick, so a slow member fetch delays no message.
+    Runs after every send of the tick, so a slow member fetch delays no message; all fetches share one
+    FETCH_TIMEOUT budget so a hung client cannot make the next tick miss its minute.
     """
-    for poll_id, telegram_id in polls:
-        try:
-            ids = await fetch_members(user, telegram_id)
-        except Exception as e:  # noqa: BLE001  no list just means the answers page shows none
-            log.warning("members of %s unavailable: %s", telegram_id, str(e) or type(e).__name__)
-            continue
-        if ids:
-            await _save_members(db, poll_id, ids)
+    try:
+        async with asyncio.timeout(FETCH_TIMEOUT):
+            for poll_id, telegram_id in polls:
+                try:
+                    ids = await fetch_members(user, telegram_id)
+                except Exception as e:  # noqa: BLE001  no list just means the answers page shows none
+                    log.warning("members of %s unavailable: %s", telegram_id, str(e) or type(e).__name__)
+                    continue
+                if ids:
+                    await _save_members(db, poll_id, ids)
+    except TimeoutError:
+        log.warning("member snapshot ran out of time")
 
 
 async def run_due(db: asyncpg.Pool, tg: Telegram, now: datetime, user: Any = None) -> None:
