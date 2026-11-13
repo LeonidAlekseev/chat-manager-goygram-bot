@@ -21,6 +21,10 @@ model Manager {
   role         Role     @default(manager)
   active       Boolean  @default(true)
   createdAt    DateTime @default(now()) @map("created_at")
+  // Telegram link: the bot sets telegramUserId when the manager sends it /start link_<linkCode>.
+  telegramUserId    BigInt?   @unique @map("telegram_user_id")
+  linkCode          String?   @unique @map("link_code")
+  linkCodeExpiresAt DateTime? @map("link_code_expires_at") @db.Timestamptz(3)
 
   @@map("managers")
 }
