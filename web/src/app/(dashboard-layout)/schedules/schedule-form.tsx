@@ -46,6 +46,7 @@ export function ScheduleForm({
     async (prev, fd) => {
       const r = await saveSchedule(prev, fd)
       setOpen(false)
+      if (!schedule && !r.error) setRows([]) // new-schedule form starts empty again
       return r
     },
     null
