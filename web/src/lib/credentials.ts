@@ -33,3 +33,11 @@ export async function verifyCredentials(
     return null
   return { id: m.id, login: m.login, role: m.role }
 }
+
+/** Fresh DB check for a JWT session: null when the manager is gone or disabled. */
+export async function activeSessionUser(
+  id: number
+): Promise<SessionUser | null> {
+  const m = await db.manager.findUnique({ where: { id } })
+  return m?.active ? { id: m.id, login: m.login, role: m.role } : null
+}

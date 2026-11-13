@@ -7,10 +7,9 @@ import { ChevronDown } from "lucide-react"
 
 import type { NavigationNestedItem, NavigationRootItem } from "@/types"
 
-import { navigationsData } from "@/data/navigations"
-
 import { isActivePathname } from "@/lib/utils"
 
+import { useNavigations } from "@/hooks/use-navigations"
 import { useSettings } from "@/hooks/use-settings"
 import { Badge } from "@/components/ui/badge"
 import {
@@ -36,6 +35,7 @@ import { DynamicIcon } from "@/components/dynamic-icon"
 import { CommandMenu } from "./command-menu"
 
 export function Sidebar() {
+  const navigations = useNavigations()
   const pathname = usePathname()
   const { openMobile, setOpenMobile, isMobile } = useSidebar()
   const { settings } = useSettings()
@@ -122,7 +122,7 @@ export function Sidebar() {
       </SidebarHeader>
       <ScrollArea>
         <SidebarContent className="gap-0">
-          {navigationsData.map((nav) => (
+          {navigations.map((nav) => (
             <SidebarGroup key={nav.title}>
               <SidebarGroupLabel>{nav.title}</SidebarGroupLabel>
               <SidebarGroupContent>

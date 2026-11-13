@@ -6,10 +6,9 @@ import { usePathname } from "next/navigation"
 
 import type { NavigationNestedItem, NavigationRootItem } from "@/types"
 
-import { navigationsData } from "@/data/navigations"
-
 import { cn, isActivePathname } from "@/lib/utils"
 
+import { useNavigations } from "@/hooks/use-navigations"
 import { Badge } from "@/components/ui/badge"
 import {
   Menubar,
@@ -24,6 +23,7 @@ import {
 import { DynamicIcon } from "@/components/dynamic-icon"
 
 export function TopBarHeaderMenubar() {
+  const navigations = useNavigations()
   const pathname = usePathname()
 
   const renderMenuItem = (item: NavigationRootItem | NavigationNestedItem) => {
@@ -76,7 +76,7 @@ export function TopBarHeaderMenubar() {
 
   return (
     <Menubar className="border-0">
-      {navigationsData.map((nav) => (
+      {navigations.map((nav) => (
         <MenubarMenu key={nav.title}>
           <MenubarTrigger>{nav.title}</MenubarTrigger>
           <MenubarContent className="space-y-1">
