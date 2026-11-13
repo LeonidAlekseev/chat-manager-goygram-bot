@@ -26,12 +26,27 @@ services:
       SUPERADMIN_LOGIN: ${SUPERADMIN_LOGIN}
       SUPERADMIN_PASSWORD: ${SUPERADMIN_PASSWORD}
       TIMEZONE_NAME: ${TIMEZONE_NAME:-Europe/Moscow} # journal times
-    ports:
-      - "${WEB_PORT:-3000}:3000"
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/login >/dev/null"]
       interval: 10s
       retries: 30
+
+  caddy:
+    image: caddy:2.8-alpine
+    restart: unless-stopped
+    depends_on:
+      web:
+        condition: service_healthy
+    environment:
+      PANEL_DOMAIN: ${PANEL_DOMAIN:?set PANEL_DOMAIN in .env}
+    ports:
+      - "${HTTP_PORT:-80}:80"
+      - "${HTTPS_PORT:-443}:443"
+      - "${HTTPS_PORT:-443}:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
 
   bot:
     build: ./bot
@@ -47,3 +62,5 @@ services:
 
 volumes:
   db-data:
+  caddy-data:
+  caddy-config:
