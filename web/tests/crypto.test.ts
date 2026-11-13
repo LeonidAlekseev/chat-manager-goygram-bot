@@ -19,4 +19,10 @@ describe("secret encryption", () => {
   it("rejects a wrong key", () => {
     expect(() => decrypt(vector.ciphertext, "other")).toThrow()
   })
+
+  it("rejects a truncated auth tag", () => {
+    const raw = Buffer.from(encrypt("", "k"), "base64") // iv[12] | tag[16]
+    const short = raw.subarray(0, 12 + 4).toString("base64")
+    expect(() => decrypt(short, "k")).toThrow(/auth tag/)
+  })
 })

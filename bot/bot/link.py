@@ -25,8 +25,3 @@ async def handle_link_start(db: asyncpg.Pool, message: dict[str, Any]) -> str | 
         return "Ссылка недействительна или устарела. Создайте новую в панели."
     return "Telegram привязан к вашему аккаунту в панели."
 
-
-async def is_linked_manager(db: asyncpg.Pool, telegram_user_id: int) -> bool:
-    """True if this Telegram user is linked to an active manager (used to gate manager-only commands)."""
-    return bool(await db.fetchval(
-        "SELECT EXISTS (SELECT 1 FROM managers WHERE telegram_user_id = $1 AND active)", telegram_user_id))

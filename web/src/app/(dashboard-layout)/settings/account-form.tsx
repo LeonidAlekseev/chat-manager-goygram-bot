@@ -9,7 +9,7 @@ import type { ActionState } from "./actions"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { loginStep, logout } from "./actions"
+import { loginStep, logout, restart } from "./actions"
 
 const STEPS = {
   phone: { label: "Телефон аккаунта", button: "Получить код", type: "tel" },
@@ -39,14 +39,33 @@ export function AccountForm({
     return () => clearInterval(t)
   }, [login.pending, router])
 
+  const waiting = login.stuck ? (
+    <p className="text-sm text-destructive">Бот не ответил.</p>
+  ) : (
+    login.pending && (
+      <p className="text-sm text-muted-foreground">Бот выполняет шаг…</p>
+    )
+  )
+  const startOver = (
+    <form action={restart}>
+      <Button type="submit" variant="link" className="px-0">
+        Начать заново
+      </Button>
+    </form>
+  )
+
   if (view.account)
     return (
-      <form action={logout} className="flex items-center gap-4">
-        <p className="text-sm">Вход выполнен: {view.account}</p>
-        <Button type="submit" variant="outline">
-          Выйти
-        </Button>
-      </form>
+      <div className="grid gap-2">
+        <form action={logout} className="flex items-center gap-4">
+          <p className="text-sm">Вход выполнен: {view.account}</p>
+          <Button type="submit" variant="outline" disabled={login.pending}>
+            Выйти
+          </Button>
+          {waiting}
+        </form>
+        {login.stuck && startOver}
+      </div>
     )
 
   const step = (login.state ?? "phone") as keyof typeof STEPS
@@ -72,9 +91,7 @@ export function AccountForm({
           <Button type="submit" disabled={pending || login.pending}>
             {s.button}
           </Button>
-          {login.pending && (
-            <p className="text-sm text-muted-foreground">Бот выполняет шаг…</p>
-          )}
+          {waiting}
           {(state?.error ?? login.error) && (
             <p className="text-sm text-destructive">
               {state?.error ?? login.error}
@@ -82,13 +99,7 @@ export function AccountForm({
           )}
         </div>
       </form>
-      {(step !== "phone" || login.pending) && (
-        <form action={logout}>
-          <Button type="submit" variant="link" className="px-0">
-            Начать заново
-          </Button>
-        </form>
-      )}
+      {(step !== "phone" || login.pending) && startOver}
     </div>
   )
 }

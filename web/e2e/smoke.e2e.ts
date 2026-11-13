@@ -20,6 +20,12 @@ test("login → create template → create schedule → bind chat", async ({
   await tpl.getByPlaceholder(/Варианты опроса/).fill("Да\nНет")
   await tpl.getByRole("button", { name: "Создать" }).click()
   await expect(page.locator("summary", { hasText: name })).toBeVisible()
+  // The bot's «Открыть в панели» link opens the template it saved.
+  const domId = await page
+    .locator("details", { hasText: name })
+    .getAttribute("id")
+  await page.goto(`/templates?id=${domId!.slice(2)}`)
+  await expect(page.locator(`#${domId}`)).toHaveAttribute("open", "")
 
   await page.goto("/schedules")
   const sch = page.locator("form").first()
@@ -50,5 +56,8 @@ test("settings: bot status and the account login wizard", async ({ page }) => {
   await expect(page.getByText("Сохранено.")).toBeVisible()
   await page.getByLabel("Телефон аккаунта").fill("+79990001122")
   await page.getByRole("button", { name: "Получить код" }).click()
-  await expect(page.getByText("Бот выполняет шаг…")).toBeVisible()
+  // No bot runs in e2e: the step is never answered and the panel offers to start over.
+  await expect(page.getByText("Бот не ответил.")).toBeVisible()
+  await page.getByRole("button", { name: "Начать заново" }).click()
+  await expect(page.getByRole("button", { name: "Получить код" })).toBeEnabled()
 })

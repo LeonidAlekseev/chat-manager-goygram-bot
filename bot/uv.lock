@@ -371,7 +371,7 @@ dev = [
 requires-dist = [
     { name = "asyncpg", specifier = ">=0.30" },
     { name = "cryptography", specifier = ">=44" },
-    { name = "goygram", specifier = ">=0.8.29" },
+    { name = "goygram", specifier = "==0.8.29" },
 ]
 
 [package.metadata.requires-dev]

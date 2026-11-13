@@ -1,11 +1,14 @@
 import asyncio
 import json
+import os
 import re
+import stat
 
 import pytest
 from goygram.errors import rpc_error
 
-from bot.account import Account, GoyGramLogin
+import bot.account
+from bot.account import Account, GoyGramLogin, MembersClient, open_client
 from bot.mention import NO_SESSION, MentionError, fetch_user_ids
 from bot.settings import decrypt, encrypt
 
@@ -56,6 +59,13 @@ class FakeClient:
     def __init__(self, api_id, api_hash, session):
         self.args = (api_id, api_hash, session)
         self.running = False
+        self.ended = False
+        self.end_error = None
+
+    async def end_session(self):
+        if self.end_error:
+            raise self.end_error
+        self.ended = True
 
     async def run(self):
         self.running = True
@@ -240,16 +250,49 @@ async def test_login_starts_the_user_client_without_a_restart(adb, account, clie
     assert len(clients) == 1  # same session: keeps the running client
 
 
-async def test_stored_session_starts_the_client_and_logout_stops_it(adb, account, clients):
-    await adb.execute("UPDATE settings SET api_session = $1", encrypt(json.dumps(PAYLOAD), SECRET))
+async def logged_in(db, account):
+    await db.execute(
+        "UPDATE settings SET api_session = $1, api_account = 'Анна (@anna)'", encrypt(json.dumps(PAYLOAD), SECRET))
     await account.tick()
     await asyncio.sleep(0)
+
+
+async def test_stored_session_starts_the_client_and_logout_stops_it(adb, account, clients):
+    await logged_in(adb, account)
     assert clients[0].running
-    await adb.execute("UPDATE settings SET api_session = NULL, api_account = NULL")  # the panel's «Выйти»
+    await ask(adb, "logout", "")  # the panel's «Выйти»
     await account.tick()
-    assert not clients[0].running
+    assert clients[0].ended and not clients[0].running
+    assert tuple(await adb.fetchrow("SELECT api_session, api_account FROM settings")) == (None, None)
+    assert await login_row(adb) == {"step": None, "input": None, "state": None, "error": None}
     with pytest.raises(MentionError):
         await fetch_user_ids(account, -100)
+
+
+async def test_a_failed_telegram_logout_still_wipes_the_session_and_says_so(adb, account, clients):
+    await logged_in(adb, account)
+    clients[0].end_error = TimeoutError()
+    await ask(adb, "logout", "")
+    await account.tick()
+    assert not clients[0].running
+    assert tuple(await adb.fetchrow("SELECT api_session, api_account FROM settings")) == (None, None)
+    row = await login_row(adb)
+    assert row["step"] is None and "не завершена в Telegram" in row["error"]
+
+
+async def test_logout_without_a_running_client_wipes_the_session_and_says_so(adb, account):
+    await adb.execute("UPDATE settings SET api_session = 'not-decryptable', api_account = 'Анна'")
+    await ask(adb, "logout", "")
+    await account.tick()
+    assert tuple(await adb.fetchrow("SELECT api_session, api_account FROM settings")) == (None, None)
+    assert "не завершена в Telegram" in (await login_row(adb))["error"]
+
+
+async def test_an_undecryptable_step_is_reported_not_left_pending(adb, account):
+    await adb.execute("INSERT INTO mtproto_login (id, step, input) VALUES (1, 'phone', 'garbage')")
+    await account.tick()
+    row = await login_row(adb)
+    assert (row["step"], row["input"], row["state"]) == (None, None, None) and row["error"]
 
 
 async def test_tick_marks_the_bot_alive(adb, account):
@@ -314,3 +357,48 @@ async def test_a_failed_client_start_is_retried(adb, account, clients):
         await account.tick()
     await account.tick()
     assert len(clients) == 1
+
+
+class FakeMembers:
+    def __init__(self, **kw):
+        self.kw = kw
+
+
+async def test_the_vault_is_a_private_directory_per_client(monkeypatch):
+    monkeypatch.setattr(bot.account, "MembersClient", FakeMembers)
+    a, b = await open_client(2040, "hash", PAYLOAD), await open_client(2040, "hash", PAYLOAD)
+    try:
+        assert a.vault != b.vault and a.vault.is_file()
+        assert stat.S_IMODE(os.stat(a.vault.parent).st_mode) == 0o700
+        assert a.kw["session"].path == a.vault
+    finally:
+        for c in (a, b):
+            c.vault.unlink()
+            c.vault.parent.rmdir()
+
+
+async def test_the_vault_is_deleted_when_the_client_stops(monkeypatch):
+    monkeypatch.setattr(bot.account, "MembersClient", FakeMembers)
+    client = await open_client(2040, "hash", PAYLOAD)
+
+    async def done(self):
+        pass
+
+    monkeypatch.setattr(bot.account.GoyGram, "run", done)
+    members = MembersClient.__new__(MembersClient)
+    members.vault = client.vault
+    await members.run()
+    assert not client.vault.parent.exists()
+
+
+async def test_a_failed_client_start_leaves_no_vault(monkeypatch):
+    made = []
+
+    def broken(**kw):
+        made.append(kw["session"].path)
+        raise ConnectionError("dc probe failed")
+
+    monkeypatch.setattr(bot.account, "MembersClient", broken)
+    with pytest.raises(ConnectionError):
+        await open_client(2040, "hash", PAYLOAD)
+    assert not made[0].parent.exists()

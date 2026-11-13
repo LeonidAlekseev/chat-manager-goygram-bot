@@ -3,6 +3,7 @@
 import asyncio
 import json
 import logging
+import shutil
 import tempfile
 from collections.abc import AsyncIterator, Awaitable, Callable
 from pathlib import Path
@@ -89,7 +90,7 @@ class Account:
     async def tick(self) -> None:
         await self.db.execute("UPDATE settings SET bot_seen_at = now() WHERE id = 1")
         if row := await self.db.fetchrow(CLAIM):
-            await self.step(row["step"], decrypt(row["input"], self.secret))
+            await self.step(row["step"], row["input"])
         session = await self.db.fetchval("SELECT api_session FROM settings WHERE id = 1")
         if session != self._session:  # a login, or «Выйти» in the panel
             await self._stop_client()
@@ -110,9 +111,9 @@ class Account:
             task.cancel()
             await asyncio.gather(task, return_exceptions=True)
 
-    async def step(self, step: str, value: str) -> None:
+    async def step(self, step: str, cipher: str) -> None:
         try:
-            await self._step(step, value)
+            await self._step(step, decrypt(cipher, self.secret))
         except Exception as e:  # noqa: BLE001  any failure must reach the panel, not stop the loop
             if "SESSION_PASSWORD_NEEDED" in str(e):
                 return await self._report("password")
@@ -123,7 +124,9 @@ class Account:
             await self._report(None, reason(e))
 
     async def _step(self, step: str, value: str) -> None:
-        if step == "phone":
+        if step == "logout":
+            await self._logout()
+        elif step == "phone":
             await self._drop()
             s = await load_settings(self.db, self.secret)
             self.login = await self.connect(s.api_id, s.api_hash)  # type: ignore[arg-type]
@@ -148,6 +151,24 @@ class Account:
         await self._drop()
         await self._report(None)
 
+    async def _logout(self) -> None:
+        """«Выйти»: ends the session in Telegram if it can; the panel forgets it either way."""
+        error = None
+        try:
+            if self.client is None:
+                raise RuntimeError("клиент не запущен")
+            await self.client.end_session()
+        except Exception as e:  # noqa: BLE001  best effort: a dead session must still leave the panel
+            log.warning("auth.logOut failed: %r", e)
+            error = (
+                f"Сессия удалена из панели, но не завершена в Telegram ({reason(e)}). "
+                "Завершите её в Telegram: Настройки → Устройства."
+            )
+        await self._stop_client()
+        await self.db.execute("UPDATE settings SET api_session = NULL, api_account = NULL WHERE id = 1")
+        self._session = None
+        await self._report(None, error)
+
     async def _drop(self) -> None:
         if self.login is not None:
             login, self.login = self.login, None
@@ -168,7 +189,7 @@ def _log_client_stop(task: "asyncio.Task[None]") -> None:
 
 # GoyGram adapters. GoyGram's own phone login (goygram.security._mt_auth_flow) reads stdin, so the steps
 # below repeat its calls one at a time with its private helpers.
-# shortcut: private goygram API, pinned by uv.lock; re-check these imports when upgrading goygram.
+# Private goygram API: goygram is pinned exactly in pyproject.toml; re-check these imports when upgrading it.
 class GoyGramLogin:
     def __init__(self, app: Any) -> None:
         self.app = app
@@ -219,21 +240,31 @@ async def connect(api_id: int, api_hash: str) -> GoyGramLogin:
     )
 
 
-VAULT = Path(tempfile.gettempdir()) / "members.vault"
-
-
 class MembersClient(GoyGram):
+    vault: Path
+
     async def run(self) -> None:
         try:
             await super().run()
         finally:
-            VAULT.unlink(missing_ok=True)  # logout or restart: no session copy left on disk
+            shutil.rmtree(self.vault.parent, ignore_errors=True)  # logout or restart: no session copy on disk
+
+    async def end_session(self) -> None:
+        if err := _extract_error(await self.mt_req("auth.logOut")):
+            raise rpc_error(400, err)
 
 
 async def open_client(api_id: int, api_hash: str, data: dict[str, Any]) -> GoyGram:
     """The user client for a stored session: GoyGram restores a session only from its vault file."""
-    session = Session("members", data=data, path=VAULT)
+    vault = Path(tempfile.mkdtemp(prefix="members-")) / "members.vault"  # mkdtemp: 0700, this client only
+    session = Session("members", data=data, path=vault)
     session.save()
-    return await asyncio.to_thread(
-        MembersClient, api_id=api_id, api_hash=api_hash, session_name="members", session=session
-    )
+    try:
+        client = await asyncio.to_thread(
+            MembersClient, api_id=api_id, api_hash=api_hash, session_name="members", session=session
+        )
+    except BaseException:
+        shutil.rmtree(vault.parent, ignore_errors=True)
+        raise
+    client.vault = vault
+    return client

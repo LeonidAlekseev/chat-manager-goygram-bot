@@ -23,6 +23,8 @@ export async function settingsView() {
 
 // The bot writes bot_seen_at every few seconds (bot/bot/account.py).
 const ALIVE_MS = 60_000
+// A login step the bot has not answered by then: it is down or the step got lost.
+const STUCK_MS = 2 * 60_000
 
 export async function accountView() {
   const [s, login] = await Promise.all([
@@ -39,6 +41,8 @@ export async function accountView() {
         : "не запущен",
     login: {
       pending: !!login?.step,
+      stuck:
+        !!login?.step && (!alive || Date.now() - +login.updatedAt > STUCK_MS),
       state: login?.state ?? null,
       error: login?.error ?? null,
     },
