@@ -2,6 +2,7 @@ import asyncio
 import calendar
 import logging
 from datetime import date, datetime, tzinfo
+from typing import Any
 
 import asyncpg
 
@@ -30,7 +31,7 @@ def is_due(time: str, start: date, period: str, now: datetime) -> bool:
     return False
 
 
-async def run_due(db: asyncpg.Pool, tg: Telegram, now: datetime) -> None:
+async def run_due(db: asyncpg.Pool, tg: Telegram, now: datetime, user: Any = None) -> None:
     """Sends every item due at `now` (aware, in TIMEZONE_NAME) to the active chats bound to its schedule.
 
     Inserting the (chat, item, slot) log row claims the send, so a restart within the minute sends
@@ -56,21 +57,21 @@ async def run_due(db: asyncpg.Pool, tg: Telegram, now: datetime) -> None:
         if log_id is None:
             continue  # already sent in this slot
         try:
-            msg = await send_template(tg, r["telegram_id"], r)
+            msg = await send_template(tg, r["telegram_id"], r, user)
         except Exception as e:
             log.exception("send to %s failed", r["telegram_id"])
             await db.execute("UPDATE send_logs SET status = 'error', error = $2 WHERE id = $1", log_id, str(e))
             continue
         await db.execute(
-            "UPDATE send_logs SET status = 'sent', message_id = $2, poll_id = $3 WHERE id = $1",
-            log_id, msg["message_id"], (msg.get("poll") or {}).get("id"),
+            "UPDATE send_logs SET status = 'sent', message_id = $2, poll_id = $3, error = $4 WHERE id = $1",
+            log_id, msg["message_id"], (msg.get("poll") or {}).get("id"), msg.get("mention_error"),
         )
 
 
-async def run_forever(db: asyncpg.Pool, tg: Telegram, tz: tzinfo) -> None:
+async def run_forever(db: asyncpg.Pool, tg: Telegram, tz: tzinfo, user: Any = None) -> None:
     while True:
         try:
-            await run_due(db, tg, datetime.now(tz))
+            await run_due(db, tg, datetime.now(tz), user)
         except Exception:
             log.exception("scheduler tick failed")
         now = datetime.now(tz)
