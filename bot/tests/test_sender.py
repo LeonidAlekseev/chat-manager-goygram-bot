@@ -107,7 +107,7 @@ async def test_mention_failure_keeps_status_sent_and_records_error(world):
     await world.execute("UPDATE templates SET mention_all = true WHERE kind = 'poll'")
     await run_due(world, FakeTelegram(), NOW)  # no user session
     first = (await logs(world))[0]
-    assert first[1] == "sent" and first[2] == 101 and "API_ID" in first[4]
+    assert first[1] == "sent" and first[2] == 101 and "Не выполнен вход" in first[4]
 
 
 class FakeUser:

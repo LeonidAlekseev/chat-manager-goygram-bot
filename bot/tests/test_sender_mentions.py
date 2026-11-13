@@ -51,7 +51,7 @@ async def test_mention_failure_keeps_main_send_and_reports_error():
 async def test_missing_session_reports_error_but_poll_is_sent():
     tg = Tg()
     msg = await send_template(tg, -1, POLL)
-    assert [c[0] for c in tg.calls] == ["sendPoll"] and "API_ID" in msg["mention_error"]
+    assert [c[0] for c in tg.calls] == ["sendPoll"] and "Не выполнен вход" in msg["mention_error"]
 
 
 class BigUser:

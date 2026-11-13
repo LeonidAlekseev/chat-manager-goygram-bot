@@ -64,7 +64,7 @@ async def test_mention_all_sends_default_text():
 
 
 async def test_mention_all_without_user_client():
-    with pytest.raises(MentionError, match="API_ID"):
+    with pytest.raises(MentionError, match="Не выполнен вход"):
         await mention_all(FakeBot(), None, -100, "hi")
 
 
@@ -97,7 +97,7 @@ async def test_handle_all_denies_non_admin():
 async def test_handle_all_reports_error_in_chat():
     bot = FakeBot()
     await handle_all(bot, None, message("/all"))
-    assert "API_ID" in bot.sent()[0]["text"]
+    assert "Не выполнен вход" in bot.sent()[0]["text"]
 
 
 async def test_handle_all_ignores_other_commands_and_private():
