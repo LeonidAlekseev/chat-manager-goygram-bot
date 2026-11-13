@@ -52,6 +52,19 @@ export async function saveTemplate(
       .map((s) => s.trim())
       .filter(Boolean),
   }
+  const editing = z.coerce.number().int().safeParse(formData.get("id"))
+  // a copy's content lives in Telegram: only its name and mention-all can change here
+  if (
+    editing.success &&
+    (await db.template.findUnique({ where: { id: editing.data } }))?.kind ===
+      "copy"
+  ) {
+    const c = z.object({ name: base.name, mentionAll: flag }).safeParse(raw)
+    if (!c.success) return { error: c.error.issues[0].message }
+    await db.template.update({ where: { id: editing.data }, data: c.data })
+    revalidatePath("/templates")
+    return {}
+  }
   const parsed = Schema.safeParse(raw)
   if (!parsed.success) return { error: parsed.error.issues[0].message }
   const { id, ...rest } = parsed.data

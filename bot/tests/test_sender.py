@@ -6,6 +6,7 @@ import asyncpg
 import pytest
 
 from bot.scheduler import run_due
+from bot.sender import send_template
 
 MSK = ZoneInfo("Europe/Moscow")
 NOW = datetime(2026, 3, 2, 8, 0, tzinfo=MSK)
@@ -186,3 +187,30 @@ async def test_hung_member_fetches_share_one_budget_so_the_next_tick_is_not_late
     start = asyncio.get_running_loop().time()
     await run_due(world, FakeTelegram(), NOW, HangingUser())  # two polls: 0.6 s if fetched one by one
     assert asyncio.get_running_loop().time() - start < 0.5
+
+
+COPY = {"kind": "copy", "text": "превью", "options": [], "anonymous": False, "multiple": False,
+        "mention_all": False, "source_chat_id": 42, "source_message_id": 7}
+
+
+async def test_copy_is_sent_with_copy_message_and_mentions_follow_separately():
+    tg = FakeTelegram()
+    msg = await send_template(tg, -1001, {**COPY, "mention_all": True}, FakeUser())
+    assert [m for m, _ in tg.calls] == ["copyMessage", "sendMessage"]
+    assert tg.calls[0][1] == {"chat_id": -1001, "from_chat_id": 42, "message_id": 7}
+    assert tg.calls[1][1]["text"].startswith("Сообщение для всех") and "превью" not in tg.calls[1][1]["text"]
+    assert msg["message_id"] == 101
+
+
+async def test_deleted_source_is_logged_as_an_error(world):
+    class Gone(FakeTelegram):
+        async def bot_req(self, meth, **kw):
+            if meth == "copyMessage":
+                raise RuntimeError("botapi copyMessage fail: Bad Request: message to copy not found")
+            return await super().bot_req(meth, **kw)
+
+    await world.execute(
+        "UPDATE templates SET kind = 'copy', source_chat_id = 42, source_message_id = 7 WHERE name = 'Ключ'")
+    await run_due(world, Gone(), NOW)
+    row = await world.fetchrow("SELECT status::text, error FROM send_logs WHERE chat_id = 5")
+    assert row["status"] == "error" and "message to copy not found" in row["error"]

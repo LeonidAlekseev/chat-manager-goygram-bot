@@ -8,6 +8,7 @@ from goygram import GoyGram
 
 from bot.chats import handle_group_migration, handle_member_update
 from bot.commands import BOT_COMMANDS, reply_for
+from bot.intake import handle_private
 from bot.link import handle_link_start
 from bot.mention import handle_all
 from bot.outbox import run_forever as run_outbox_forever
@@ -48,7 +49,11 @@ async def main() -> None:
             return
         await handle_group_migration(db, message)
         await handle_all(app, user, message)
-        text = await handle_link_start(db, message) or reply_for(message)
+        text = (
+            await handle_link_start(db, message)
+            or await handle_private(db, message, os.environ.get("PANEL_URL"))
+            or reply_for(message)
+        )
         if text:
             await msg.respond(text, parse_mode="HTML")
 

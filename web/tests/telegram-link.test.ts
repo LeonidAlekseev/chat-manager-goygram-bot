@@ -28,6 +28,20 @@ describe("telegram link", () => {
     expect(ttl).toBeLessThanOrEqual(15 * 60_000)
   })
 
+  it("returns a t.me deep link once the bot username is known", async () => {
+    expect((await createLinkCode(null, new FormData())).url).toBeNull()
+    await db.settings.upsert({
+      where: { id: 1 },
+      create: { id: 1, botUsername: "shift_bot" },
+      update: { botUsername: "shift_bot" },
+    })
+    const res = await createLinkCode(null, new FormData())
+    expect(res.url).toBe(
+      `https://t.me/shift_bot?start=link_${res.command.slice("/start link_".length)}`
+    )
+    await db.settings.update({ where: { id: 1 }, data: { botUsername: null } })
+  })
+
   it("a new code replaces the previous one", async () => {
     const a = await createLinkCode(null, new FormData())
     const b = await createLinkCode(null, new FormData())
