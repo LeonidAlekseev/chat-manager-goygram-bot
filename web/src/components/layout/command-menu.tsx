@@ -7,10 +7,9 @@ import { ChevronDown, Search } from "lucide-react"
 import type { NavigationNestedItem, NavigationRootItem } from "@/types"
 import type { DialogProps } from "@radix-ui/react-dialog"
 
-import { navigationsData } from "@/data/navigations"
-
 import { cn, isActivePathname } from "@/lib/utils"
 
+import { useNavigations } from "@/hooks/use-navigations"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
@@ -36,6 +35,7 @@ interface CommandMenuProps extends DialogProps {
 }
 
 export function CommandMenu({ buttonClassName, ...props }: CommandMenuProps) {
+  const navigations = useNavigations()
   const [open, setOpen] = useState(false)
   const pathname = usePathname()
   const router = useRouter()
@@ -141,7 +141,7 @@ export function CommandMenu({ buttonClassName, ...props }: CommandMenuProps) {
         <CommandList>
           <CommandEmpty>No results found.</CommandEmpty>
           <ScrollArea className="h-[300px] max-h-[300px]">
-            {navigationsData.map((nav) => (
+            {navigations.map((nav) => (
               <CommandGroup
                 key={nav.title}
                 heading={nav.title}

@@ -6,3 +6,10 @@ export const navigationsData: NavigationType[] = [
     items: [{ title: "Чаты", href: "/chats", iconName: "MessagesSquare" }],
   },
 ]
+
+export const adminNavigationsData: NavigationType[] = [
+  {
+    title: "Администрирование",
+    items: [{ title: "Менеджеры", href: "/managers", iconName: "Users" }],
+  },
+]

@@ -16,6 +16,7 @@ enum Role {
 model Manager {
   id           Int      @id @default(autoincrement())
   login        String   @unique
+  name         String   @default("")
   passwordHash String   @map("password_hash")
   role         Role     @default(manager)
   active       Boolean  @default(true)
