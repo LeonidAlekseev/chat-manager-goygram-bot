@@ -3,6 +3,7 @@ import json
 import os
 import re
 import stat
+import time
 
 import pytest
 from goygram.errors import rpc_error
@@ -15,6 +16,7 @@ from bot.settings import decrypt, encrypt
 SECRET = "bot-test-secret"
 USER = {"id": 42, "first_name": "Анна", "username": "anna"}
 PAYLOAD = {"auth_key": "ab" * 256, "dc": 2, "user": USER}
+QR = {"url": "tg://login?token=AAAA", "expires": 2**31 - 1}
 APP_CODE = {"type": {"_": "auth.sentCodeTypeApp", "length": 5}, "next_type": {"_": "auth.codeTypeSms"}, "timeout": 60}
 
 
@@ -27,6 +29,19 @@ class FakeLogin:
         self.closed = False
         self.errors = {}
         self.sent = [APP_CODE]  # what auth.sendCode, then each auth.resendCode answers
+        self.qr = [QR]  # what each auth.exportLoginToken answers: a QR link, the session or an RPC error
+        self.scan = False  # updateLoginToken arrived
+
+    async def qr_login(self):
+        self.calls.append(("qr",))
+        res = self.qr.pop(0)
+        if isinstance(res, str):
+            raise rpc_error(400, res)
+        return res
+
+    def scanned(self):
+        scan, self.scan = self.scan, False
+        return scan
 
     async def send_code(self, phone):
         self.calls.append(("send_code", phone))
@@ -208,7 +223,7 @@ async def test_a_code_without_a_pending_login_starts_over(adb, account):
     await ask(adb, "code", "12345")  # e.g. the bot restarted after sending the code
     await account.tick()
     assert await login_row(adb) == {
-        "step": None, "input": None, "state": None, "error": "Вход прерван, запросите код заново.",
+        "step": None, "input": None, "state": None, "error": "Вход прерван, начните заново.",
     }
 
 
@@ -520,3 +535,118 @@ async def test_goygram_login_sends_and_resends_the_code():
     assert await login.send_code("+7999") == {"phone_code_hash": "h1"}  # no decoded sentCode: the hash alone
     assert await login.resend_code("+7999", "h1") == sent
     assert app.calls[1] == ("auth_resend_code", {"retry": 0, "phone_number": "+7999", "phone_code_hash": "h1"})
+
+
+async def qr_row(db):
+    return dict(await db.fetchrow("SELECT step, state, error, qr FROM mtproto_login"))
+
+
+async def show_qr(db, account):
+    await ask(db, "qr", "")
+    await account.tick()
+
+
+async def test_qr_step_shows_the_login_link_in_the_panel(adb, account, logins):
+    await show_qr(adb, account)
+    assert logins[0].api == (2040, "hash") and logins[0].calls == [("qr",)]
+    assert await qr_row(adb) == {"step": None, "state": "qr", "error": None, "qr": QR["url"]}
+    await account.tick()
+    assert logins[0].calls == [("qr",)]  # neither scanned nor expiring: no new token
+
+
+async def test_the_qr_code_is_renewed_before_it_expires(adb, account, logins):
+    logins_qr = [{"url": "tg://login?token=OLD", "expires": int(time.time()) + 3}, QR]
+    await ask(adb, "qr", "")
+    account.connect = _connect_with(logins, qr=logins_qr)
+    await account.tick()
+    await account.tick()
+    assert logins[0].calls == [("qr",), ("qr",)]
+    assert (await qr_row(adb))["qr"] == QR["url"]
+
+
+async def test_scanning_the_qr_code_stores_the_session(adb, account, logins):
+    await ask(adb, "qr", "")
+    account.connect = _connect_with(logins, qr=[QR, PAYLOAD])
+    await account.tick()
+    logins[0].scan = True
+    await account.tick()
+    assert json.loads(decrypt(await adb.fetchval("SELECT api_session FROM settings"), SECRET)) == PAYLOAD
+    assert await adb.fetchval("SELECT api_account FROM settings") == "Анна (@anna)"
+    assert await qr_row(adb) == {"step": None, "state": None, "error": None, "qr": None}
+    assert logins[0].closed
+
+
+async def test_qr_login_with_two_factor_asks_for_the_password(adb, account, logins):
+    await ask(adb, "qr", "")
+    account.connect = _connect_with(logins, qr=[QR, "SESSION_PASSWORD_NEEDED"])
+    await account.tick()
+    logins[0].scan = True
+    await account.tick()
+    assert await qr_row(adb) == {"step": None, "state": "password", "error": None, "qr": None}
+    logins[0].scan = True
+    await account.tick()
+    assert logins[0].calls == [("qr",), ("qr",)]  # the QR code is done with
+    await ask(adb, "password", "secret")
+    await account.tick()
+    assert logins[0].calls[-1] == ("check_password", "secret")
+    assert await adb.fetchval("SELECT api_account FROM settings") == "Анна (@anna)"
+
+
+async def test_an_unscanned_qr_code_gives_up_after_a_while(adb, account, logins, monkeypatch):
+    monkeypatch.setattr(bot.account, "QR_TTL", -1)
+    await ask(adb, "qr", "")
+    account.connect = _connect_with(logins, qr=[{"url": "tg://login?token=OLD", "expires": 0}])
+    await account.tick()
+    await account.tick()
+    row = await qr_row(adb)
+    assert (row["state"], row["qr"]) == (None, None) and "QR" in row["error"]
+    assert logins[0].closed and logins[0].calls == [("qr",)]
+
+
+def _connect_with(logins, qr):
+    async def connect(api_id, api_hash):
+        logins.append(FakeLogin(api_id, api_hash))
+        logins[-1].qr = qr
+        return logins[-1]
+
+    return connect
+
+
+async def test_goygram_qr_login_gives_a_tg_login_link():
+    app = FakeApp({"auth_export_login_token": {"ok": True, "type": "loginToken", "expires": 123, "token": b"\xfb\xff"}})
+    assert await GoyGramLogin(app).qr_login() == {"url": "tg://login?token=-_8", "expires": 123}
+    assert app.calls[0][1]["except_ids"] == []
+
+
+async def test_goygram_qr_login_imports_the_token_on_the_dc_it_migrates_to(monkeypatch):
+    app = FakeApp({
+        "auth_export_login_token": {"ok": True, "type": "loginTokenMigrateTo", "dc_id": 4, "token": b"t"},
+        "auth_import_login_token": {"ok": True, "type": "loginTokenSuccess", "user": USER},
+    })
+    switched = []
+
+    async def switch_dc(app_, dc):
+        switched.append(dc)
+
+    monkeypatch.setattr(bot.account, "_switch_dc", switch_dc)
+    assert (await GoyGramLogin(app).qr_login())["dc"] == 4
+    assert switched == [4] and app.calls[1][0] == "auth_import_login_token" and app.calls[1][1]["token"] == b"t"
+
+
+async def test_goygram_qr_login_sees_the_scan():
+    app = FakeApp({})
+    app.mt.qr_update_ev = asyncio.Event()
+    login = GoyGramLogin(app)
+    assert not login.scanned()
+    app.mt.qr_update_ev.set()
+    assert login.scanned() and not login.scanned()
+
+
+async def test_clients_introduce_themselves_to_telegram(monkeypatch, tmp_path):
+    monkeypatch.setattr(bot.account.tempfile, "tempdir", str(tmp_path))
+    monkeypatch.setattr(bot.account, "MembersClient", FakeMembers)
+    monkeypatch.setattr(bot.account, "GoyGram", lambda **kw: kw)
+    monkeypatch.setattr(bot.account, "GoyGramLogin", lambda app: app)
+    for kw in (await bot.account.connect(2040, "hash"), (await open_client(2040, "hash", PAYLOAD)).kw):
+        assert kw["device_model"] == "Chat Manager" and kw["lang_code"] == kw["system_lang_code"] == "ru"
+        assert kw["app_version"] and kw["system_version"] != "Unknown"

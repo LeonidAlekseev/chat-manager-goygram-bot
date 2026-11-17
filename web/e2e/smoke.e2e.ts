@@ -67,6 +67,22 @@ test("settings: bot status and the account login wizard", async ({ page }) => {
   await expect(page.getByText("Бот не ответил.")).toBeVisible()
   await page.getByRole("button", { name: "Начать заново" }).click()
   await expect(page.getByRole("button", { name: "Получить код" })).toBeEnabled()
+
+  await page.getByRole("button", { name: "Войти по QR-коду" }).click()
+  await expect(page.getByText("Бот не ответил.")).toBeVisible()
+  // Stand in for the bot: it took the step and wrote the QR code.
+  await db.mtprotoLogin.update({
+    where: { id: 1 },
+    data: { step: null, input: null, state: "qr", qr: "tg://login?token=AAAA" },
+  })
+  await expect(
+    page.getByRole("img", { name: "QR-код для входа в Telegram" })
+  ).toBeVisible()
+  await expect(page.getByText(/Подключить устройство/)).toBeVisible()
+  await page.getByRole("button", { name: "Начать заново" }).click()
+  await expect(
+    page.getByRole("button", { name: "Войти по QR-коду" })
+  ).toBeEnabled()
 })
 
 test("settings: disconnecting the Telegram account asks first", async ({

@@ -47,6 +47,7 @@ export async function accountView() {
       error: login?.error ?? null,
       sent: login?.sent ?? null, // where Telegram sent the code (bot/bot/account.py delivery)
       resend: !!login?.resend,
+      qr: login?.qr ?? null, // tg://login link of the QR code to scan, renewed by the bot
     },
   }
 }

@@ -48,6 +48,26 @@ describe("MTProto login in the panel", () => {
       error: null,
       sent: null,
       resend: false,
+      qr: null,
+    })
+  })
+
+  it("asks the bot for a QR code and shows the one it wrote", async () => {
+    await withApi()
+    expect(await loginStep(null, form({ step: "qr", value: "" }))).toEqual({
+      saved: true,
+    })
+    expect(
+      (await db.mtprotoLogin.findUniqueOrThrow({ where: { id: 1 } })).step
+    ).toBe("qr")
+    await db.mtprotoLogin.update({
+      where: { id: 1 },
+      data: { step: null, state: "qr", qr: "tg://login?token=AAAA" },
+    })
+    expect((await accountView()).login).toMatchObject({
+      pending: false,
+      state: "qr",
+      qr: "tg://login?token=AAAA",
     })
   })
 
