@@ -45,6 +45,8 @@ export async function accountView() {
         !!login?.step && (!alive || Date.now() - +login.updatedAt > STUCK_MS),
       state: login?.state ?? null,
       error: login?.error ?? null,
+      sent: login?.sent ?? null, // where Telegram sent the code (bot/bot/account.py delivery)
+      resend: !!login?.resend,
     },
   }
 }
