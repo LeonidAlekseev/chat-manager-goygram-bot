@@ -1,10 +1,14 @@
 """The MTProto user account behind /all and member lists: login steps from the panel, and its client."""
 
 import asyncio
+import base64
 import json
 import logging
+import platform
+import secrets
 import shutil
 import tempfile
+import time
 from collections import defaultdict
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import suppress
@@ -14,6 +18,7 @@ from typing import Any
 import asyncpg
 from goygram import GoyGram
 from goygram import ext as tl
+from goygram.dc_fetcher import get_dynamic_dc_config, pick_dc_endpoint, pick_reachable_dc
 from goygram.errors import FloodWaitError, rpc_error
 from goygram.security import (
     _current_dc_id,
@@ -40,6 +45,21 @@ CLAIM = (
     "WHERE l.id = 1 AND old.input IS NOT NULL RETURNING old.step, old.input"
 )
 
+
+# How long the bot keeps renewing an unscanned QR code (Telegram renews each one about every 30 s).
+QR_TTL = 5 * 60
+# Renew the QR code at most this often (s): a skewed server clock must not hit auth.exportLoginToken every tick.
+QR_GAP = 10
+# initConnection: a client calling itself "Unknown" 1.0 is a reason for Telegram not to deliver login codes (#36).
+CLIENT: dict[str, Any] = {
+    "device_model": "Chat Manager",
+    # shortcut: kept in sync with bot/pyproject.toml by hand (the image skips the project's metadata, so no
+    # importlib.metadata); switch to importlib.metadata once releases install the project.
+    "app_version": "0.1.0",
+    "system_version": f"{platform.system()} {platform.release()}",
+    "system_lang_code": "ru",
+    "lang_code": "ru",
+}
 
 # An error Telegram lets the user retry within the same login; any other starts the login over.
 RETRY = {"code": "PHONE_CODE_INVALID", "password": "PASSWORD_HASH_INVALID", "resend": "SEND_CODE_UNAVAILABLE"}
@@ -114,6 +134,9 @@ class Account:
         self.login: Any = None  # the client mid-login, between the phone and the last step
         self.phone = self.code_hash = ""
         self.sent: tuple[str | None, bool] = (None, False)  # delivery() of the last code, for the panel
+        self.qr: dict[str, Any] = {}  # the QR code the panel shows (url, expires) while the state is qr
+        self.qr_until = 0.0  # when the bot stops renewing an unscanned QR code
+        self.qr_at = 0.0  # time.monotonic() of the last auth.exportLoginToken
         self.client: Any = None
         self._task: asyncio.Task[None] | None = None
         self._session: str | None = None  # the stored ciphertext the client runs with
@@ -136,6 +159,20 @@ class Account:
         await self.db.execute("UPDATE settings SET bot_seen_at = now() WHERE id = 1")
         if row := await self.db.fetchrow(CLAIM):
             await self.step(row["step"], row["input"])
+        shown = await self.db.fetchval("SELECT state = 'qr' FROM mtproto_login WHERE id = 1")
+        if self.qr and not shown:  # «Начать заново»: a later scan must not log in
+            await self._drop()
+        elif shown and not self.qr:  # the bot restarted: nothing renews that code any more
+            await self._report(None, "Вход прерван, начните заново.")
+        # A scan (updateLoginToken) or an expiring token: auth.exportLoginToken again for the session or a new code.
+        # The gap goes first: scanned() consumes the update, which must wait for the next allowed renewal.
+        if (
+            self.qr
+            and self.login is not None
+            and time.monotonic() >= self.qr_at + QR_GAP
+            and (self.login.scanned() or time.time() > self.qr["expires"] - 5)
+        ):
+            await self.step("qr_renew", None)
         session = await self.db.fetchval("SELECT api_session FROM settings WHERE id = 1")
         if session != self._session:  # a login, or «Выйти» in the panel
             await self._stop_client()
@@ -156,14 +193,14 @@ class Account:
             task.cancel()
             await asyncio.gather(task, return_exceptions=True)
 
-    async def step(self, step: str, cipher: str) -> None:
+    async def step(self, step: str, cipher: str | None) -> None:
         log.info("login step %s taken", step)
         try:
-            await self._step(step, decrypt(cipher, self.secret))
+            await self._step(step, decrypt(cipher, self.secret) if cipher else "")
         except Exception as e:  # noqa: BLE001  any failure must reach the panel, not stop the loop
             if "SESSION_PASSWORD_NEEDED" in str(e):
                 return await self._report("password")
-            if RETRY.get(step, "-") in str(e):
+            if (retry := RETRY.get(step)) and retry in str(e):
                 return await self._report("code" if step == "resend" else step, reason(e))
             log.warning("login step %s failed: %r", step, e)
             await self._drop()
@@ -178,14 +215,34 @@ class Account:
             self.login = await self.connect(s.api_id, s.api_hash)  # type: ignore[arg-type]
             self.phone = value
             await self._code_sent(await self.login.send_code(value))
+        elif step == "qr":
+            await self._drop()
+            s = await load_settings(self.db, self.secret)
+            self.login = await self.connect(s.api_id, s.api_hash)  # type: ignore[arg-type]
+            self.qr_until = time.time() + QR_TTL
+            await self._qr()
         elif self.login is None:
-            await self._report(None, "Вход прерван, запросите код заново.")
+            await self._report(None, "Вход прерван, начните заново.")
+        elif step == "qr_renew":
+            if time.time() > self.qr_until:
+                await self._drop()
+                await self._report(None, "QR-код никто не отсканировал, покажите новый.")
+            else:
+                await self._qr()
         elif step == "resend":
             await self._code_sent(await self.login.resend_code(self.phone, self.code_hash))
         elif step == "code":
             await self._finish(await self.login.sign_in(self.phone, self.code_hash, value))
         elif step == "password":
             await self._finish(await self.login.check_password(value))
+
+    async def _qr(self) -> None:
+        self.qr_at = time.monotonic()
+        res = await self.login.qr_login()
+        if "user" in res:
+            return await self._finish(res)
+        self.qr = res
+        await self._report("qr")
 
     async def _code_sent(self, sent: dict[str, Any]) -> None:
         self.code_hash, self.sent = sent["phone_code_hash"], delivery(sent, self.phone)
@@ -222,16 +279,19 @@ class Account:
         await self._report(None, error)
 
     async def _drop(self) -> None:
+        self.qr, self.qr_until = {}, 0.0
         if self.login is not None:
             login, self.login = self.login, None
             await login.close()
 
     async def _report(self, state: str | None, error: str | None = None) -> None:
         sent, resend = self.sent if state == "code" else (None, False)
+        if state != "qr":
+            self.qr = {}  # scanned, needs the password, failed or gave up: stop renewing
         await self.db.execute(
-            "UPDATE mtproto_login SET step = NULL, state = $1, error = $2, sent = $3, resend = $4, updated_at = now() "
-            "WHERE id = 1",
-            state, error, sent, resend,
+            "UPDATE mtproto_login SET step = NULL, state = $1, error = $2, sent = $3, resend = $4, qr = $5, "
+            "updated_at = now() WHERE id = 1",
+            state, error, sent, resend, self.qr.get("url"),
         )
 
 
@@ -291,6 +351,28 @@ class GoyGramLogin:
     async def check_password(self, password: str) -> dict[str, Any]:
         return self._session(await self._call("auth_check_password", password=password))
 
+    async def qr_login(self) -> dict[str, Any]:
+        """A new QR code ({url, expires}) or, once it is scanned, the session; SESSION_PASSWORD_NEEDED on 2FA.
+
+        The same calls as GoyGram's own QR login (goygram.security._mt_qr_auth_flow)."""
+        self.app.mt.qr_update_ev.clear()  # a scan of an older code must not count for this one
+        res = await self._call("auth_export_login_token", except_ids=[])
+        if res.get("type") == "loginTokenMigrateTo":  # the account lives on another DC: log in there
+            dc = res["dc_id"]
+            await _switch_dc(self.app, dc)
+            res = {"dc_id": dc, **await self._call("auth_import_login_token", token=res["token"])}
+        if res.get("type") == "loginToken":
+            token = base64.urlsafe_b64encode(res["token"]).decode().rstrip("=")
+            return {"url": f"tg://login?token={token}", "expires": res["expires"]}
+        return self._session(res)
+
+    def scanned(self) -> bool:
+        """Telegram sent updateLoginToken: the QR code was scanned."""
+        ev = self.app.mt.qr_update_ev
+        scanned: bool = ev.is_set()
+        ev.clear()
+        return scanned
+
     def _session(self, final: dict[str, Any]) -> dict[str, Any]:
         """The vault payload GoyGram writes after its own login, minus the phone and API data."""
         user, key = _extract_user(final), _extract_auth_blob(final) or self.app.mt.auth_key
@@ -307,11 +389,31 @@ class GoyGramLogin:
         await self.app.mt.close()
 
 
+async def _switch_dc(app: Any, dc: int) -> None:
+    """Reconnect to another DC with a new auth key, as GoyGram does on auth.loginTokenMigrateTo."""
+    try:
+        endpoint = await asyncio.to_thread(pick_reachable_dc, get_dynamic_dc_config(), preferred_dc=dc)
+    except Exception:  # noqa: BLE001  the same fallback as goygram.security._mt_req_with_migrate
+        endpoint = pick_dc_endpoint(get_dynamic_dc_config(), preferred_dc=dc)
+    mt = app.mt
+    await mt.close()
+    mt.stop_ev.clear()
+    mt.host, mt.port, mt._preferred_dc = endpoint.host, endpoint.port, dc
+    mt.auth_key, mt.seq, mt._init_done = None, 0, False
+    mt.session_id = secrets.token_bytes(8)
+    await mt.boot()
+    await mt.ensure_auth_key()
+    await mt.ensure_reader()
+    log.info("QR login moved to dc%s", dc)
+
+
 async def connect(api_id: int, api_hash: str) -> GoyGramLogin:
     # The constructor probes data centres with blocking sockets; persist=False: the session goes to the DB.
     session = Session("login", persist=False)
     return GoyGramLogin(
-        await asyncio.to_thread(GoyGram, api_id=api_id, api_hash=api_hash, session_name="login", session=session)
+        await asyncio.to_thread(
+            GoyGram, api_id=api_id, api_hash=api_hash, session_name="login", session=session, **CLIENT
+        )
     )
 
 
@@ -339,7 +441,7 @@ async def open_client(api_id: int, api_hash: str, data: dict[str, Any]) -> GoyGr
     session.save()
     try:
         client = await asyncio.to_thread(
-            MembersClient, api_id=api_id, api_hash=api_hash, session_name="members", session=session
+            MembersClient, api_id=api_id, api_hash=api_hash, session_name="members", session=session, **CLIENT
         )
     except BaseException:
         shutil.rmtree(vault.parent, ignore_errors=True)

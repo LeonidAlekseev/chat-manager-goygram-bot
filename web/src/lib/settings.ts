@@ -32,6 +32,8 @@ export async function accountView() {
     db.mtprotoLogin.findUnique({ where: { id: 1 } }),
   ])
   const alive = !!s?.botSeenAt && Date.now() - +s.botSeenAt < ALIVE_MS
+  // A shown QR code waits on the bot too: it rewrites the row on each renewal (~30 s).
+  const waits = !!login?.step || login?.state === "qr"
   return {
     account: s?.apiAccount ?? null,
     bot: s?.botError
@@ -41,12 +43,12 @@ export async function accountView() {
         : "не запущен",
     login: {
       pending: !!login?.step,
-      stuck:
-        !!login?.step && (!alive || Date.now() - +login.updatedAt > STUCK_MS),
+      stuck: waits && (!alive || Date.now() - +login!.updatedAt > STUCK_MS),
       state: login?.state ?? null,
       error: login?.error ?? null,
       sent: login?.sent ?? null, // where Telegram sent the code (bot/bot/account.py delivery)
       resend: !!login?.resend,
+      qr: login?.qr ?? null, // tg://login link of the QR code to scan, renewed by the bot
     },
   }
 }

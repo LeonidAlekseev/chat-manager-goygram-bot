@@ -190,12 +190,13 @@ model Settings {
 // The login wizard (one row): the panel asks a step, the bot answers with state/error.
 model MtprotoLogin {
   id        Int      @id @default(1)
-  step      String? // phone | code | resend | password | logout, NULL once the bot took it
+  step      String? // phone | qr | code | resend | password | logout, NULL once the bot took it
   input     String? // encrypted phone, code or password; cleared with step
-  state     String? // what the bot waits for next: code | password
+  state     String? // what the bot waits for next: qr | code | password
   error     String?
   sent      String? // where Telegram sent the code, for the code step
   resend    Boolean  @default(false) // Telegram offers another way (auth.resendCode)
+  qr        String? // tg://login link of the QR code to scan, for the qr state
   updatedAt DateTime @default(now()) @updatedAt @map("updated_at")
 
   @@map("mtproto_login")

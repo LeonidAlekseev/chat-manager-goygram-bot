@@ -77,6 +77,8 @@ const Step = z.discriminatedUnion("step", [
         "Телефон в международном формате, например +79990001122."
       ),
   }),
+  // «Войти по QR-коду»: the bot shows a QR code (auth.exportLoginToken) and renews it.
+  z.object({ step: z.literal("qr"), value: z.literal("") }),
   // «Отправить код другим способом»: auth.resendCode.
   z.object({ step: z.literal("resend"), value: z.literal("") }),
   z.object({
