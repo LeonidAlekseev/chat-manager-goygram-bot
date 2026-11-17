@@ -17,6 +17,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
+import { Select } from "@/components/ui/select"
 import { saveSchedule } from "./actions"
 
 const PERIODS = [
@@ -27,7 +28,6 @@ const PERIODS = [
   ["month", "Каждый месяц"],
 ] as const
 
-const selectCls = "h-9 rounded-md border bg-background px-2 text-sm"
 const labelCls = "grid gap-1 text-sm font-medium"
 
 export function ScheduleForm({
@@ -98,17 +98,13 @@ export function ScheduleForm({
           <input type="hidden" name="itemId" value={r.id ?? ""} />
           <label className={labelCls}>
             Шаблон
-            <select
-              name="templateId"
-              defaultValue={r.templateId}
-              className={selectCls}
-            >
+            <Select name="templateId" defaultValue={r.templateId}>
               {templates.map((t) => (
                 <option key={t.id} value={t.id}>
                   {t.name}
                 </option>
               ))}
-            </select>
+            </Select>
           </label>
           <label className={labelCls}>
             Время
@@ -132,13 +128,13 @@ export function ScheduleForm({
           </label>
           <label className={labelCls}>
             Периодичность
-            <select name="period" defaultValue={r.period} className={selectCls}>
+            <Select name="period" defaultValue={r.period}>
               {PERIODS.map(([v, label]) => (
                 <option key={v} value={v}>
                   {label}
                 </option>
               ))}
-            </select>
+            </Select>
           </label>
           <Button
             type="button"
