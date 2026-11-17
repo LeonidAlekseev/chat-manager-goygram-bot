@@ -206,6 +206,24 @@ describe("MTProto login in the panel", () => {
     expect((await accountView()).login).toMatchObject({ pending: true, stuck })
   })
 
+  it.each([
+    ["renewed lately", 0, false],
+    ["not renewed for 3 minutes (bot restarted)", 3 * 60_000, true],
+  ])("a shown QR code %s → stuck: %s", async (_, age, stuck) => {
+    await db.settings.create({ data: { botSeenAt: new Date() } })
+    await db.mtprotoLogin.create({
+      data: {
+        state: "qr",
+        qr: "tg://login?token=AAAA",
+        updatedAt: new Date(Date.now() - age),
+      },
+    })
+    expect((await accountView()).login).toMatchObject({
+      pending: false,
+      stuck,
+    })
+  })
+
   it("shows the account the bot logged in", async () => {
     await db.settings.create({ data: { apiAccount: "Анна (@anna)" } })
     expect((await accountView()).account).toBe("Анна (@anna)")

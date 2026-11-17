@@ -552,9 +552,26 @@ async def test_qr_step_shows_the_login_link_in_the_panel(adb, account, logins):
     assert await qr_row(adb) == {"step": None, "state": "qr", "error": None, "qr": QR["url"]}
     await account.tick()
     assert logins[0].calls == [("qr",)]  # neither scanned nor expiring: no new token
+    logins[0].scan = True
+    await account.tick()
+    assert logins[0].calls == [("qr",)]  # scanned, but renewed under QR_GAP ago: waits
 
 
-async def test_the_qr_code_is_renewed_before_it_expires(adb, account, logins):
+@pytest.fixture
+def no_qr_gap(monkeypatch):
+    monkeypatch.setattr(bot.account, "QR_GAP", 0)
+
+
+async def test_a_qr_failure_with_a_hyphen_starts_over(adb, account, logins):
+    await ask(adb, "qr", "")
+    account.connect = _connect_with(logins, qr=["AUTH_KEY-UNREGISTERED"])
+    await account.tick()
+    row = await qr_row(adb)
+    assert (row["state"], row["qr"]) == (None, None) and "AUTH_KEY-UNREGISTERED" in row["error"]
+    assert logins[0].closed
+
+
+async def test_the_qr_code_is_renewed_before_it_expires(adb, account, logins, no_qr_gap):
     logins_qr = [{"url": "tg://login?token=OLD", "expires": int(time.time()) + 3}, QR]
     await ask(adb, "qr", "")
     account.connect = _connect_with(logins, qr=logins_qr)
@@ -564,7 +581,7 @@ async def test_the_qr_code_is_renewed_before_it_expires(adb, account, logins):
     assert (await qr_row(adb))["qr"] == QR["url"]
 
 
-async def test_scanning_the_qr_code_stores_the_session(adb, account, logins):
+async def test_scanning_the_qr_code_stores_the_session(adb, account, logins, no_qr_gap):
     await ask(adb, "qr", "")
     account.connect = _connect_with(logins, qr=[QR, PAYLOAD])
     await account.tick()
@@ -576,7 +593,7 @@ async def test_scanning_the_qr_code_stores_the_session(adb, account, logins):
     assert logins[0].closed
 
 
-async def test_qr_login_with_two_factor_asks_for_the_password(adb, account, logins):
+async def test_qr_login_with_two_factor_asks_for_the_password(adb, account, logins, no_qr_gap):
     await ask(adb, "qr", "")
     account.connect = _connect_with(logins, qr=[QR, "SESSION_PASSWORD_NEEDED"])
     await account.tick()
@@ -592,7 +609,7 @@ async def test_qr_login_with_two_factor_asks_for_the_password(adb, account, logi
     assert await adb.fetchval("SELECT api_account FROM settings") == "Анна (@anna)"
 
 
-async def test_an_unscanned_qr_code_gives_up_after_a_while(adb, account, logins, monkeypatch):
+async def test_an_unscanned_qr_code_gives_up_after_a_while(adb, account, logins, monkeypatch, no_qr_gap):
     monkeypatch.setattr(bot.account, "QR_TTL", -1)
     await ask(adb, "qr", "")
     account.connect = _connect_with(logins, qr=[{"url": "tg://login?token=OLD", "expires": 0}])

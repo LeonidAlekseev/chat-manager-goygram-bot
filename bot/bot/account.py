@@ -48,6 +48,8 @@ CLAIM = (
 
 # How long the bot keeps renewing an unscanned QR code (Telegram renews each one about every 30 s).
 QR_TTL = 5 * 60
+# Renew the QR code at most this often (s): a skewed server clock must not hit auth.exportLoginToken every tick.
+QR_GAP = 10
 # initConnection: a client calling itself "Unknown" 1.0 is a reason for Telegram not to deliver login codes (#36).
 CLIENT: dict[str, Any] = {
     "device_model": "Chat Manager",
@@ -132,6 +134,7 @@ class Account:
         self.sent: tuple[str | None, bool] = (None, False)  # delivery() of the last code, for the panel
         self.qr: dict[str, Any] = {}  # the QR code the panel shows (url, expires) while the state is qr
         self.qr_until = 0.0  # when the bot stops renewing an unscanned QR code
+        self.qr_at = 0.0  # time.monotonic() of the last auth.exportLoginToken
         self.client: Any = None
         self._task: asyncio.Task[None] | None = None
         self._session: str | None = None  # the stored ciphertext the client runs with
@@ -155,7 +158,13 @@ class Account:
         if row := await self.db.fetchrow(CLAIM):
             await self.step(row["step"], row["input"])
         # A scan (updateLoginToken) or an expiring token: auth.exportLoginToken again for the session or a new code.
-        if self.qr and self.login is not None and (self.login.scanned() or time.time() > self.qr["expires"] - 5):
+        # The gap goes first: scanned() consumes the update, which must wait for the next allowed renewal.
+        if (
+            self.qr
+            and self.login is not None
+            and time.monotonic() >= self.qr_at + QR_GAP
+            and (self.login.scanned() or time.time() > self.qr["expires"] - 5)
+        ):
             await self.step("qr_renew", None)
         session = await self.db.fetchval("SELECT api_session FROM settings WHERE id = 1")
         if session != self._session:  # a login, or «Выйти» in the panel
@@ -184,7 +193,7 @@ class Account:
         except Exception as e:  # noqa: BLE001  any failure must reach the panel, not stop the loop
             if "SESSION_PASSWORD_NEEDED" in str(e):
                 return await self._report("password")
-            if RETRY.get(step, "-") in str(e):
+            if (retry := RETRY.get(step)) and retry in str(e):
                 return await self._report("code" if step == "resend" else step, reason(e))
             log.warning("login step %s failed: %r", step, e)
             await self._drop()
@@ -221,6 +230,7 @@ class Account:
             await self._finish(await self.login.check_password(value))
 
     async def _qr(self) -> None:
+        self.qr_at = time.monotonic()
         res = await self.login.qr_login()
         if "user" in res:
             return await self._finish(res)
