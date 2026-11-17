@@ -7,6 +7,7 @@ import { db } from "@/lib/db"
 
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Select } from "@/components/ui/select"
 import { bindChat } from "../../schedules/actions"
 import { toItemView } from "../../schedules/item-view"
 import { ScheduleForm } from "../../schedules/schedule-form"
@@ -53,12 +54,11 @@ export default async function ChatPage({
         <CardContent>
           <form action={bindChat} className="flex flex-wrap gap-2">
             <input type="hidden" name="chatId" value={chat.id} />
-            <select
+            <Select
               key={chat.scheduleId} // remount so a copy-on-write rebind shows up
               name="scheduleId"
               defaultValue={chat.scheduleId ?? ""}
               aria-label="Расписание чата"
-              className="h-9 rounded-md border bg-background px-2 text-sm"
             >
               <option value="">Без расписания</option>
               {schedules.map((s) => (
@@ -66,7 +66,7 @@ export default async function ChatPage({
                   {s.name}
                 </option>
               ))}
-            </select>
+            </Select>
             <Button type="submit" variant="outline">
               Привязать
             </Button>

@@ -12,7 +12,7 @@ export default function LoginPage() {
   const [error, action, pending] = useActionState(login, null)
 
   return (
-    <main className="min-h-screen grid place-items-center p-4">
+    <main className="flex min-h-screen w-full items-center justify-center p-4">
       <Card className="w-full max-w-sm">
         <CardHeader>
           <CardTitle>Вход в панель</CardTitle>

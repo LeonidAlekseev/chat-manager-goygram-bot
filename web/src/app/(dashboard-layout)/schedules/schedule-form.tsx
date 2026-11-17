@@ -16,6 +16,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
+import { Select } from "@/components/ui/select"
 import { saveSchedule } from "./actions"
 
 const PERIODS = [
@@ -25,8 +26,6 @@ const PERIODS = [
   ["twoweek", "Раз в две недели"],
   ["month", "Каждый месяц"],
 ] as const
-
-const selectCls = "h-9 rounded-md border bg-background px-2 text-sm"
 
 export function ScheduleForm({
   schedule,
@@ -85,18 +84,17 @@ export function ScheduleForm({
       {rows.map((r) => (
         <div key={r.key} className="flex flex-wrap items-center gap-2">
           <input type="hidden" name="itemId" value={r.id ?? ""} />
-          <select
+          <Select
             name="templateId"
             defaultValue={r.templateId}
             aria-label="Шаблон"
-            className={selectCls}
           >
             {templates.map((t) => (
               <option key={t.id} value={t.id}>
                 {t.name}
               </option>
             ))}
-          </select>
+          </Select>
           <Input
             type="time"
             name="time"
@@ -113,18 +111,13 @@ export function ScheduleForm({
             required
             className="w-40"
           />
-          <select
-            name="period"
-            defaultValue={r.period}
-            aria-label="Период"
-            className={selectCls}
-          >
+          <Select name="period" defaultValue={r.period} aria-label="Период">
             {PERIODS.map(([v, label]) => (
               <option key={v} value={v}>
                 {label}
               </option>
             ))}
-          </select>
+          </Select>
           <Button
             type="button"
             variant="ghost"
