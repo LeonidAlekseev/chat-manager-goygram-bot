@@ -86,6 +86,7 @@ export function AccountForm({
         Аккаунт нужен для /all, «отметить всех» и «не ответили». Сессия хранится
         в базе зашифрованной.
       </p>
+      {step === "code" && login.sent && <p className="text-sm">{login.sent}</p>}
       <form action={action} className="grid gap-2">
         <input type="hidden" name="step" value={step} />
         <Label htmlFor="value">{s.label}</Label>
@@ -109,7 +110,22 @@ export function AccountForm({
           )}
         </div>
       </form>
-      {(step !== "phone" || login.pending) && startOver}
+      <div className="flex items-center gap-4">
+        {step === "code" && login.resend && (
+          <form action={action}>
+            <input type="hidden" name="step" value="resend" />
+            <input type="hidden" name="value" value="" />
+            <Button
+              type="submit"
+              variant="outline"
+              disabled={pending || login.pending}
+            >
+              Отправить код другим способом
+            </Button>
+          </form>
+        )}
+        {(step !== "phone" || login.pending) && startOver}
+      </div>
     </div>
   )
 }

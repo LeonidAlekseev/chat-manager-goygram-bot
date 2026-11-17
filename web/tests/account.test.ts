@@ -46,6 +46,41 @@ describe("MTProto login in the panel", () => {
       stuck: true, // no bot heartbeat in this test
       state: null,
       error: null,
+      sent: null,
+      resend: false,
+    })
+  })
+
+  it.each([
+    ["8 (999) 000-11-22", "+79990001122"],
+    ["89990001122", "+79990001122"],
+    ["+7 (999) 000-11-22", "+79990001122"],
+    ["+44 20 7946 0958", "+442079460958"],
+  ])("normalizes the phone %s to %s", async (input, phone) => {
+    await withApi()
+    await loginStep(null, form({ step: "phone", value: input }))
+    const row = await db.mtprotoLogin.findUniqueOrThrow({ where: { id: 1 } })
+    expect(decrypt(row.input!)).toBe(phone)
+  })
+
+  it("asks the bot to send the code another way", async () => {
+    await withApi()
+    await db.mtprotoLogin.create({
+      data: {
+        state: "code",
+        sent: "Код отправлен в чат «Telegram».",
+        resend: true,
+      },
+    })
+    expect(await loginStep(null, form({ step: "resend", value: "" }))).toEqual({
+      saved: true,
+    })
+    const row = await db.mtprotoLogin.findUniqueOrThrow({ where: { id: 1 } })
+    expect(row.step).toBe("resend")
+    expect((await accountView()).login).toMatchObject({
+      state: "code",
+      sent: "Код отправлен в чат «Telegram».",
+      resend: true,
     })
   })
 
@@ -66,6 +101,8 @@ describe("MTProto login in the panel", () => {
 
   it.each([
     [{ step: "phone", value: "12" }, /телефон/i],
+    [{ step: "phone", value: "79990001122" }, /телефон/i], // no "+": the country code is a guess
+    [{ step: "phone", value: "+7 999 abc" }, /телефон/i],
     [{ step: "code", value: "" }, /код/i],
     [{ step: "password", value: "" }, /пароль/i],
   ])("reports invalid input %o", async (bad, message) => {

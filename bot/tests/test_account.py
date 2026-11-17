@@ -15,6 +15,7 @@ from bot.settings import decrypt, encrypt
 SECRET = "bot-test-secret"
 USER = {"id": 42, "first_name": "Анна", "username": "anna"}
 PAYLOAD = {"auth_key": "ab" * 256, "dc": 2, "user": USER}
+APP_CODE = {"type": {"_": "auth.sentCodeTypeApp", "length": 5}, "next_type": {"_": "auth.codeTypeSms"}, "timeout": 60}
 
 
 class FakeLogin:
@@ -25,10 +26,18 @@ class FakeLogin:
         self.calls = []
         self.closed = False
         self.errors = {}
+        self.sent = [APP_CODE]  # what auth.sendCode, then each auth.resendCode answers
 
     async def send_code(self, phone):
         self.calls.append(("send_code", phone))
-        return "hash-1"
+        return {"phone_code_hash": "hash-1", **self.sent[0]}
+
+    async def resend_code(self, phone, code_hash):
+        self.calls.append(("resend_code", phone, code_hash))
+        if "resend" in self.errors:
+            raise rpc_error(400, self.errors["resend"])
+        n = sum(c[0] == "resend_code" for c in self.calls)
+        return {"phone_code_hash": f"hash-{n + 1}", **self.sent[n]}
 
     async def sign_in(self, phone, code_hash, code):
         self.calls.append(("sign_in", phone, code_hash, code))
@@ -306,6 +315,7 @@ class FakeApp:
     def __init__(self, answers):
         self.answers, self.calls = answers, []
         self.mt = type("Mt", (), {"auth_key": b"\x01" * 4, "server_salt": b"\x02" * 2})()
+        self.mt._parse_rpc_result = lambda result: {"ok": True, "phone_code_hash": "h", "parsed_by": "goygram"}
 
     async def mt_req(self, act, **kw):
         self.calls.append((act, kw))
@@ -331,7 +341,7 @@ async def test_the_step_stays_pending_until_the_bot_answers(adb, account, logins
 
     async def slow_send_code(phone):
         seen.append(await login_row(adb))  # what the panel sees while Telegram is being asked
-        return "hash-1"
+        return {"phone_code_hash": "hash-1"}
 
     async def connect(*a):
         return await _with(FakeLogin(*a), send_code=slow_send_code)
@@ -411,3 +421,102 @@ async def test_vaults_left_by_a_killed_process_are_removed(monkeypatch, tmp_path
     (stale / "members.vault").write_text("key")  # docker stop: SIGTERM skips the cleanup in run()
     client = await open_client(2040, "hash", PAYLOAD)
     assert not stale.exists() and client.vault.parent.parent == tmp_path
+
+
+def sending(account, logins, *sent):
+    """The next login answers auth.sendCode, then each auth.resendCode, with these."""
+    async def connect(*a):
+        logins.append(await _with(FakeLogin(*a), sent=list(sent)))
+        return logins[-1]
+
+    account.connect = connect
+
+
+async def delivery(db):
+    return tuple(await db.fetchrow("SELECT state, sent, resend FROM mtproto_login"))
+
+
+@pytest.mark.parametrize(
+    "sent, text, resend",
+    [
+        (APP_CODE, ("Код для +7••••••1122 отправлен в чат «Telegram» в приложении, где вы уже вошли (5 цифр). "
+         "Другой способ (SMS) — кнопкой ниже, Telegram разрешит его через 60 с."), True),
+        ({"type": {"_": "auth.sentCodeTypeSms", "length": 5}}, "Код для +7••••••1122 отправлен по SMS (5 цифр).", False),
+        ({"type": {"_": "auth.sentCodeTypeEmailCode", "email_pattern": "a***@mail.ru", "length": 6}},
+         "Код для +7••••••1122 отправлен на почту a***@mail.ru (6 цифр).", False),
+        ({"type": {"_": "auth.sentCodeTypeSetUpEmailRequired"}, "next_type": {"_": "auth.codeTypeSms"}},
+         ("Telegram выбрал способ доставки кода, который этот вход не поддерживает (auth.sentCodeTypeSetUpEmailRequired). "
+         "Другой способ (SMS) — кнопкой ниже."), True),
+        ({"type": {"_": "auth.sentCodeTypeFirebaseSms", "length": 5}},
+         ("Telegram выбрал способ доставки кода, который этот вход не поддерживает (auth.sentCodeTypeFirebaseSms). "
+         "Других способов Telegram не предложил: начните заново позже или войдите с другого номера."), False),
+        ({}, "Telegram не сообщил, куда отправил код для +7••••••1122.", False),
+    ],
+)
+async def test_the_panel_and_the_log_say_where_the_code_went(adb, account, logins, caplog, sent, text, resend):
+    caplog.set_level("INFO", logger="bot.account")
+    sending(account, logins, sent)
+    await send_code(adb, account)
+    assert await delivery(adb) == ("code", text, resend)
+    kind, nxt = (sent.get("type") or {}).get("_"), (sent.get("next_type") or {}).get("_")
+    assert f"auth.sentCode type={kind} next_type={nxt} timeout={sent.get('timeout')}" in caplog.text
+    assert "1122" not in caplog.text and "9990001122" not in caplog.text
+
+
+async def test_resend_asks_telegram_for_the_next_way_and_signs_in_with_the_new_hash(adb, account, logins):
+    sending(account, logins, APP_CODE, {"type": {"_": "auth.sentCodeTypeSms", "length": 5}})
+    await send_code(adb, account)
+    await ask(adb, "resend", "")
+    await account.tick()
+    assert logins[0].calls[-1] == ("resend_code", "+79990001122", "hash-1")
+    assert await delivery(adb) == ("code", "Код для +7••••••1122 отправлен по SMS (5 цифр).", False)
+    await ask(adb, "code", "12345")
+    await account.tick()
+    assert logins[0].calls[-1] == ("sign_in", "+79990001122", "hash-2", "12345")
+    assert await delivery(adb) == (None, None, False)
+
+
+async def test_no_other_way_to_send_the_code_keeps_the_code_step(adb, account, logins):
+    await send_code(adb, account)
+    logins[0].errors["resend"] = "SEND_CODE_UNAVAILABLE"
+    await ask(adb, "resend", "")
+    await account.tick()
+    row = await login_row(adb)
+    assert (row["state"], row["error"]) == ("code", "Других способов отправить код нет.")
+    assert (await delivery(adb))[1].startswith("Код для +7")  # the last delivery stays on screen
+    assert not logins[0].closed
+
+
+async def test_a_wrong_code_keeps_the_delivery_on_screen(adb, account, logins):
+    await send_code(adb, account)
+    logins[0].errors["111"] = "PHONE_CODE_INVALID"
+    await ask(adb, "code", "111")
+    await account.tick()
+    assert (await delivery(adb))[1].startswith("Код для +7")
+
+
+async def test_every_step_the_bot_takes_is_logged_without_its_input(adb, account, caplog):
+    caplog.set_level("INFO", logger="bot.account")
+    await send_code(adb, account)
+    assert "login step phone taken" in caplog.text and "9990001122" not in caplog.text
+
+
+async def test_goygram_login_keeps_the_whole_sent_code(monkeypatch):
+    # GoyGram's transport reduces auth.sentCode to its hash; the delivery type must survive for the panel.
+    full = {"_": "auth.sentCode", "phone_code_hash": "h", **APP_CODE}
+    decoded = {b"sent": full, b"other": {"_": "auth.authorization"}}
+    monkeypatch.setattr(bot.account.tl, "deserialize_constructor", decoded.get)
+    app = FakeApp({})
+    GoyGramLogin(app)
+    assert app.mt._parse_rpc_result(b"sent") == {"ok": True, "phone_code_hash": "h", "sent_code": full}
+    assert app.mt._parse_rpc_result(b"other")["parsed_by"] == "goygram"
+
+
+async def test_goygram_login_sends_and_resends_the_code():
+    sent = {"_": "auth.sentCode", "phone_code_hash": "h2", **APP_CODE}
+    app = FakeApp({"auth_resend_code": {"ok": True, "phone_code_hash": "h2", "sent_code": sent},
+                   "auth_send_code": {"ok": True, "phone_code_hash": "h1"}})
+    login = GoyGramLogin(app)
+    assert await login.send_code("+7999") == {"phone_code_hash": "h1"}  # no decoded sentCode: the hash alone
+    assert await login.resend_code("+7999", "h1") == sent
+    assert app.calls[1] == ("auth_resend_code", {"retry": 0, "phone_number": "+7999", "phone_code_hash": "h1"})

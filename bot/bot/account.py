@@ -5,12 +5,15 @@ import json
 import logging
 import shutil
 import tempfile
+from collections import defaultdict
 from collections.abc import AsyncIterator, Awaitable, Callable
+from contextlib import suppress
 from pathlib import Path
 from typing import Any
 
 import asyncpg
 from goygram import GoyGram
+from goygram import ext as tl
 from goygram.errors import FloodWaitError, rpc_error
 from goygram.security import (
     _current_dc_id,
@@ -39,8 +42,9 @@ CLAIM = (
 
 
 # An error Telegram lets the user retry within the same login; any other starts the login over.
-RETRY = {"code": "PHONE_CODE_INVALID", "password": "PASSWORD_HASH_INVALID"}
+RETRY = {"code": "PHONE_CODE_INVALID", "password": "PASSWORD_HASH_INVALID", "resend": "SEND_CODE_UNAVAILABLE"}
 REASONS = {
+    "SEND_CODE_UNAVAILABLE": "Других способов отправить код нет.",
     "PHONE_CODE_INVALID": "Неверный код.",
     "PASSWORD_HASH_INVALID": "Неверный пароль.",
     "PHONE_CODE_EXPIRED": "Код просрочен, запросите новый.",
@@ -48,6 +52,46 @@ REASONS = {
     "PHONE_NUMBER_BANNED": "Номер заблокирован в Telegram.",
     "API_ID_INVALID": "Неверные API ID или API HASH: проверьте их на my.telegram.org.",
 }
+
+
+# auth.sentCode.type → how the code reaches the user; fields in {} come from the type itself.
+DELIVERY = {
+    "auth.sentCodeTypeApp": "отправлен в чат «Telegram» в приложении, где вы уже вошли",
+    "auth.sentCodeTypeSms": "отправлен по SMS",
+    "auth.sentCodeTypeSmsWord": "отправлен по SMS",
+    "auth.sentCodeTypeSmsPhrase": "отправлен по SMS",
+    "auth.sentCodeTypeCall": "придёт голосовым звонком",
+    "auth.sentCodeTypeMissedCall": "придёт пропущенным звонком: код — последние цифры номера, начинающегося с {prefix}",
+    "auth.sentCodeTypeEmailCode": "отправлен на почту {email_pattern}",
+    "auth.sentCodeTypeFragmentSms": "отправлен через Fragment: {url}",
+}
+NEXT = {
+    "auth.codeTypeSms": "SMS",
+    "auth.codeTypeCall": "звонок",
+    "auth.codeTypeFlashCall": "flash-звонок",
+    "auth.codeTypeMissedCall": "пропущенный звонок",
+    "auth.codeTypeFragmentSms": "Fragment",
+}
+
+
+def delivery(sent: dict[str, Any], phone: str) -> tuple[str, bool]:
+    """The panel's note on an auth.sentCode, and whether auth.resendCode has another way to offer."""
+    kind, nxt, timeout = sent.get("type") or {}, (sent.get("next_type") or {}).get("_"), sent.get("timeout")
+    log.info("auth.sentCode type=%s next_type=%s timeout=%s", kind.get("_"), nxt, timeout)
+    masked = phone[:2] + "•" * (len(phone) - 6) + phone[-4:]
+    if not kind:
+        text = f"Telegram не сообщил, куда отправил код для {masked}."
+    elif how := DELIVERY.get(kind["_"]):
+        text = f"Код для {masked} {how.format_map(defaultdict(lambda: "?", kind))}" + (f" ({kind['length']} цифр)." if kind.get("length") else ".")
+    else:  # FirebaseSms, SetUpEmailRequired, FlashCall, …: need an official app
+        text = f"Telegram выбрал способ доставки кода, который этот вход не поддерживает ({kind['_']})."
+        if not nxt:
+            text += " Других способов Telegram не предложил: начните заново позже или войдите с другого номера."
+    if nxt:
+        text += f" Другой способ ({NEXT.get(nxt, nxt)}) — кнопкой ниже" + (
+            f", Telegram разрешит его через {timeout} с." if timeout else "."
+        )
+    return text, bool(nxt)
 
 
 def reason(e: Exception) -> str:
@@ -69,6 +113,7 @@ class Account:
         self.db, self.secret, self.connect, self.open_client = db, secret, connect, open_client
         self.login: Any = None  # the client mid-login, between the phone and the last step
         self.phone = self.code_hash = ""
+        self.sent: tuple[str | None, bool] = (None, False)  # delivery() of the last code, for the panel
         self.client: Any = None
         self._task: asyncio.Task[None] | None = None
         self._session: str | None = None  # the stored ciphertext the client runs with
@@ -112,13 +157,14 @@ class Account:
             await asyncio.gather(task, return_exceptions=True)
 
     async def step(self, step: str, cipher: str) -> None:
+        log.info("login step %s taken", step)
         try:
             await self._step(step, decrypt(cipher, self.secret))
         except Exception as e:  # noqa: BLE001  any failure must reach the panel, not stop the loop
             if "SESSION_PASSWORD_NEEDED" in str(e):
                 return await self._report("password")
             if RETRY.get(step, "-") in str(e):
-                return await self._report(step, reason(e))
+                return await self._report("code" if step == "resend" else step, reason(e))
             log.warning("login step %s failed: %r", step, e)
             await self._drop()
             await self._report(None, reason(e))
@@ -130,14 +176,20 @@ class Account:
             await self._drop()
             s = await load_settings(self.db, self.secret)
             self.login = await self.connect(s.api_id, s.api_hash)  # type: ignore[arg-type]
-            self.phone, self.code_hash = value, await self.login.send_code(value)
-            await self._report("code")
+            self.phone = value
+            await self._code_sent(await self.login.send_code(value))
         elif self.login is None:
             await self._report(None, "Вход прерван, запросите код заново.")
+        elif step == "resend":
+            await self._code_sent(await self.login.resend_code(self.phone, self.code_hash))
         elif step == "code":
             await self._finish(await self.login.sign_in(self.phone, self.code_hash, value))
         elif step == "password":
             await self._finish(await self.login.check_password(value))
+
+    async def _code_sent(self, sent: dict[str, Any]) -> None:
+        self.code_hash, self.sent = sent["phone_code_hash"], delivery(sent, self.phone)
+        await self._report("code")
 
     async def _finish(self, session: dict[str, Any]) -> None:
         user = session["user"]
@@ -175,8 +227,11 @@ class Account:
             await login.close()
 
     async def _report(self, state: str | None, error: str | None = None) -> None:
+        sent, resend = self.sent if state == "code" else (None, False)
         await self.db.execute(
-            "UPDATE mtproto_login SET step = NULL, state = $1, error = $2, updated_at = now() WHERE id = 1", state, error
+            "UPDATE mtproto_login SET step = NULL, state = $1, error = $2, sent = $3, resend = $4, updated_at = now() "
+            "WHERE id = 1",
+            state, error, sent, resend,
         )
 
 
@@ -193,6 +248,18 @@ def _log_client_stop(task: "asyncio.Task[None]") -> None:
 class GoyGramLogin:
     def __init__(self, app: Any) -> None:
         self.app = app
+        parse = app.mt._parse_rpc_result
+
+        # GoyGram's transport reduces auth.sentCode to its hash; keep the delivery type for the panel.
+        def keep_sent_code(result: bytes) -> dict[str, Any]:
+            with suppress(Exception):
+                sent = tl.deserialize_constructor(result)
+                if isinstance(sent, dict) and str(sent.get("_", "")).startswith("auth.sentCode"):
+                    return {"ok": True, "phone_code_hash": sent.get("phone_code_hash"), "sent_code": sent}
+            result_: dict[str, Any] = parse(result)
+            return result_
+
+        app.mt._parse_rpc_result = keep_sent_code
 
     async def _call(self, act: str, **kw: Any) -> dict[str, Any]:
         # retry=0: surface FLOOD_WAIT to the panel instead of sleeping on it; DC migration is still handled.
@@ -201,12 +268,20 @@ class GoyGramLogin:
             raise rpc_error(400, err)
         return res
 
-    async def send_code(self, phone: str) -> str:
+    async def send_code(self, phone: str) -> dict[str, Any]:
+        # The same codeSettings as GoyGram's own login (_mt_auth_flow): no flash/missed calls, no Firebase.
         settings = _extension().serialize_constructor("codeSettings", {"flags": 0})
-        code_hash = _extract_phone_code_hash(await self._call("auth_send_code", phone_number=phone, settings=settings))
-        if not code_hash:
+        return self._sent(await self._call("auth_send_code", phone_number=phone, settings=settings))
+
+    async def resend_code(self, phone: str, code_hash: str) -> dict[str, Any]:
+        return self._sent(await self._call("auth_resend_code", phone_number=phone, phone_code_hash=code_hash))
+
+    @staticmethod
+    def _sent(res: dict[str, Any]) -> dict[str, Any]:
+        sent: dict[str, Any] = res.get("sent_code") or {"phone_code_hash": _extract_phone_code_hash(res)}
+        if not sent.get("phone_code_hash"):
             raise RuntimeError("auth.sendCode did not return phone_code_hash")
-        return str(code_hash)
+        return sent
 
     async def sign_in(self, phone: str, code_hash: str, code: str) -> dict[str, Any]:
         return self._session(

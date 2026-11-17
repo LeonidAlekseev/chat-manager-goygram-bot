@@ -68,12 +68,17 @@ const Step = z.discriminatedUnion("step", [
     step: z.literal("phone"),
     value: z
       .string()
-      .transform((v) => "+" + v.replace(/\D/g, ""))
+      // E.164; a Russian 8XXXXXXXXXX is the one local form with an unambiguous country code.
+      .transform((v) =>
+        v.replace(/[\s().-]/g, "").replace(/^8(\d{10})$/, "+7$1")
+      )
       .refine(
-        (v) => /^\+\d{8,15}$/.test(v),
+        (v) => /^\+[1-9]\d{7,14}$/.test(v),
         "Телефон в международном формате, например +79990001122."
       ),
   }),
+  // «Отправить код другим способом»: auth.resendCode.
+  z.object({ step: z.literal("resend"), value: z.literal("") }),
   z.object({
     step: z.literal("code"),
     value: z.string().trim().min(1, "Введите код из Telegram."),
