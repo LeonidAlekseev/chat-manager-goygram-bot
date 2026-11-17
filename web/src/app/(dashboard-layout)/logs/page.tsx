@@ -10,6 +10,7 @@ import { db } from "@/lib/db"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Select } from "@/components/ui/select"
 
 export const metadata: Metadata = { title: "Журнал" }
 
@@ -59,32 +60,22 @@ export default async function LogsPage({
         </CardHeader>
         <CardContent className="grid gap-4">
           <form className="flex flex-wrap gap-2">
-            <select
-              name="chat"
-              defaultValue={chatId ?? ""}
-              aria-label="Чат"
-              className="h-9 rounded-md border bg-background px-2 text-sm"
-            >
+            <Select name="chat" defaultValue={chatId ?? ""} aria-label="Чат">
               <option value="">Все чаты</option>
               {chats.map((c) => (
                 <option key={c.id} value={c.id}>
                   {c.title}
                 </option>
               ))}
-            </select>
-            <select
-              name="status"
-              defaultValue={st ?? ""}
-              aria-label="Статус"
-              className="h-9 rounded-md border bg-background px-2 text-sm"
-            >
+            </Select>
+            <Select name="status" defaultValue={st ?? ""} aria-label="Статус">
               <option value="">Все статусы</option>
               {Object.entries(STATUS).map(([v, label]) => (
                 <option key={v} value={v}>
                   {label}
                 </option>
               ))}
-            </select>
+            </Select>
             <Button type="submit" variant="outline">
               Показать
             </Button>

@@ -5,6 +5,7 @@ import { useActionState } from "react"
 import type { ActionState } from "./actions"
 
 import { Button } from "@/components/ui/button"
+import { Select } from "@/components/ui/select"
 import { sendNow } from "./actions"
 
 export function SendForm({
@@ -20,19 +21,14 @@ export function SendForm({
   )
   return (
     <form action={action} className="grid gap-3">
-      <select
-        name="templateId"
-        defaultValue=""
-        aria-label="Шаблон"
-        className="h-9 rounded-md border bg-background px-2 text-sm"
-      >
+      <Select name="templateId" defaultValue="" aria-label="Шаблон">
         <option value="">— без шаблона —</option>
         {templates.map((t) => (
           <option key={t.id} value={t.id}>
             {t.name}
           </option>
         ))}
-      </select>
+      </Select>
       <textarea
         name="text"
         placeholder="…или произвольный текст (до 4096), если шаблон не выбран"
