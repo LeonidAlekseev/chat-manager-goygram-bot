@@ -37,7 +37,7 @@ test("login → create template → create schedule → bind chat", async ({
   await page.goto("/schedules")
   const sch = page.locator("form").first()
   await sch.getByPlaceholder("Название").fill(name)
-  await sch.getByRole("button", { name: "Добавить пункт" }).click()
+  // a new schedule starts with one item row
   await sch.getByLabel("Шаблон").selectOption({ label: name })
   await sch.getByRole("button", { name: "Создать" }).click()
 

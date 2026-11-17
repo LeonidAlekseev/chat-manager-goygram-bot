@@ -54,8 +54,11 @@ export default async function SchedulesPage() {
               <summary className="cursor-pointer">
                 {s.name}{" "}
                 <span className="text-sm text-muted-foreground">
-                  · пунктов: {s.items.length} · чатов:{" "}
-                  {chats.filter((c) => c.scheduleId === s.id).length}
+                  ·{" "}
+                  {s.items.length
+                    ? `пунктов: ${s.items.length}`
+                    : "нет пунктов"}{" "}
+                  · чатов: {chats.filter((c) => c.scheduleId === s.id).length}
                 </span>
               </summary>
               <div className="mt-3 grid gap-4">

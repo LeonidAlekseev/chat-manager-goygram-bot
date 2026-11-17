@@ -1,6 +1,7 @@
 "use client"
 
 import { useActionState, useRef, useState } from "react"
+import Link from "next/link"
 
 import type { ActionState } from "./actions"
 import type { ItemView } from "./item-view"
@@ -27,6 +28,7 @@ const PERIODS = [
 ] as const
 
 const selectCls = "h-9 rounded-md border bg-background px-2 text-sm"
+const labelCls = "grid gap-1 text-sm font-medium"
 
 export function ScheduleForm({
   schedule,
@@ -42,31 +44,37 @@ export function ScheduleForm({
   const formRef = useRef<HTMLFormElement>(null)
   const scopeRef = useRef<HTMLInputElement>(null)
   const [open, setOpen] = useState(false)
+  const newRow = (key: number): ItemView & { key: number } => ({
+    key,
+    templateId: templates[0]?.id ?? 0,
+    time: "08:00",
+    startDate: new Date().toLocaleDateString("sv"), // YYYY-MM-DD in local time
+    period: "day",
+  })
   const [state, action, pending] = useActionState<ActionState, FormData>(
     async (prev, fd) => {
       const r = await saveSchedule(prev, fd)
       setOpen(false)
-      if (!schedule && !r.error) setRows([]) // new-schedule form starts empty again
+      if (!schedule && !r.error) {
+        // new-schedule form starts with one empty item again (none without templates)
+        setRows(templates.length ? [newRow(nextKey)] : [])
+        setNextKey(nextKey + 1)
+      }
       return r
     },
     null
   )
   const [rows, setRows] = useState(() =>
-    (schedule?.items ?? []).map((item, key) => ({ ...item, key }))
+    schedule
+      ? schedule.items.map((item, key) => ({ ...item, key }))
+      : templates.length
+        ? [newRow(0)]
+        : []
   )
   const [nextKey, setNextKey] = useState(rows.length)
 
   function addRow() {
-    setRows([
-      ...rows,
-      {
-        key: nextKey,
-        templateId: templates[0]?.id ?? 0,
-        time: "08:00",
-        startDate: new Date().toLocaleDateString("sv"), // YYYY-MM-DD in local time
-        period: "day",
-      },
-    ])
+    setRows([...rows, newRow(nextKey)])
     setNextKey(nextKey + 1)
   }
 
@@ -83,57 +91,75 @@ export function ScheduleForm({
         maxLength={255}
       />
       {rows.map((r) => (
-        <div key={r.key} className="flex flex-wrap items-center gap-2">
+        <div
+          key={r.key}
+          className="grid gap-2 sm:grid-cols-[1fr_auto_auto_1fr_auto] sm:items-end"
+        >
           <input type="hidden" name="itemId" value={r.id ?? ""} />
-          <select
-            name="templateId"
-            defaultValue={r.templateId}
-            aria-label="Шаблон"
-            className={selectCls}
-          >
-            {templates.map((t) => (
-              <option key={t.id} value={t.id}>
-                {t.name}
-              </option>
-            ))}
-          </select>
-          <Input
-            type="time"
-            name="time"
-            defaultValue={r.time}
-            aria-label="Время"
-            required
-            className="w-28"
-          />
-          <Input
-            type="date"
-            name="startDate"
-            defaultValue={r.startDate}
-            aria-label="Дата старта"
-            required
-            className="w-40"
-          />
-          <select
-            name="period"
-            defaultValue={r.period}
-            aria-label="Период"
-            className={selectCls}
-          >
-            {PERIODS.map(([v, label]) => (
-              <option key={v} value={v}>
-                {label}
-              </option>
-            ))}
-          </select>
+          <label className={labelCls}>
+            Шаблон
+            <select
+              name="templateId"
+              defaultValue={r.templateId}
+              className={selectCls}
+            >
+              {templates.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className={labelCls}>
+            Время
+            <Input
+              type="time"
+              name="time"
+              defaultValue={r.time}
+              required
+              className="sm:w-28"
+            />
+          </label>
+          <label className={labelCls}>
+            Дата старта
+            <Input
+              type="date"
+              name="startDate"
+              defaultValue={r.startDate}
+              required
+              className="sm:w-40"
+            />
+          </label>
+          <label className={labelCls}>
+            Периодичность
+            <select name="period" defaultValue={r.period} className={selectCls}>
+              {PERIODS.map(([v, label]) => (
+                <option key={v} value={v}>
+                  {label}
+                </option>
+              ))}
+            </select>
+          </label>
           <Button
             type="button"
             variant="ghost"
+            className="justify-self-start"
             onClick={() => setRows(rows.filter((x) => x.key !== r.key))}
           >
             Убрать
           </Button>
         </div>
       ))}
+      {templates.length === 0 && (
+        <p className="text-sm text-muted-foreground">
+          Сначала создайте шаблон: перешлите сообщение или опрос боту или
+          создайте его на странице{" "}
+          <Link href="/templates" className="underline">
+            «Шаблоны»
+          </Link>
+          .
+        </p>
+      )}
       <div className="flex flex-wrap items-center gap-2">
         <Button
           type="button"
@@ -188,6 +214,9 @@ export function ScheduleForm({
           </Button>
         )}
       </div>
+      <p className="text-sm text-muted-foreground">
+        Пункт — какой шаблон, во сколько и как часто отправлять.
+      </p>
       {state?.error && (
         <p className="text-sm text-destructive">{state.error}</p>
       )}
