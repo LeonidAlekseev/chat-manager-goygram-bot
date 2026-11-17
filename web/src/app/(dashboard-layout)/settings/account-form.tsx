@@ -108,6 +108,16 @@ export function AccountForm({
             title="QR-код для входа в Telegram"
           />
         </div>
+        {/* Same token as the QR: for a panel opened on the phone itself. */}
+        <div className="grid w-fit gap-2">
+          <Button asChild variant="outline">
+            <a href={login.qr}>Открыть в Telegram</a>
+          </Button>
+          <p className="text-sm text-muted-foreground">
+            Если панель открыта на телефоне с Telegram — нажмите и подтвердите
+            вход.
+          </p>
+        </div>
         <p className="text-sm text-muted-foreground">
           Код обновляется сам. Если включён пароль двухэтапной проверки, после
           сканирования здесь появится поле для него.
