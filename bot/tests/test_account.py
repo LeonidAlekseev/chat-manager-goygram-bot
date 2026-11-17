@@ -331,6 +331,7 @@ class FakeApp:
         self.answers, self.calls = answers, []
         self.mt = type("Mt", (), {"auth_key": b"\x01" * 4, "server_salt": b"\x02" * 2})()
         self.mt._parse_rpc_result = lambda result: {"ok": True, "phone_code_hash": "h", "parsed_by": "goygram"}
+        self.mt.qr_update_ev = asyncio.Event()
 
     async def mt_req(self, act, **kw):
         self.calls.append((act, kw))
@@ -650,9 +651,35 @@ async def test_goygram_qr_login_imports_the_token_on_the_dc_it_migrates_to(monke
     assert switched == [4] and app.calls[1][0] == "auth_import_login_token" and app.calls[1][1]["token"] == b"t"
 
 
+async def test_goygram_qr_login_on_another_dc_asks_for_the_password(monkeypatch):
+    app = FakeApp({
+        "auth_export_login_token": {"ok": True, "type": "loginTokenMigrateTo", "dc_id": 4, "token": b"t"},
+        "auth_import_login_token": {"error_message": "SESSION_PASSWORD_NEEDED"},
+        "auth_check_password": {"user": USER},
+    })
+    switched = []
+
+    async def switch_dc(app_, dc):
+        switched.append(dc)
+
+    monkeypatch.setattr(bot.account, "_switch_dc", switch_dc)
+    login = GoyGramLogin(app)
+    with pytest.raises(Exception, match="SESSION_PASSWORD_NEEDED"):
+        await login.qr_login()
+    assert switched == [4]
+    assert (await login.check_password("secret"))["user"] == USER  # on the DC it moved to
+
+
+async def test_goygram_qr_login_forgets_a_scan_of_an_older_code():
+    app = FakeApp({"auth_export_login_token": {"ok": True, "type": "loginToken", "expires": 1, "token": b"t"}})
+    app.mt.qr_update_ev.set()
+    login = GoyGramLogin(app)
+    await login.qr_login()
+    assert not login.scanned()
+
+
 async def test_goygram_qr_login_sees_the_scan():
     app = FakeApp({})
-    app.mt.qr_update_ev = asyncio.Event()
     login = GoyGramLogin(app)
     assert not login.scanned()
     app.mt.qr_update_ev.set()
@@ -667,3 +694,20 @@ async def test_clients_introduce_themselves_to_telegram(monkeypatch, tmp_path):
     for kw in (await bot.account.connect(2040, "hash"), (await open_client(2040, "hash", PAYLOAD)).kw):
         assert kw["device_model"] == "Chat Manager" and kw["lang_code"] == kw["system_lang_code"] == "ru"
         assert kw["app_version"] and kw["system_version"] != "Unknown"
+
+
+async def test_start_over_in_the_panel_stops_the_qr_login(adb, account, logins, no_qr_gap):
+    await ask(adb, "qr", "")
+    account.connect = _connect_with(logins, qr=[QR, PAYLOAD])
+    await account.tick()
+    await adb.execute("DELETE FROM mtproto_login")  # «Начать заново»
+    logins[0].scan = True
+    await account.tick()
+    assert logins[0].calls == [("qr",)] and logins[0].closed
+    assert await adb.fetchval("SELECT api_session FROM settings") is None
+
+
+async def test_a_qr_code_left_by_a_restarted_bot_is_withdrawn(adb, account):
+    await adb.execute("INSERT INTO mtproto_login (id, state, qr) VALUES (1, 'qr', 'tg://login?token=OLD')")
+    await account.tick()
+    assert await qr_row(adb) == {"step": None, "state": None, "error": "Вход прерван, начните заново.", "qr": None}

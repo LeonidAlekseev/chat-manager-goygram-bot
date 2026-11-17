@@ -53,7 +53,9 @@ QR_GAP = 10
 # initConnection: a client calling itself "Unknown" 1.0 is a reason for Telegram not to deliver login codes (#36).
 CLIENT: dict[str, Any] = {
     "device_model": "Chat Manager",
-    "app_version": "0.1.0",  # bot/pyproject.toml version; the image does not install the project's metadata
+    # shortcut: kept in sync with bot/pyproject.toml by hand (the image skips the project's metadata, so no
+    # importlib.metadata); switch to importlib.metadata once releases install the project.
+    "app_version": "0.1.0",
     "system_version": f"{platform.system()} {platform.release()}",
     "system_lang_code": "ru",
     "lang_code": "ru",
@@ -157,6 +159,11 @@ class Account:
         await self.db.execute("UPDATE settings SET bot_seen_at = now() WHERE id = 1")
         if row := await self.db.fetchrow(CLAIM):
             await self.step(row["step"], row["input"])
+        shown = await self.db.fetchval("SELECT state = 'qr' FROM mtproto_login WHERE id = 1")
+        if self.qr and not shown:  # «Начать заново»: a later scan must not log in
+            await self._drop()
+        elif shown and not self.qr:  # the bot restarted: nothing renews that code any more
+            await self._report(None, "Вход прерван, начните заново.")
         # A scan (updateLoginToken) or an expiring token: auth.exportLoginToken again for the session or a new code.
         # The gap goes first: scanned() consumes the update, which must wait for the next allowed renewal.
         if (
@@ -272,6 +279,7 @@ class Account:
         await self._report(None, error)
 
     async def _drop(self) -> None:
+        self.qr, self.qr_until = {}, 0.0
         if self.login is not None:
             login, self.login = self.login, None
             await login.close()
@@ -347,6 +355,7 @@ class GoyGramLogin:
         """A new QR code ({url, expires}) or, once it is scanned, the session; SESSION_PASSWORD_NEEDED on 2FA.
 
         The same calls as GoyGram's own QR login (goygram.security._mt_qr_auth_flow)."""
+        self.app.mt.qr_update_ev.clear()  # a scan of an older code must not count for this one
         res = await self._call("auth_export_login_token", except_ids=[])
         if res.get("type") == "loginTokenMigrateTo":  # the account lives on another DC: log in there
             dc = res["dc_id"]
