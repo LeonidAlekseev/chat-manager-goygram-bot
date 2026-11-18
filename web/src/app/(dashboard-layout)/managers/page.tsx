@@ -16,7 +16,7 @@ export const metadata: Metadata = { title: "Менеджеры" }
 
 export default async function ManagersPage() {
   const session = await auth()
-  if (!session) redirect("/login")
+  if (!session?.user) redirect("/login")
   if (session.user.role !== "superadmin") redirect("/chats")
   const managers = await db.manager.findMany({
     where: { role: "manager" },

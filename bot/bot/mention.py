@@ -1,5 +1,10 @@
+import asyncio
 import html
+import logging
+from contextlib import suppress
 from typing import Any
+
+log = logging.getLogger(__name__)
 
 DEFAULT_TEXT = "Сообщение для всех"
 MAX_LEN = 4096  # Bot API limit, counted after entity parsing: a hidden link is 1 char
@@ -38,7 +43,9 @@ async def fetch_user_ids(user: Any, chat_id: int) -> list[int]:
 
 
 async def mention_all(bot: Any, user: Any, chat_id: int, text: str | None, reply_to: int | None = None) -> None:
-    ids = await fetch_user_ids(user, chat_id)
+    from bot.sender import fetch_members  # bot.sender imports this module
+
+    ids = await fetch_members(user, chat_id)
     extra = {"reply_parameters": {"message_id": reply_to}} if reply_to else {}
     for part in build_mention_messages(text or DEFAULT_TEXT, ids):
         await bot.bot_req("sendMessage", chat_id=chat_id, text=part, parse_mode="HTML", **extra)
@@ -48,20 +55,42 @@ async def _say(bot: Any, chat_id: int, text: str) -> None:
     await bot.bot_req("sendMessage", chat_id=chat_id, text=html.escape(text, quote=False))
 
 
-async def handle_all(bot: Any, user: Any, message: dict[str, Any]) -> None:
-    """`/all [text]` in a group: admins only; a reply makes the mentions answer that message."""
+# /all running per chat: the update handler only starts one, so a slow member list holds up no other update.
+RUNNING: dict[int, asyncio.Task[None]] = {}
+
+
+async def handle_all(bot: Any, user: Any, message: dict[str, Any]) -> asyncio.Task[None] | None:
+    """`/all [text]` in a group: admins only; a reply makes the mentions answer that message.
+
+    Returns the started task, or None for other messages and while this chat's /all is still running."""
     parts = (message.get("text") or "").split(maxsplit=1)
     if not parts or parts[0][1:].split("@")[0].lower() != "all" or not parts[0].startswith("/"):
-        return
+        return None
     chat_id = message["chat"]["id"]
-    if message["chat"]["type"] == "private":
-        return
-    member = await bot.bot_req("getChatMember", chat_id=chat_id, user_id=message["from"]["id"])
-    # shortcut: bot_req may or may not unwrap "result"; unverified live
-    if member.get("result", member).get("status") not in ADMIN_STATUSES:
-        return await _say(bot, chat_id, "Команда доступна только администраторам чата.")
-    reply = (message.get("reply_to_message") or {}).get("message_id")
+    if message["chat"]["type"] == "private" or chat_id in RUNNING:
+        return None
+    task = RUNNING[chat_id] = asyncio.create_task(_all(bot, user, message, parts))
+    task.add_done_callback(lambda _: RUNNING.pop(chat_id, None))
+    return task
+
+
+async def _all(bot: Any, user: Any, message: dict[str, Any], parts: list[str]) -> None:
+    chat_id = message["chat"]["id"]
     try:
+        member = await bot.bot_req("getChatMember", chat_id=chat_id, user_id=message["from"]["id"])
+        # shortcut: bot_req may or may not unwrap "result"; unverified live
+        if member.get("result", member).get("status") not in ADMIN_STATUSES:
+            return await _say(bot, chat_id, "Команда доступна только администраторам чата.")
+        reply = (message.get("reply_to_message") or {}).get("message_id")
         await mention_all(bot, user, chat_id, parts[1] if len(parts) > 1 else None, reply)
-    except MentionError as e:
-        await _say(bot, chat_id, str(e))
+    except Exception as e:
+        if isinstance(e, MentionError):
+            why = str(e)
+        elif isinstance(e, TimeoutError):
+            why = "Telegram не ответил вовремя, попробуйте позже."
+        else:
+            log.exception("/all failed in %s", chat_id)
+            # The type only: a Bot API error's text can carry the bot token in its URL.
+            why = f"Не удалось получить список участников или отправить упоминания ({type(e).__name__})."
+        with suppress(Exception):  # e.g. the bot may not write here at all
+            await _say(bot, chat_id, why)

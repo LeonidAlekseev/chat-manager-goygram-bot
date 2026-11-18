@@ -82,6 +82,7 @@ class FakeClient:
 
     def __init__(self, api_id, api_hash, session):
         self.args = (api_id, api_hash, session)
+        self.members_error = self.run_error = None
         self.running = False
         self.ended = False
         self.end_error = None
@@ -94,11 +95,15 @@ class FakeClient:
     async def run(self):
         self.running = True
         try:
+            if self.run_error:
+                raise self.run_error
             await asyncio.Event().wait()
         finally:
             self.running = False
 
     async def iter_participants(self, chat_id):
+        if self.members_error:
+            raise self.members_error
         for uid in (1, 2):
             yield {"user_id": uid}
 
@@ -204,12 +209,11 @@ async def test_wrong_password_asks_for_it_again(adb, account, logins):
 @pytest.mark.parametrize(
     "rpc, error",
     [
-        ("PHONE_CODE_EXPIRED", "Код просрочен, запросите новый."),
         ("FLOOD_WAIT_120", "Telegram ограничил попытки входа: повторите через 120 с."),
         ("API_ID_INVALID", "Неверные API ID или API HASH: проверьте их на my.telegram.org."),
     ],
 )
-async def test_expired_code_or_flood_limit_starts_over(adb, account, logins, rpc, error):
+async def test_a_flood_limit_or_bad_api_data_starts_over(adb, account, logins, rpc, error):
     await send_code(adb, account)
     logins[0].errors["12345"] = rpc
     await ask(adb, "code", "12345")
@@ -711,3 +715,94 @@ async def test_a_qr_code_left_by_a_restarted_bot_is_withdrawn(adb, account):
     await adb.execute("INSERT INTO mtproto_login (id, state, qr) VALUES (1, 'qr', 'tg://login?token=OLD')")
     await account.tick()
     assert await qr_row(adb) == {"step": None, "state": None, "error": "Вход прерван, начните заново.", "qr": None}
+
+
+ENDED = "Сессия завершена в Telegram, войдите заново."
+
+
+async def account_state(db):
+    return (*await db.fetchrow("SELECT api_session, api_account FROM settings"), (await login_row(db))["error"])
+
+
+@pytest.mark.parametrize("rpc", ["AUTH_KEY_UNREGISTERED", "SESSION_REVOKED", "USER_DEACTIVATED"])
+async def test_a_session_ended_in_telegram_is_forgotten_and_explained(adb, account, clients, rpc):
+    await logged_in(adb, account)
+    clients[0].members_error = rpc_error(401, rpc)
+    with pytest.raises(MentionError, match=re.escape(NO_SESSION)):
+        await fetch_user_ids(account, -100)
+    assert await account_state(adb) == (None, None, ENDED)
+    assert account.client is None and not clients[0].running
+    await account.tick()
+    assert len(clients) == 1  # nothing to restart
+
+
+async def test_a_user_client_stopped_by_an_ended_session_is_forgotten(adb, account, clients):
+    real = account.open_client
+
+    async def failing(*a):
+        c = await real(*a)
+        c.run_error = rpc_error(401, "SESSION_REVOKED")
+        return c
+
+    account.open_client = failing
+    await logged_in(adb, account)
+    await account.tick()
+    assert await account_state(adb) == (None, None, ENDED)
+    with pytest.raises(MentionError):
+        await fetch_user_ids(account, -100)
+
+
+async def test_other_member_list_errors_keep_the_session(adb, account, clients):
+    await logged_in(adb, account)
+    clients[0].members_error = rpc_error(400, "CHANNEL_INVALID")
+    with pytest.raises(Exception, match="CHANNEL_INVALID"):
+        await fetch_user_ids(account, -100)
+    assert await adb.fetchval("SELECT api_account FROM settings") == "Анна (@anna)"
+    assert account.client is clients[0]
+
+
+async def test_an_undecryptable_session_is_reset_with_a_reason(adb, account, clients):
+    await adb.execute("UPDATE settings SET api_session = $1, api_account = 'Анна'", encrypt("{}", "old-secret"))
+    await account.tick()
+    session, name, error = await account_state(adb)
+    assert (session, name, clients) == (None, None, []) and "AUTH_SECRET" in error
+
+
+async def test_a_new_step_sent_while_the_bot_works_is_kept(adb, account, logins):
+    async def slow_send_code(phone):
+        await ask(adb, "qr", "")  # «Начать заново», then «Войти по QR-коду», before Telegram answered
+        return {"phone_code_hash": "hash-1"}
+
+    async def connect(*a):
+        return await _with(FakeLogin(*a), send_code=slow_send_code)
+
+    account.connect = connect
+    await ask(adb, "phone", "+79990001122")
+    await account.tick()
+    row = await login_row(adb)
+    assert row["step"] == "qr" and row["input"] is not None
+
+
+async def test_a_login_finished_after_start_over_stores_no_session(adb, account, logins):
+    await send_code(adb, account)
+    real = logins[0].sign_in
+
+    async def sign_in(*a):
+        await adb.execute("DELETE FROM mtproto_login")  # «Начать заново» while Telegram signs in
+        return await real(*a)
+
+    logins[0].sign_in = sign_in
+    await ask(adb, "code", "12345")
+    await account.tick()
+    assert await adb.fetchval("SELECT api_session FROM settings") is None and logins[0].closed
+
+
+async def test_an_expired_code_keeps_the_code_step_and_offers_a_new_one(adb, account, logins):
+    sending(account, logins, {"type": {"_": "auth.sentCodeTypeSms", "length": 5}})
+    await send_code(adb, account)
+    logins[0].errors["12345"] = "PHONE_CODE_EXPIRED"
+    await ask(adb, "code", "12345")
+    await account.tick()
+    row = await login_row(adb)
+    assert (row["state"], row["error"]) == ("code", "Код просрочен, запросите новый.")
+    assert (await delivery(adb))[2] is True and not logins[0].closed

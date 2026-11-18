@@ -14,7 +14,7 @@ export const dynamic = "force-dynamic"
 
 export default async function SettingsPage() {
   const session = await auth()
-  if (!session) redirect("/login")
+  if (!session?.user) redirect("/login")
   if (session.user.role !== "superadmin") redirect("/chats")
   const [current, account] = await Promise.all([settingsView(), accountView()])
 

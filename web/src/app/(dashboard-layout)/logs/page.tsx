@@ -31,7 +31,7 @@ export default async function LogsPage({
 }: {
   searchParams: Promise<{ chat?: string; status?: string }>
 }) {
-  if (!(await auth())) redirect("/login")
+  if (!(await auth())?.user) redirect("/login")
   const { chat, status } = await searchParams
   const chatId = Number(chat) || undefined
   const st = status && status in STATUS ? (status as SendStatus) : undefined
