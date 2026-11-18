@@ -68,7 +68,7 @@ services:
       AUTH_SECRET: ${AUTH_SECRET} # decrypts the token and API data set in the panel (Настройки)
       PANEL_URL: ${PANEL_URL:-}
       TIMEZONE_NAME: ${TIMEZONE_NAME:-Europe/Moscow}
-    tmpfs: [/tmp] # MTProto vault (members-*/) is never written to disk
+    tmpfs: ["/tmp:size=64m"] # MTProto vault, goygram offsets and caches: never on disk
 
 volumes:
   db-data:
