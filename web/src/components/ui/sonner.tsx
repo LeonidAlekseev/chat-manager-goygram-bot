@@ -4,18 +4,12 @@ import { Toaster as Sonner } from "sonner"
 
 import type { ComponentProps } from "react"
 
-import { useSettings } from "@/hooks/use-settings"
-
 type ToasterProps = ComponentProps<typeof Sonner>
 
 export function Toaster({ ...props }: ToasterProps) {
-  const { settings } = useSettings()
-
-  const mode = settings.mode
-
   return (
     <Sonner
-      theme={mode as ToasterProps["theme"]}
+      theme="light"
       className="toaster group"
       toastOptions={{
         classNames: {

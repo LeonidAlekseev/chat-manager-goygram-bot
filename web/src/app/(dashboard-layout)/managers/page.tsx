@@ -41,43 +41,45 @@ export default async function ManagersPage() {
           {managers.length === 0 ? (
             <p className="text-muted-foreground">Менеджеров пока нет.</p>
           ) : (
-            <table className="w-full text-sm">
-              <tbody>
-                {managers.map((m) => (
-                  <tr key={m.id} className="border-t">
-                    <td className="py-2 pe-4 font-mono">{m.login}</td>
-                    <td className="py-2 pe-4">
-                      <EditManagerForm
-                        id={m.id}
-                        login={m.login}
-                        name={m.name}
-                      />
-                    </td>
-                    <td className="py-2">
-                      <form
-                        action={setManagerActive}
-                        className="flex items-center gap-2"
-                      >
-                        <input type="hidden" name="id" value={m.id} />
-                        <input
-                          type="hidden"
-                          name="active"
-                          value={String(!m.active)}
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <tbody>
+                  {managers.map((m) => (
+                    <tr key={m.id} className="border-t">
+                      <td className="py-2 pe-4 font-mono">{m.login}</td>
+                      <td className="py-2 pe-4">
+                        <EditManagerForm
+                          id={m.id}
+                          login={m.login}
+                          name={m.name}
                         />
-                        {m.active ? (
-                          <Badge>Активен</Badge>
-                        ) : (
-                          <Badge variant="secondary">Отключён</Badge>
-                        )}
-                        <Button type="submit" variant="outline">
-                          {m.active ? "Отключить" : "Включить"}
-                        </Button>
-                      </form>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                      </td>
+                      <td className="py-2">
+                        <form
+                          action={setManagerActive}
+                          className="flex items-center gap-2"
+                        >
+                          <input type="hidden" name="id" value={m.id} />
+                          <input
+                            type="hidden"
+                            name="active"
+                            value={String(!m.active)}
+                          />
+                          {m.active ? (
+                            <Badge>Активен</Badge>
+                          ) : (
+                            <Badge variant="secondary">Отключён</Badge>
+                          )}
+                          <Button type="submit" variant="outline">
+                            {m.active ? "Отключить" : "Включить"}
+                          </Button>
+                        </form>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
         </CardContent>
       </Card>

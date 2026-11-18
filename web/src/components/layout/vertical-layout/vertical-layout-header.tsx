@@ -2,7 +2,6 @@
 
 import { SidebarTrigger } from "@/components/ui/sidebar"
 import { FullscreenToggle } from "@/components/layout/full-screen-toggle"
-import { ModeDropdown } from "@/components/layout/mode-dropdown"
 import { UserDropdown } from "@/components/layout/user-dropdown"
 import { ToggleMobileSidebar } from "../toggle-mobile-sidebar"
 
@@ -14,7 +13,6 @@ export function VerticalLayoutHeader() {
         <div className="grow flex justify-end gap-2">
           <SidebarTrigger className="hidden lg:flex lg:me-auto" />
           <FullscreenToggle />
-          <ModeDropdown />
           <UserDropdown />
         </div>
       </div>

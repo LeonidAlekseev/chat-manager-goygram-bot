@@ -114,9 +114,8 @@ export function Sidebar() {
             alt=""
             height={24}
             width={24}
-            className="dark:invert"
           />
-          <span>Shadboard</span>
+          <span>OzonWaao</span>
         </Link>
         <CommandMenu buttonClassName="max-w-full" />
       </SidebarHeader>
