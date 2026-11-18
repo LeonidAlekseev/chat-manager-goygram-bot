@@ -4,4 +4,5 @@ WORKDIR /app
 COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-dev --no-install-project
 COPY bot ./bot
+USER nobody
 CMD ["/app/.venv/bin/python", "-m", "bot.main"]

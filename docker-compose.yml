@@ -1,7 +1,13 @@
+# Docker logs total <= 96 MB: 4 services x 3 files x 8 MB. Caddy logs to stdout only.
+x-log: &log
+  driver: json-file
+  options: { max-size: "8m", max-file: "3" }
+
 services:
   db:
-    image: postgres:17-alpine
+    image: postgres:17.12-alpine
     restart: unless-stopped
+    logging: *log
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
@@ -16,6 +22,7 @@ services:
   web:
     build: ./web
     restart: unless-stopped
+    logging: *log
     depends_on:
       db:
         condition: service_healthy
@@ -32,8 +39,9 @@ services:
       retries: 30
 
   caddy:
-    image: caddy:2.8-alpine
+    image: caddy:2.11.9-alpine
     restart: unless-stopped
+    logging: *log
     depends_on:
       web:
         condition: service_healthy
@@ -51,6 +59,7 @@ services:
   bot:
     build: ./bot
     restart: unless-stopped
+    logging: *log
     depends_on:
       web:
         condition: service_healthy # tables exist only after the panel's migrations
@@ -59,6 +68,7 @@ services:
       AUTH_SECRET: ${AUTH_SECRET} # decrypts the token and API data set in the panel (Настройки)
       PANEL_URL: ${PANEL_URL:-}
       TIMEZONE_NAME: ${TIMEZONE_NAME:-Europe/Moscow}
+    tmpfs: [/tmp] # MTProto vault (members-*/) is never written to disk
 
 volumes:
   db-data:
