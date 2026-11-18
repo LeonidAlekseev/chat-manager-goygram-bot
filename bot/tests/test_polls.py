@@ -1,6 +1,6 @@
 import pytest
 
-from bot.polls import ROW_OVERHEAD, handle_poll, handle_poll_answer, purge_journals
+from bot.polls import JOURNAL, handle_poll, handle_poll_answer, purge_journals
 
 
 @pytest.fixture(autouse=True)
@@ -95,7 +95,7 @@ async def test_poll_update_is_not_an_answer_and_an_answer_is_not_a_poll_update(d
     assert await answers(db) == [] and await results(db) == []
 
 
-async def test_retention_deletes_answers_and_members_older_than_a_year(db):
+async def test_retention_deletes_poll_rows_older_than_a_year(db):
     await db.execute(
         "INSERT INTO poll_answers (poll_id, user_id, name, option_ids, updated_at) VALUES "
         "('old', 1, 'a', '{0}', now() - interval '366 days'), ('new', 1, 'a', '{0}', now() - interval '364 days')"
@@ -104,13 +104,21 @@ async def test_retention_deletes_answers_and_members_older_than_a_year(db):
         "INSERT INTO poll_members (poll_id, user_id, created_at) VALUES "
         "('old', 1, now() - interval '366 days'), ('new', 1, now() - interval '364 days')"
     )
+    await db.execute(
+        "INSERT INTO poll_results (poll_id, anonymous, counts, updated_at) VALUES "
+        "('old', true, '{1}', now() - interval '366 days'), ('new', true, '{1}', now() - interval '364 days')"
+    )
     await purge_journals(db)
-    assert [r[0] for r in await db.fetch("SELECT poll_id FROM poll_answers")] == ["new"]
-    assert [r[0] for r in await db.fetch("SELECT poll_id FROM poll_members")] == ["new"]
+    for table in ("poll_answers", "poll_members", "poll_results"):
+        assert [r[0] for r in await db.fetch(f"SELECT poll_id FROM {table}")] == ["new"], table
+
+
+async def chat_id(db):
+    return await db.fetchval("INSERT INTO chats (telegram_id, title) VALUES (-1, 'c') RETURNING id")
 
 
 async def test_retention_deletes_finished_sends_older_than_a_year_but_never_a_pending_one(db):
-    chat = await db.fetchval("INSERT INTO chats (telegram_id, title) VALUES (-1, 'c') RETURNING id")
+    chat = await chat_id(db)
     await db.execute(
         "INSERT INTO send_logs (chat_id, slot, status, created_at) VALUES "
         "($1, now(), 'sent', now() - interval '366 days'), ($1, now(), 'pending', now() - interval '366 days'), "
@@ -119,19 +127,45 @@ async def test_retention_deletes_finished_sends_older_than_a_year_but_never_a_pe
     assert sorted(r[0] for r in await db.fetch("SELECT status::text FROM send_logs")) == ["error", "pending"]
 
 
-async def test_size_cap_deletes_the_oldest_rows_until_the_rest_fits(db):
+async def test_a_finished_log_takes_its_outbox_job_with_it_by_the_log_time(db):
+    chat = await chat_id(db)
+    job = await db.fetchval("INSERT INTO outbox (chat_id, text) VALUES ($1, 't') RETURNING id", chat)  # created now
+    await db.execute("INSERT INTO send_logs (chat_id, slot, status, outbox_id, created_at) "
+                     "VALUES ($1, now(), 'sent', $2, now() - interval '366 days')", chat, job)
+    await purge_journals(db)
+    assert await db.fetchval("SELECT count(*) FROM outbox") == 0
+    assert await db.fetchval("SELECT count(*) FROM send_logs") == 0
+
+
+def sizes(**bytes_: int) -> dict[str, int]:
+    """Fake on-disk sizes: every journal table empty except the given ones."""
+    return {t: bytes_.get(t, 0) for t in JOURNAL}
+
+
+async def test_size_cap_deletes_the_oldest_rows_until_the_real_size_fits(db):
     await db.execute(
         "INSERT INTO poll_members (poll_id, user_id, created_at) VALUES "
         "('a', 1, now() - interval '3 days'), ('b', 1, now() - interval '2 days'), ('c', 1, now() - interval '1 day')")
-    row = await db.fetchval("SELECT pg_column_size(x.*) FROM poll_members x LIMIT 1") + ROW_OVERHEAD
-    await purge_journals(db, cap=2 * row)
+    # 300 bytes on disk for 3 rows = 100 a row; trimming to 90% of 250 (225) frees 75+, i.e. the oldest row
+    await purge_journals(db, cap=250, sizes=sizes(poll_members=300))
     assert [r[0] for r in await db.fetch("SELECT poll_id FROM poll_members ORDER BY poll_id")] == ["b", "c"]
     await purge_journals(db, cap=10**12)  # under the cap: nothing more goes
     assert await db.fetchval("SELECT count(*) FROM poll_members") == 2
 
 
+async def test_rows_that_stay_do_not_count_as_freed(db):
+    chat = await chat_id(db)
+    await db.execute(
+        "INSERT INTO send_logs (chat_id, slot, status, created_at) VALUES "
+        "($1, now(), 'pending', now() - interval '3 days'), ($1, now(), 'sent', now() - interval '2 days'), "
+        "($1, now(), 'sent', now() - interval '1 day')", chat)
+    # the oldest row is pending: it stays, so freeing 75+ bytes takes the next one
+    await purge_journals(db, cap=250, sizes=sizes(send_logs=300))
+    assert sorted(r[0] for r in await db.fetch("SELECT status::text FROM send_logs")) == ["pending", "sent"]
+
+
 async def test_size_cap_keeps_pending_jobs_and_never_orphans_a_queued_job(db):
-    chat = await db.fetchval("INSERT INTO chats (telegram_id, title) VALUES (-1, 'c') RETURNING id")
+    chat = await chat_id(db)
     done, queued, claimed = [
         await db.fetchval("INSERT INTO outbox (chat_id, text, created_at) VALUES ($1, 't', now() - interval '2 days') "
                           "RETURNING id", chat) for _ in range(3)]
