@@ -16,8 +16,8 @@ import { Toaster } from "@/components/ui/toaster"
 // More info: https://nextjs.org/docs/app/building-your-application/optimizing/metadata
 export const metadata: Metadata = {
   title: {
-    template: "%s | Chat Manager",
-    default: "Chat Manager",
+    template: "%s | OzonWaao",
+    default: "OzonWaao",
   },
   description: "",
   metadataBase: new URL(process.env.BASE_URL ?? "http://localhost:3000"),
@@ -41,11 +41,11 @@ export default function RootLayout(props: { children: ReactNode }) {
   const { children } = props
 
   return (
-    <html lang="ru" dir="ltr" suppressHydrationWarning>
+    <html lang="ru" dir="ltr" className="light" suppressHydrationWarning>
       <body
         className={cn(
           "font-lato",
-          "bg-background text-foreground antialiased overscroll-none", // Set background, text, , anti-aliasing styles, and overscroll behavior
+          "bg-background text-foreground antialiased overscroll-none overflow-x-hidden", // Set background, text, , anti-aliasing styles, and overscroll behavior
           latoFont.variable
         )}
       >

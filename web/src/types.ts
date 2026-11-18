@@ -3,8 +3,6 @@ import type { ComponentType, SVGAttributes } from "react"
 
 export type LayoutType = "vertical" | "horizontal"
 
-export type ModeType = "light" | "dark" | "system"
-
 export type OrientationType = "vertical" | "horizontal"
 
 export type DirectionType = "ltr" | "rtl"
@@ -17,7 +15,6 @@ export type RadiusType = number
 
 export type SettingsType = {
   theme: ThemeType
-  mode: ModeType
   radius: RadiusType
   layout: LayoutType
   locale: LocaleType
