@@ -6,12 +6,7 @@ import { useCookie } from "react-use"
 import type { LocaleType, SettingsType } from "@/types"
 import type { ReactNode } from "react"
 
-export const defaultSettings: SettingsType = {
-  theme: "zinc",
-  radius: 0.5,
-  layout: "vertical",
-  locale: "en",
-}
+import { defaultSettings, parseSettings } from "@/lib/settingsCookie"
 
 export const SettingsContext = createContext<
   | {
@@ -34,12 +29,13 @@ export function SettingsProvider({
   const [settings, setSettings] = useState<SettingsType | null>(null)
 
   useEffect(() => {
-    if (storedSettings) {
-      setSettings(JSON.parse(storedSettings))
-    } else {
-      setSettings({ ...defaultSettings, locale })
+    const parsed = parseSettings(storedSettings, locale)
+    setSettings(parsed)
+    // Heal a broken or old cookie so the next load parses cleanly.
+    if (storedSettings && JSON.stringify(parsed) !== storedSettings) {
+      setStoredSettings(JSON.stringify(parsed))
     }
-  }, [storedSettings, locale])
+  }, [storedSettings, locale, setStoredSettings])
 
   const updateSettings = useCallback(
     (newSettings: SettingsType) => {
