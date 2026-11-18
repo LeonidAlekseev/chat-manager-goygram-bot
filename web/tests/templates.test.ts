@@ -78,7 +78,11 @@ describe("templates", () => {
     })
   })
 
-  it("keeps a quiz's correct option within its options", async () => {
+  it.each([
+    ["options", { options: "Б\nА\nВ" }],
+    ["multiple answers", { options: "А\nБ\nВ", multiple: "on" }],
+    ["kind", { kind: "text", text: "x" }],
+  ])("refuses to change a quiz's %s", async (_, change) => {
     const t = await db.template.create({
       data: {
         ...poll,
@@ -87,11 +91,23 @@ describe("templates", () => {
         correctOptionId: 2,
       },
     })
-    const edit = form({ ...poll, id: String(t.id), options: "А\nБ" })
-    expect((await saveTemplate(null, edit)).error).toMatch(/Викторин/)
+    const edit = form({ ...poll, id: String(t.id), ...change })
+    expect((await saveTemplate(null, edit)).error).toMatch(/викторин/i)
+    const ok = form({
+      ...poll,
+      id: String(t.id),
+      name: "Новое",
+      options: "А\nБ\nВ",
+    })
+    expect((await saveTemplate(null, ok)).error).toBeUndefined()
     expect(
       await db.template.findUniqueOrThrow({ where: { id: t.id } })
-    ).toMatchObject({ options: ["А", "Б", "В"], correctOptionId: 2 })
+    ).toMatchObject({
+      name: "Новое",
+      options: ["А", "Б", "В"],
+      multiple: false,
+      correctOptionId: 2,
+    })
   })
 
   it.each([

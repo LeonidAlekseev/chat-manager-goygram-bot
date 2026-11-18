@@ -87,10 +87,29 @@ async def test_album_becomes_one_template_with_all_its_messages(db, manager):
     assert "Альбом" in first and rest == ""
 
 
-async def test_editing_the_source_message_updates_the_template(db, manager):
+async def test_editing_the_source_message_updates_the_preview_and_an_auto_name(db, manager):
     await handle_private(db, msg(text="Старый текст"), URL)
+    await handle_private(db, msg(message_id=8, text="Второй"), URL)
     await handle_private(db, msg(message_id=9, media_group_id="g1", photo=[{}]), URL)
+    await db.execute("UPDATE templates SET name = 'Из панели' WHERE id = 2")
     await handle_edit(db, msg(text="Новый текст", edit_date=1))
+    await handle_edit(db, msg(message_id=8, text="Второй исправлен", edit_date=1))
     await handle_edit(db, msg(message_id=9, media_group_id="g1", photo=[{}], caption="Подпись", edit_date=1))
     rows = await db.fetch("SELECT name, text FROM templates ORDER BY id")
-    assert [tuple(r) for r in rows] == [("Новый текст", "Новый текст"), ("Подпись", "Подпись")]
+    assert [tuple(r) for r in rows] == [
+        ("Новый текст", "Новый текст"), ("Из панели", "Второй исправлен"), ("Подпись", "Подпись")]
+
+
+async def test_editing_an_album_item_without_a_caption_changes_nothing(db, manager):
+    await handle_private(db, msg(message_id=8, media_group_id="g1", photo=[{}], caption="Отчёт"), URL)
+    await handle_private(db, msg(message_id=9, media_group_id="g1", photo=[{}]), URL)
+    await handle_edit(db, msg(message_id=9, media_group_id="g1", photo=[{}], edit_date=1))
+    t = await only(db)
+    assert (t["name"], t["text"]) == ("Отчёт", "Отчёт")
+
+
+async def test_album_from_a_stranger_is_refused_once(db, manager):
+    replies = [await handle_private(db, msg(user_id=99, message_id=i, media_group_id="g9", photo=[{}]), URL)
+               for i in (1, 2, 3)]
+    assert replies == [REFUSAL, "", ""]
+    assert await db.fetchval("SELECT count(*) FROM templates") == 0

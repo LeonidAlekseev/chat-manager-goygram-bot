@@ -71,10 +71,16 @@ export async function saveTemplate(
   const parsed = Schema.safeParse(raw)
   if (!parsed.success) return { error: parsed.error.issues[0].message }
   const { id, ...rest } = parsed.data
-  const answer = current?.correctOptionId
-  if (answer != null && rest.kind === "poll" && answer >= rest.options.length)
+  // a quiz's correct answer is an option index: its options and mode stay as Telegram sent them
+  if (
+    current?.correctOptionId != null &&
+    (rest.kind !== "poll" ||
+      rest.multiple !== current.multiple ||
+      rest.options.join("\n") !== current.options.join("\n"))
+  )
     return {
-      error: `Викторина: правильный ответ — вариант ${answer + 1}, вариантов должно быть не меньше`,
+      error:
+        "Варианты, тип и «Несколько ответов» викторины не меняются — перешлите викторину боту заново",
     }
   const data = { ...rest, options: rest.kind === "poll" ? rest.options : [] }
   if (id) await db.template.update({ where: { id }, data })

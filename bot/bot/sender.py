@@ -19,12 +19,14 @@ async def send_template(tg: Telegram, chat_id: int, t: Any, user: Any = None) ->
     explanation, source_chat_id, source_message_ids). An album (several source messages) goes out as one
     album with copyMessages, and the first of its messages is returned.
     With mention_all, a poll or copy is followed by a separate mention message; a text carries the mentions itself.
-    A mention failure never fails the send: it is returned as `mention_error` in the message.
+    A mention failure, or an album some of whose sources were deleted, never fails the send: it is
+    returned as `mention_error` in the message (logged as the send's error text).
     A mention poll also returns the members it fetched as `member_ids`; other polls fetch none here,
     so the send is not held up (the caller snapshots their members after all sends).
     """
     mentions: list[str] = []
     error = None
+    partial = None
     ids: list[int] = []
     poll = t["kind"] == "poll"
     copy = t["kind"] == "copy"
@@ -48,7 +50,11 @@ async def send_template(tg: Telegram, chat_id: int, t: Any, user: Any = None) ->
         )
     elif copy and len(src := t["source_message_ids"]) > 1:
         sent = await tg.bot_req("copyMessages", chat_id=chat_id, from_chat_id=t["source_chat_id"], message_ids=src)
+        if not sent:
+            raise RuntimeError("Сообщения альбома удалены")
         msg = sent[0]
+        if len(sent) < len(src):
+            partial = f"Отправлено {len(sent)} из {len(src)} сообщений альбома"
     elif copy:
         msg = await tg.bot_req("copyMessage", chat_id=chat_id, from_chat_id=t["source_chat_id"], message_id=src[0])
     elif mentions:
@@ -61,6 +67,7 @@ async def send_template(tg: Telegram, chat_id: int, t: Any, user: Any = None) ->
         except Exception as e:  # noqa: BLE001
             error = str(e)
             break
+    error = "; ".join(e for e in (partial, error) if e) or None
     extra = {**({"mention_error": error} if error else {}), **({"member_ids": ids} if poll and ids else {})}
     return {**msg, **extra}
 

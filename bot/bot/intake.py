@@ -1,4 +1,5 @@
 import html
+from collections import deque
 from typing import Any
 
 import asyncpg
@@ -13,6 +14,13 @@ MEDIA = {
     "venue": "Место", "dice": "Кубик",
 }
 NAME_WORDS = 6
+# (chat, media_group_id) of albums already refused: their other items get no reply.
+_refused_albums: deque[tuple[int, str]] = deque(maxlen=100)
+
+
+def _auto_name(preview: str, media: str) -> str:
+    fallback = "Альбом" if media == "album" else "Сообщение"
+    return " ".join(preview.split()[:NAME_WORDS])[:255] or MEDIA.get(media, fallback)
 
 
 def _copy_fields(message: dict[str, Any]) -> tuple[str, str, str]:
@@ -22,9 +30,7 @@ def _copy_fields(message: dict[str, Any]) -> tuple[str, str, str]:
         media = "album"
     else:
         media = next((k for k in MEDIA if k in message), "text" if "text" in message else "message")
-    fallback = "Альбом" if media == "album" else "Сообщение"
-    name = " ".join(preview.split()[:NAME_WORDS])[:255] or MEDIA.get(media, fallback)
-    return name, preview, media
+    return _auto_name(preview, media), preview, media
 
 
 async def handle_private(db: asyncpg.Pool, message: dict[str, Any], panel_url: str | None) -> str | None:
@@ -40,6 +46,10 @@ async def handle_private(db: asyncpg.Pool, message: dict[str, Any], panel_url: s
     author = await db.fetchval(
         "SELECT id FROM managers WHERE telegram_user_id = $1 AND active", message["from"]["id"])
     if author is None:
+        if gid := message.get("media_group_id"):
+            if (key := (message["chat"]["id"], gid)) in _refused_albums:
+                return ""
+            _refused_albums.append(key)
         return reply_for(message) or REFUSAL
     if poll := message.get("poll"):
         name = text = poll["question"]
@@ -70,10 +80,17 @@ async def handle_private(db: asyncpg.Pool, message: dict[str, Any], panel_url: s
 
 
 async def handle_edit(db: asyncpg.Pool, message: dict[str, Any]) -> None:
-    """An edited source message renames its copy template and refreshes the preview (the send copies
-    the message as it is now). Not an album item without a caption: the caption may be on another item."""
+    """An edited source message refreshes its copy template's preview (the send copies the message as it
+    is now) and its name, unless the name was changed in the panel. An album item without a caption
+    changes nothing: the caption may be on another item."""
     name, text, media = _copy_fields(message)
-    await db.execute(
-        "UPDATE templates SET name = $1, text = $2 "
-        "WHERE kind = 'copy' AND source_chat_id = $3 AND $4 = ANY(source_message_ids) AND ($2 <> '' OR $5)",
-        name, text, message["chat"]["id"], message["message_id"], media != "album")
+    if media == "album" and not text:
+        return
+    rows = await db.fetch(
+        "SELECT id, name, text, media_type FROM templates "
+        "WHERE kind = 'copy' AND source_chat_id = $1 AND $2 = ANY(source_message_ids)",
+        message["chat"]["id"], message["message_id"])
+    for r in rows:
+        auto = r["name"] == _auto_name(r["text"], r["media_type"])
+        await db.execute(
+            "UPDATE templates SET name = $2, text = $3 WHERE id = $1", r["id"], name if auto else r["name"], text)

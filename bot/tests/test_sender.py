@@ -229,6 +229,16 @@ async def test_album_is_sent_with_copy_messages_as_one_album():
     assert msg["message_id"] == 201
 
 
+async def test_album_with_deleted_sources_is_sent_with_a_warning():
+    class Partly(FakeTelegram):
+        async def bot_req(self, meth, **kw):
+            await super().bot_req(meth, **kw)
+            return [{"message_id": 201}]
+
+    msg = await send_template(Partly(), -1001, {**COPY, "source_message_ids": [7, 8, 9]})
+    assert msg["message_id"] == 201 and msg["mention_error"] == "Отправлено 1 из 3 сообщений альбома"
+
+
 async def test_quiz_is_sent_as_a_quiz():
     tg = FakeTelegram()
     quiz = {**COPY, "kind": "poll", "text": "2+2?", "options": ["3", "4"], "anonymous": True,
