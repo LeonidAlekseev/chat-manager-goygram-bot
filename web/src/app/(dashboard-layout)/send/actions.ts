@@ -11,7 +11,12 @@ export type ActionState = { error?: string } | null
 const Schema = z
   .object({
     templateId: z.coerce.number().int().optional(),
-    text: z.string().trim().max(4096).optional(),
+    text: z
+      .string()
+      .trim()
+      .max(4096)
+      .transform((v) => v || undefined) // spaces only = no text, so the template check applies
+      .optional(),
     chatIds: z.array(z.coerce.number().int()).min(1, "Выберите чаты"),
   })
   .refine(

@@ -6,14 +6,29 @@ import { Prisma } from "@prisma/client"
 import { z } from "zod"
 
 import { db } from "@/lib/db"
+import { TIMEZONE, nowInZone } from "@/lib/timezone"
 
 export type ActionState = { error?: string } | null
 
 const PERIODS = ["none", "day", "week", "twoweek", "month"] as const
 
+// Postgres INT: a larger id can never exist, and Prisma would throw on it
+const Id = z.coerce.number().int().min(1).max(2147483647)
+const NOT_FOUND = { error: "Не найдено — обновите страницу" }
+
+// P2025: the row is gone; P2003: the other side of a link is gone
+function gone(e: unknown) {
+  if (
+    e instanceof Prisma.PrismaClientKnownRequestError &&
+    (e.code === "P2025" || e.code === "P2003")
+  )
+    return NOT_FOUND
+  throw e
+}
+
 const Item = z.object({
-  id: z.coerce.number().int().optional(), // absent for a new row
-  templateId: z.coerce.number().int(),
+  id: Id.optional(), // absent for a new row
+  templateId: Id,
   time: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Время — ЧЧ:ММ"),
   startDate: z
     .string()
@@ -23,15 +38,13 @@ const Item = z.object({
 })
 
 const Schema = z.object({
-  id: z.coerce.number().int().optional(),
+  id: Id.optional(),
   name: z.string().trim().min(1).max(255),
   // set when saving from a chat page: "this" edits only that chat's copy
-  chatId: z.coerce.number().int().optional(),
+  chatId: Id.optional(),
   scope: z.enum(["all", "this"]).optional(),
   items: z.array(Item),
 })
-
-const Id = z.coerce.number().int()
 
 async function requireAuth() {
   if (!(await auth())) throw new Error("Unauthorized")
@@ -49,7 +62,10 @@ function friendly(e: unknown): { error: string } {
         error:
           "Такое уже есть: название расписания или пункт с тем же шаблоном и временем.",
       }
-    if (e.code === "P2003") return { error: "Шаблон или чат уже удалён." }
+    if (e.code === "P2003" || e.code === "P2025")
+      return {
+        error: "Шаблон, чат или расписание уже удалены — обновите страницу.",
+      }
   }
   throw e
 }
@@ -78,6 +94,29 @@ export async function saveSchedule(
   })
   if (!parsed.success) return { error: parsed.error.issues[0].message }
   const { id, name, chatId, scope, items } = parsed.data
+
+  // a one-time item in the past is refused, unless it is saved unchanged (it may have fired already)
+  const saved = await db.scheduleItem.findMany({
+    where: { id: { in: items.flatMap((i) => (i.id ? [i.id] : [])) } },
+  })
+  const now = nowInZone()
+  const stale = items.find((i) => {
+    const day = i.startDate.toISOString().slice(0, 10)
+    const old = saved.find((o) => o.id === i.id)
+    return (
+      i.period === "none" &&
+      `${day} ${i.time}` < now &&
+      !(
+        old?.period === "none" &&
+        old.time === i.time &&
+        old.startDate.getTime() === i.startDate.getTime()
+      )
+    )
+  })
+  if (stale)
+    return {
+      error: `«Один раз» в прошлом: дата и время (${TIMEZONE}) уже прошли`,
+    }
 
   try {
     await db.$transaction(async (tx) => {
@@ -164,36 +203,63 @@ export async function saveSchedule(
   return {}
 }
 
-export async function bindChats(formData: FormData) {
+export async function bindChats(
+  formData: FormData
+): Promise<{ error?: string }> {
   await requireAuth()
-  const id = Id.parse(formData.get("id"))
-  const chatIds = formData.getAll("chatId").map((c) => Id.parse(c))
-  await db.$transaction([
-    db.chat.updateMany({
-      where: { scheduleId: id, id: { notIn: chatIds } },
-      data: { scheduleId: null },
-    }),
-    db.chat.updateMany({
-      where: { id: { in: chatIds } },
-      data: { scheduleId: id },
-    }),
-  ])
+  const id = Id.safeParse(formData.get("id"))
+  const chatIds = formData.getAll("chatId").map((c) => Id.safeParse(c))
+  if (!id.success || chatIds.some((c) => !c.success)) return NOT_FOUND
+  const ids = chatIds.map((c) => c.data!)
+  try {
+    await db.$transaction([
+      db.chat.updateMany({
+        where: { scheduleId: id.data, id: { notIn: ids } },
+        data: { scheduleId: null },
+      }),
+      db.chat.updateMany({
+        where: { id: { in: ids } },
+        data: { scheduleId: id.data },
+      }),
+    ])
+  } catch (e) {
+    return gone(e)
+  }
   revalidate()
+  return {}
 }
 
-export async function bindChat(formData: FormData) {
+export async function bindChat(
+  formData: FormData
+): Promise<{ error?: string }> {
   await requireAuth()
-  const chatId = Id.parse(formData.get("chatId"))
+  const chatId = Id.safeParse(formData.get("chatId"))
   const raw = formData.get("scheduleId")
-  await db.chat.update({
-    where: { id: chatId },
-    data: { scheduleId: raw ? Id.parse(raw) : null },
-  })
+  const scheduleId = raw ? Id.safeParse(raw) : null
+  if (!chatId.success || (scheduleId && !scheduleId.success)) return NOT_FOUND
+  try {
+    await db.chat.update({
+      where: { id: chatId.data },
+      data: { scheduleId: scheduleId?.data ?? null },
+    })
+  } catch (e) {
+    return gone(e)
+  }
   revalidate()
+  return {}
 }
 
-export async function deleteSchedule(formData: FormData) {
+export async function deleteSchedule(
+  formData: FormData
+): Promise<{ error?: string }> {
   await requireAuth()
-  await db.schedule.delete({ where: { id: Id.parse(formData.get("id")) } })
+  const id = Id.safeParse(formData.get("id"))
+  if (!id.success) return NOT_FOUND
+  try {
+    await db.schedule.delete({ where: { id: id.data } })
+  } catch (e) {
+    return gone(e)
+  }
   revalidate()
+  return {}
 }

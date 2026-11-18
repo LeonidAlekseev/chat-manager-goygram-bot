@@ -135,3 +135,50 @@ test("settings: disconnecting the Telegram account asks first", async ({
     })
   }
 })
+
+test("schedule form: a saved time sticks, and a second save does not revert it", async ({
+  page,
+}) => {
+  const name = `E2E time ${Date.now()}`
+  const tpl = await db.template.create({
+    data: { name, kind: "text", text: "hi" },
+  })
+  const sch = await db.schedule.create({
+    data: {
+      name,
+      items: {
+        create: {
+          templateId: tpl.id,
+          time: "08:00",
+          startDate: new Date("2999-01-01T00:00:00Z"),
+          period: "day",
+        },
+      },
+    },
+  })
+  const dbTime = async () =>
+    (await db.scheduleItem.findFirstOrThrow({ where: { scheduleId: sch.id } }))
+      .time
+  await page.goto("/login")
+  await page.getByLabel("Логин").fill(LOGIN)
+  await page.getByLabel("Пароль").fill(PASSWORD)
+  await page.getByRole("button", { name: "Войти" }).click()
+  await page.waitForURL("**/chats")
+
+  await page.goto("/schedules")
+  const item = page.locator("details").filter({
+    has: page.locator("summary", { hasText: name }),
+  })
+  await item.locator("summary").click()
+  const time = item.getByLabel(/^Время/)
+  await time.fill("09:00")
+  await item.getByRole("button", { name: "Сохранить", exact: true }).click()
+  await expect.poll(dbTime).toBe("09:00")
+  await expect(time).toHaveValue("09:00")
+
+  // Saving again must not put the old value back.
+  await item.getByRole("button", { name: "Сохранить", exact: true }).click()
+  await page.waitForTimeout(500)
+  await expect(time).toHaveValue("09:00")
+  expect(await dbTime()).toBe("09:00")
+})

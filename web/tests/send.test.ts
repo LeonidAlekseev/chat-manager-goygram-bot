@@ -59,6 +59,24 @@ describe("sendNow", () => {
     expect([o.templateId, o.text]).toEqual([null, "Сегодня короткий день"])
   })
 
+  it("treats spaces-only text as no text, so the template is sent", async () => {
+    const r = await sendNow(
+      null,
+      form({
+        text: "   ",
+        templateId: String(templateId),
+        chatIds: String(chats[0]),
+      })
+    )
+    expect(r).toEqual({})
+    const [o] = await db.outbox.findMany()
+    expect([o.templateId, o.text]).toEqual([templateId, null])
+    expect(
+      (await sendNow(null, form({ text: "   ", chatIds: String(chats[0]) })))
+        .error
+    ).toBeTruthy()
+  })
+
   it("needs exactly one of template and text, and at least one chat", async () => {
     expect(
       (await sendNow(null, form({ chatIds: String(chats[0]) }))).error

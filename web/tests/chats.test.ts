@@ -30,6 +30,11 @@ describe("renameChat", () => {
     ).toBe("Пункт на Ленина")
   })
 
+  it("answers a missing or out-of-range chat id with an error", async () => {
+    for (const id of [999999, 2 ** 31])
+      expect((await renameChat(form(id, "X"))).error).toBeTruthy()
+  })
+
   it("rejects an empty title", async () => {
     const chat = await db.chat.create({
       data: { telegramId: BigInt(-100124), title: "Old" },

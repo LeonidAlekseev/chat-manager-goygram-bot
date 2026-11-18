@@ -33,11 +33,13 @@ const labelCls = "grid gap-1 text-sm font-medium"
 export function ScheduleForm({
   schedule,
   templates,
+  timezone,
   chatId,
   sharedWith = 0,
 }: {
   schedule?: { id: number; name: string; items: ItemView[] }
   templates: { id: number; name: string }[]
+  timezone: string // the zone item times are read in
   chatId?: number
   sharedWith?: number // other chats bound to this schedule
 }) {
@@ -48,15 +50,39 @@ export function ScheduleForm({
     key,
     templateId: templates[0]?.id ?? 0,
     time: "08:00",
-    startDate: new Date().toLocaleDateString("sv"), // YYYY-MM-DD in local time
+    startDate: new Date().toLocaleDateString("sv", { timeZone: timezone }), // YYYY-MM-DD
     period: "day",
   })
   const [state, action, pending] = useActionState<ActionState, FormData>(
     async (prev, fd) => {
       const r = await saveSchedule(prev, fd)
       setOpen(false)
+      // React resets the form after the action; on an error put what was typed back
+      if (r.error) {
+        const col = (k: string) => fd.getAll(k).map(String)
+        const [ids, tpls, times, dates, periods] = [
+          "itemId",
+          "templateId",
+          "time",
+          "startDate",
+          "period",
+        ].map(col)
+        setName(String(fd.get("name") ?? ""))
+        setRows(
+          tpls.map((t, i) => ({
+            key: nextKey + i,
+            id: Number(ids[i]) || undefined,
+            templateId: Number(t),
+            time: times[i],
+            startDate: dates[i],
+            period: periods[i],
+          }))
+        )
+        setNextKey(nextKey + tpls.length)
+      }
       if (!schedule && !r.error) {
         // new-schedule form starts with one empty item again (none without templates)
+        setName("")
         setRows(templates.length ? [newRow(nextKey)] : [])
         setNextKey(nextKey + 1)
       }
@@ -71,6 +97,7 @@ export function ScheduleForm({
         ? [newRow(0)]
         : []
   )
+  const [name, setName] = useState(schedule?.name ?? "")
   const [nextKey, setNextKey] = useState(rows.length)
 
   function addRow() {
@@ -85,7 +112,8 @@ export function ScheduleForm({
       <input ref={scopeRef} type="hidden" name="scope" />
       <Input
         name="name"
-        defaultValue={schedule?.name}
+        value={name}
+        onChange={(e) => setName(e.target.value)}
         placeholder="Название"
         required
         maxLength={255}
@@ -107,7 +135,7 @@ export function ScheduleForm({
             </Select>
           </label>
           <label className={labelCls}>
-            Время
+            Время ({timezone})
             <Input
               type="time"
               name="time"

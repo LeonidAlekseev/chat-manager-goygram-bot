@@ -1,6 +1,7 @@
 "use client"
 
 import { Button } from "@/components/ui/button"
+import { ActionForm } from "@/components/action-form"
 import { deleteSchedule } from "./actions"
 
 export function DeleteScheduleForm({
@@ -11,7 +12,7 @@ export function DeleteScheduleForm({
   chats: number
 }) {
   return (
-    <form
+    <ActionForm
       action={deleteSchedule}
       onSubmit={(e) => {
         if (
@@ -26,6 +27,6 @@ export function DeleteScheduleForm({
       <Button type="submit" variant="outline">
         Удалить расписание
       </Button>
-    </form>
+    </ActionForm>
   )
 }
