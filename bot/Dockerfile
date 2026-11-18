@@ -4,4 +4,8 @@ WORKDIR /app
 COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-dev --no-install-project
 COPY bot ./bot
+# nobody has no home and /app is root-owned: goygram writes ~/.goygram and ./default.vault, so both go to the tmpfs
+ENV HOME=/tmp PYTHONPATH=/app
+WORKDIR /tmp
+USER nobody
 CMD ["/app/.venv/bin/python", "-m", "bot.main"]
