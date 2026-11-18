@@ -36,7 +36,7 @@ const Schema = z.discriminatedUnion("kind", [
 ])
 
 async function requireAuth() {
-  if (!(await auth())) throw new Error("Unauthorized")
+  if (!(await auth())?.user) throw new Error("Unauthorized")
 }
 
 export async function saveTemplate(

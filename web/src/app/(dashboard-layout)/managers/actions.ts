@@ -9,7 +9,11 @@ import { z } from "zod"
 import { db } from "@/lib/db"
 
 const Name = z.string().trim().min(1).max(255)
-const Password = z.string().min(8).max(72)
+// bcrypt reads only 72 bytes, so the limit is in bytes (Cyrillic is 2 bytes per char)
+const Password = z
+  .string()
+  .min(8)
+  .refine((p) => Buffer.byteLength(p) <= 72)
 
 async function requireSuperadmin() {
   if ((await auth())?.user?.role !== "superadmin") throw new Error("Forbidden")
@@ -25,7 +29,7 @@ const NewManager = z.object({
   password: Password,
 })
 const INVALID =
-  "Пароль — от 8 до 72 символов, логин — до 64, имя — до 255; все поля обязательны."
+  "Пароль — от 8 символов, не более 72 байт, логин — до 64, имя — до 255; все поля обязательны."
 
 export async function createManager(
   _prev: ActionState,
