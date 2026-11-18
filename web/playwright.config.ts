@@ -1,4 +1,4 @@
-import { defineConfig } from "@playwright/test"
+import { defineConfig, devices } from "@playwright/test"
 
 // One smoke test against the built panel (`pnpm build` first). DATABASE_URL: a disposable or dev DB —
 // the test adds a chat and uniquely named template/schedule rows. With SUPERADMIN_* unset, an e2e superadmin is created.
@@ -11,6 +11,15 @@ export default defineConfig({
   testMatch: "*.e2e.ts", // keeps it out of vitest
   globalSetup: "./e2e/global-setup.ts",
   use: { baseURL: `http://127.0.0.1:${PORT}` },
+  projects: [
+    { name: "chromium" },
+    // iOS Safari is what the operator uses: <details>/<summary> behave differently there
+    {
+      name: "webkit-mobile",
+      testMatch: "mobile.e2e.ts",
+      use: { ...devices["iPhone 13"] },
+    },
+  ],
   webServer: {
     command: `pnpm exec prisma migrate deploy && pnpm start -p ${PORT}`, // fresh DB: the server creates the superadmin on start,
     url: `http://127.0.0.1:${PORT}/login`,

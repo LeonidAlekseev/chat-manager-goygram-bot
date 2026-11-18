@@ -18,18 +18,28 @@ export function ActionForm({
   confirmText?: string // asked before submitting
 }) {
   const [result, setResult] = useState<Result>()
-  const [, start] = useTransition()
+  const [pending, start] = useTransition()
   return (
     <form
       {...props}
+      aria-busy={pending}
       onSubmit={(e) => {
         e.preventDefault()
         if (confirmText && !confirm(confirmText)) return
         const fd = new FormData(e.currentTarget)
-        start(async () => setResult(await action(fd)))
+        start(async () => {
+          try {
+            setResult(await action(fd))
+          } catch {
+            // a dropped connection (mobile network) rejects the action; without this the form just sits silent
+            setResult({ error: "Нет связи с сервером, попробуйте ещё раз" })
+          }
+        })
       }}
     >
-      {children}
+      <fieldset disabled={pending} className="contents">
+        {children}
+      </fieldset>
       {result?.error && (
         <p role="alert" className="text-sm text-destructive">
           {result.error}

@@ -191,7 +191,7 @@ export function ScheduleForm({
           onClick={addRow}
           disabled={templates.length === 0}
         >
-          Добавить пункт
+          Добавить шаблон
         </Button>
         {chatId && sharedWith > 0 ? (
           <Dialog open={open} onOpenChange={setOpen}>
@@ -239,7 +239,7 @@ export function ScheduleForm({
         )}
       </div>
       <p className="text-sm text-muted-foreground">
-        Пункт — какой шаблон, во сколько и как часто отправлять.
+        Шаблон в расписании — что отправить, во сколько и как часто.
       </p>
       {state?.error && (
         <p className="text-sm text-destructive">{state.error}</p>
