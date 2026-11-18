@@ -1,6 +1,7 @@
 "use client"
 
 import { Button } from "@/components/ui/button"
+import { ActionForm } from "@/components/action-form"
 import { deleteSchedule } from "./actions"
 
 export function DeleteScheduleForm({
@@ -11,21 +12,14 @@ export function DeleteScheduleForm({
   chats: number
 }) {
   return (
-    <form
+    <ActionForm
       action={deleteSchedule}
-      onSubmit={(e) => {
-        if (
-          !confirm(
-            `Удалить расписание? Привязанных чатов: ${chats} — они будут отвязаны.`
-          )
-        )
-          e.preventDefault()
-      }}
+      confirmText={`Удалить расписание? Привязанных чатов: ${chats} — они будут отвязаны.`}
     >
       <input type="hidden" name="id" value={id} />
       <Button type="submit" variant="outline">
         Удалить расписание
       </Button>
-    </form>
+    </ActionForm>
   )
 }

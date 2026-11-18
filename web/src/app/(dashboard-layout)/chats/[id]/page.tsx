@@ -4,10 +4,12 @@ import { auth } from "@/auth"
 import type { Metadata } from "next"
 
 import { db } from "@/lib/db"
+import { TIMEZONE } from "@/lib/timezone"
 
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Select } from "@/components/ui/select"
+import { ActionForm } from "@/components/action-form"
 import { bindChat } from "../../schedules/actions"
 import { toItemView } from "../../schedules/item-view"
 import { ScheduleForm } from "../../schedules/schedule-form"
@@ -21,7 +23,7 @@ export default async function ChatPage({
 }) {
   if (!(await auth())?.user) redirect("/login")
   const id = Number((await params).id)
-  if (!Number.isInteger(id)) notFound()
+  if (!Number.isInteger(id) || id < 1 || id > 2147483647) notFound()
   const chat = await db.chat.findUnique({
     where: { id },
     include: {
@@ -29,6 +31,7 @@ export default async function ChatPage({
     },
   })
   if (!chat) notFound()
+  const items = chat.schedule?.items.map(toItemView) ?? []
   const [schedules, templates, sharedWith] = await Promise.all([
     db.schedule.findMany({
       orderBy: { name: "asc" },
@@ -52,7 +55,7 @@ export default async function ChatPage({
           <CardTitle>{chat.title}</CardTitle>
         </CardHeader>
         <CardContent>
-          <form action={bindChat} className="flex flex-wrap gap-2">
+          <ActionForm action={bindChat} className="flex flex-wrap gap-2">
             <input type="hidden" name="chatId" value={chat.id} />
             <Select
               key={chat.scheduleId} // remount so a copy-on-write rebind shows up
@@ -70,7 +73,7 @@ export default async function ChatPage({
             <Button type="submit" variant="outline">
               Привязать
             </Button>
-          </form>
+          </ActionForm>
         </CardContent>
       </Card>
       {chat.schedule && (
@@ -80,11 +83,9 @@ export default async function ChatPage({
           </CardHeader>
           <CardContent>
             <ScheduleForm
-              key={chat.schedule.items.map((i) => i.id).join()}
-              schedule={{
-                ...chat.schedule,
-                items: chat.schedule.items.map(toItemView),
-              }}
+              key={JSON.stringify(items)} // remount on saved changes, or the form resets to stale values
+              schedule={{ ...chat.schedule, items }}
+              timezone={TIMEZONE}
               templates={templates}
               chatId={chat.id}
               sharedWith={sharedWith}
