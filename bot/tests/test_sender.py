@@ -5,7 +5,7 @@ from zoneinfo import ZoneInfo
 import asyncpg
 import pytest
 
-from bot.scheduler import run_due
+from bot.scheduler import fail_stuck, run_due
 from bot.sender import send_template
 
 MSK = ZoneInfo("Europe/Moscow")
@@ -125,17 +125,17 @@ async def test_poll_send_snapshots_chat_members_for_the_answers_page(world):
 
 
 class FlakyDb:
-    """The pool, except that recording a successful send fails once."""
+    """The pool, except that recording a successful send fails the first `fails` times."""
 
-    def __init__(self, pool):
-        self.pool, self.failed = pool, False
+    def __init__(self, pool, fails):
+        self.pool, self.fails = pool, fails
 
     def __getattr__(self, name):
         return getattr(self.pool, name)
 
     async def execute(self, sql, *args):
-        if "status = 'sent'" in sql and not self.failed:
-            self.failed = True
+        if "status = 'sent'" in sql and self.fails:
+            self.fails -= 1
             raise asyncpg.PostgresError("connection lost")
         return await self.pool.execute(sql, *args)
 
@@ -143,11 +143,20 @@ class FlakyDb:
 async def test_db_error_after_a_send_is_logged_and_the_tick_goes_on(world):
     await world.execute("TRUNCATE poll_members")
     tg = FakeTelegram()
-    await run_due(FlakyDb(world), tg, NOW, FakeUser())
+    await run_due(FlakyDb(world, 2), tg, NOW, FakeUser())
     assert [c[1]["chat_id"] for c in tg.calls] == [-1001, -1002, -1005]
     assert [r[1] for r in await logs(world)] == ["pending", "sent", "sent"]
     # members are still recorded for the poll whose status update failed
     assert await world.fetchval("SELECT count(*) FROM poll_members WHERE poll_id = 'poll-1'") == 2
+    # the journal does not blame a restart that never happened
+    await world.execute("UPDATE send_logs SET created_at = now() - interval '1 hour'")
+    await fail_stuck(world)
+    assert "не удалось записать результат" in (await logs(world))[0][4]
+
+
+async def test_a_failed_status_write_is_retried_once(world):
+    await run_due(FlakyDb(world, 1), FakeTelegram(), NOW)
+    assert [r[1] for r in await logs(world)] == ["sent", "sent", "sent"]
 
 
 class RecordingUser:
@@ -214,3 +223,18 @@ async def test_deleted_source_is_logged_as_an_error(world):
     await run_due(world, Gone(), NOW)
     row = await world.fetchrow("SELECT status::text, error FROM send_logs WHERE chat_id = 5")
     assert row["status"] == "error" and "message to copy not found" in row["error"]
+
+
+async def test_chat_migrated_to_a_supergroup_is_updated_and_the_send_retried(world):
+    class Migrated(FakeTelegram):
+        async def bot_req(self, meth, **kw):
+            if kw["chat_id"] == -1005:  # GoyGram's text for a Bot API 400
+                raise RuntimeError(f"botapi {meth} http 400: {{'ok': False, 'error_code': 400, 'description': "
+                                   "'Bad Request: group chat was upgraded to a supergroup chat', "
+                                   "'parameters': {'migrate_to_chat_id': -1009}}")
+            return await super().bot_req(meth, **kw)
+
+    tg = Migrated()
+    await run_due(world, tg, NOW)
+    assert tg.calls[-1] == ("sendMessage", {"chat_id": -1009, "text": "Не забудьте ключ"})
+    assert (await logs(world))[-1] == (-1009, "sent", 103, None, None)

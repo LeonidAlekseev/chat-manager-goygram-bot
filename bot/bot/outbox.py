@@ -35,8 +35,8 @@ async def run_outbox(db: asyncpg.Pool, tg: Telegram, user: Any = None) -> None:
         if error:
             await db.execute("UPDATE send_logs SET status = 'error', error = $2 WHERE id = $1", log_id, error)
             continue
-        if poll_id := await deliver(db, tg, log_id, r["telegram_id"], r, user):
-            polls.append((poll_id, r["telegram_id"]))
+        if poll := await deliver(db, tg, log_id, r["telegram_id"], r, user):
+            polls.append(poll)
     await snapshot_members(db, user, polls)
 
 

@@ -46,3 +46,19 @@ async def test_group_upgraded_to_supergroup_keeps_the_chat_under_its_new_id(db):
     await handle_member_update(db, my_chat_member(-555, "ПВЗ", "member"))
     await handle_group_migration(db, {"chat": {"id": -555, "type": "group"}, "migrate_to_chat_id": -100555})
     assert await chats(db) == [(-100555, "ПВЗ", True)]
+
+
+async def test_migration_merges_into_a_row_the_supergroup_already_has(db):
+    # The bot saw the supergroup (my_chat_member) before the migration message: two rows, one telegram_id each.
+    await db.execute("TRUNCATE schedules CASCADE")
+    sid = await db.fetchval("INSERT INTO schedules (name) VALUES ('Смена') RETURNING id")
+    old = await db.fetchval(
+        "INSERT INTO chats (telegram_id, title, active, schedule_id) VALUES (-555, 'Пункт 1', false, $1) RETURNING id", sid)
+    new = await db.fetchval("INSERT INTO chats (telegram_id, title) VALUES (-100555, 'ПВЗ') RETURNING id")
+    job = await db.fetchval("INSERT INTO outbox (chat_id, text) VALUES ($1, 'привет') RETURNING id", new)
+    await db.execute("INSERT INTO send_logs (chat_id, slot, outbox_id) VALUES ($1, now(), $2)", new, job)
+    await handle_group_migration(db, {"chat": {"id": -555, "type": "group"}, "migrate_to_chat_id": -100555})
+    rows = await db.fetch("SELECT id, telegram_id, title, active, schedule_id FROM chats")
+    assert [tuple(r) for r in rows] == [(old, -100555, "Пункт 1", True, sid)]
+    assert await db.fetchval("SELECT chat_id FROM outbox WHERE id = $1", job) == old
+    assert await db.fetchval("SELECT chat_id FROM send_logs WHERE outbox_id = $1", job) == old

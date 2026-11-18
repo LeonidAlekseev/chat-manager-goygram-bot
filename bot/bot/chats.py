@@ -30,5 +30,31 @@ async def handle_group_migration(db: asyncpg.Pool, message: dict[str, Any]) -> N
     """A basic group upgraded to a supergroup gets a new id; Telegram sends no new my_chat_member."""
     new_id = message.get("migrate_to_chat_id")
     if new_id:
-        await db.execute("UPDATE chats SET telegram_id = $2, updated_at = now() WHERE telegram_id = $1",
-                         message["chat"]["id"], new_id)
+        await migrate_chat(db, message["chat"]["id"], new_id)
+
+
+async def migrate_chat(db: asyncpg.Pool, old_id: int, new_id: int) -> None:
+    """Moves the chat to its new telegram_id, merging in a row the bot may already have for that id.
+
+    The old row keeps its panel settings (title, schedule) and absorbs the other row's journal and jobs.
+    """
+    async with db.acquire() as conn, conn.transaction():
+        chat_id = await conn.fetchval("SELECT id FROM chats WHERE telegram_id = $1 FOR UPDATE", old_id)
+        if chat_id is None:
+            return  # already migrated
+        dup = await conn.fetchrow("SELECT id, active, schedule_id FROM chats WHERE telegram_id = $1 FOR UPDATE", new_id)
+        if dup:
+            # a log the old row already has for the same (item, slot) would break the unique key; it is dropped
+            await conn.execute(
+                "UPDATE send_logs l SET chat_id = $1 WHERE chat_id = $2 AND NOT EXISTS (SELECT 1 FROM send_logs o "
+                "WHERE o.chat_id = $1 AND o.schedule_item_id = l.schedule_item_id AND o.slot = l.slot)",
+                chat_id, dup["id"],
+            )
+            await conn.execute("UPDATE outbox SET chat_id = $1 WHERE chat_id = $2", chat_id, dup["id"])
+            await conn.execute("DELETE FROM chats WHERE id = $1", dup["id"])
+        # the supergroup row knows whether the bot is still in the chat
+        await conn.execute(
+            "UPDATE chats SET telegram_id = $2, active = COALESCE($3, active), "
+            "schedule_id = COALESCE(schedule_id, $4), updated_at = now() WHERE id = $1",
+            chat_id, new_id, dup and dup["active"], dup and dup["schedule_id"],
+        )
