@@ -47,4 +47,15 @@ describe("login rate limit", () => {
     expect(isLoginBlocked("fresh|9.9.9.9", 1)).toBe(true)
     expect(isLoginBlocked("fresh|9.9.9.9", 15 * 60_000 + 1)).toBe(false)
   })
+
+  it("keeps an IP blocked after 10 001 junk logins from that same IP", () => {
+    for (let i = 0; i < 30; i++) recordLoginFailure(`l${i}|7.7.7.7`, 0)
+    for (let i = 0; i < 10_001; i++) recordLoginFailure(`junk${i}|7.7.7.7`, 0)
+    expect(isLoginBlocked("victim|7.7.7.7", 1)).toBe(true)
+  })
+
+  it("does not keep a per-IP counter without a proxy-reported IP", () => {
+    for (let i = 0; i < 40; i++) recordLoginFailure(`l${i}|unknown`, 0)
+    expect(isLoginBlocked("fresh|unknown", 1)).toBe(false)
+  })
 })
