@@ -17,7 +17,7 @@ import { ScheduleForm } from "./schedule-form"
 export const metadata: Metadata = { title: "Расписания" }
 
 export default async function SchedulesPage() {
-  if (!(await auth())) redirect("/login")
+  if (!(await auth())?.user) redirect("/login")
   const [schedules, templates, chats] = await Promise.all([
     db.schedule.findMany({
       orderBy: { name: "asc" },

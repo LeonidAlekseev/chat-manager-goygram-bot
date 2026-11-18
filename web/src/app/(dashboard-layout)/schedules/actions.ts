@@ -80,7 +80,7 @@ export async function saveSchedule(
   _prev: ActionState,
   formData: FormData
 ): Promise<{ error?: string }> {
-  if (!(await auth())) return EXPIRED
+  if (!(await auth())?.user) return EXPIRED
   const col = (k: string) => formData.getAll(k).map(String)
   const times = col("time")
   const itemIds = col("itemId")
@@ -217,7 +217,7 @@ export async function saveSchedule(
 export async function bindChats(
   formData: FormData
 ): Promise<{ error?: string }> {
-  if (!(await auth())) return EXPIRED
+  if (!(await auth())?.user) return EXPIRED
   const id = Id.safeParse(formData.get("id"))
   const chatIds = formData.getAll("chatId").map((c) => Id.safeParse(c))
   if (!id.success || chatIds.some((c) => !c.success)) return NOT_FOUND
@@ -243,7 +243,7 @@ export async function bindChats(
 export async function bindChat(
   formData: FormData
 ): Promise<{ error?: string }> {
-  if (!(await auth())) return EXPIRED
+  if (!(await auth())?.user) return EXPIRED
   const chatId = Id.safeParse(formData.get("chatId"))
   const raw = formData.get("scheduleId")
   const scheduleId = raw ? Id.safeParse(raw) : null
@@ -263,7 +263,7 @@ export async function bindChat(
 export async function deleteSchedule(
   formData: FormData
 ): Promise<{ error?: string }> {
-  if (!(await auth())) return EXPIRED
+  if (!(await auth())?.user) return EXPIRED
   const id = Id.safeParse(formData.get("id"))
   if (!id.success) return NOT_FOUND
   try {

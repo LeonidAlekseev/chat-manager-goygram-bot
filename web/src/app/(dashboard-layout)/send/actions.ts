@@ -28,7 +28,7 @@ export async function sendNow(
   _prev: ActionState,
   formData: FormData
 ): Promise<{ error?: string }> {
-  if (!(await auth())) throw new Error("Unauthorized")
+  if (!(await auth())?.user) throw new Error("Unauthorized")
   const parsed = Schema.safeParse({
     templateId: formData.get("templateId") || undefined,
     text: formData.get("text") || undefined,

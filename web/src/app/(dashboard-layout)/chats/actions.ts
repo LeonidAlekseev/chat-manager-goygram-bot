@@ -20,7 +20,7 @@ const RenameSchema = z.object({
 export async function renameChat(
   formData: FormData
 ): Promise<{ error?: string }> {
-  if (!(await auth())) return { error: "Сессия истекла, войдите заново" }
+  if (!(await auth())?.user) return { error: "Сессия истекла, войдите заново" }
   const parsed = RenameSchema.safeParse(Object.fromEntries(formData))
   if (!parsed.success)
     return {

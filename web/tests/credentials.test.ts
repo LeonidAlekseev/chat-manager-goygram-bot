@@ -55,6 +55,28 @@ describe("superadmin login from env", () => {
     expect(await verifyCredentials("root", "s3cret-pass")).not.toBeNull()
   })
 
+  it("disables the old superadmin after SUPERADMIN_LOGIN changes", async () => {
+    await ensureSuperadmin({
+      SUPERADMIN_LOGIN: "root",
+      SUPERADMIN_PASSWORD: "s3cret-pass",
+    })
+    await ensureSuperadmin({
+      SUPERADMIN_LOGIN: "boss",
+      SUPERADMIN_PASSWORD: "s3cret-pass",
+    })
+    expect(await verifyCredentials("root", "s3cret-pass")).toBeNull()
+    expect(await verifyCredentials("boss", "s3cret-pass")).not.toBeNull()
+  })
+
+  it("refuses a password over bcrypt's 72 bytes", async () => {
+    await expect(
+      ensureSuperadmin({
+        SUPERADMIN_LOGIN: "root",
+        SUPERADMIN_PASSWORD: "ж".repeat(37),
+      })
+    ).rejects.toThrow("72")
+  })
+
   it("refuses to start without superadmin env", async () => {
     await expect(ensureSuperadmin({})).rejects.toThrow("SUPERADMIN_LOGIN")
   })

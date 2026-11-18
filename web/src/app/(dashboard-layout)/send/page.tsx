@@ -27,7 +27,7 @@ const fmt = new Intl.DateTimeFormat("ru-RU", {
 })
 
 export default async function SendPage() {
-  if (!(await auth())) redirect("/login")
+  if (!(await auth())?.user) redirect("/login")
   const [templates, chats, jobs] = await Promise.all([
     db.template.findMany({
       orderBy: { name: "asc" },

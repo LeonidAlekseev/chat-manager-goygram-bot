@@ -17,7 +17,7 @@ export const metadata: Metadata = { title: "Чаты" }
 
 export default async function ChatsPage() {
   // Layouts are not re-rendered on client navigation, so data pages check the session themselves.
-  if (!(await auth())) redirect("/login")
+  if (!(await auth())?.user) redirect("/login")
   const chats = await db.chat.findMany({
     orderBy: [{ active: "desc" }, { title: "asc" }],
     include: { schedule: { select: { name: true } } },

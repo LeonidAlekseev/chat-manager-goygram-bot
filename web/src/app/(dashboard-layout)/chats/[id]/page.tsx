@@ -21,7 +21,7 @@ export default async function ChatPage({
 }: {
   params: Promise<{ id: string }>
 }) {
-  if (!(await auth())) redirect("/login")
+  if (!(await auth())?.user) redirect("/login")
   const id = Number((await params).id)
   if (!Number.isInteger(id) || id < 1 || id > 2147483647) notFound()
   const chat = await db.chat.findUnique({

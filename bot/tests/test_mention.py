@@ -1,3 +1,5 @@
+import asyncio
+
 import pytest
 
 from bot.mention import MentionError, build_mention_messages, handle_all, mention_all
@@ -80,28 +82,61 @@ def message(text, user=7, reply=None):
     return m
 
 
+async def run_all(bot, user, msg):
+    await (await handle_all(bot, user, msg))
+
+
 async def test_handle_all_admin_with_text_and_reply():
     bot = FakeBot("creator")
-    await handle_all(bot, FakeUser([{"user_id": 1}]), message("/all@b Внимание", reply=3))
+    await run_all(bot, FakeUser([{"user_id": 1}]), message("/all@b Внимание", reply=3))
     [s] = bot.sent()
     assert s["text"].startswith("Внимание") and s["reply_parameters"] == {"message_id": 3}
 
 
 async def test_handle_all_denies_non_admin():
     bot = FakeBot("member")
-    await handle_all(bot, FakeUser([{"user_id": 1}]), message("/all"))
+    await run_all(bot, FakeUser([{"user_id": 1}]), message("/all"))
     [s] = bot.sent()
     assert "администратор" in s["text"] and "tg://" not in s["text"]
 
 
 async def test_handle_all_reports_error_in_chat():
     bot = FakeBot()
-    await handle_all(bot, None, message("/all"))
+    await run_all(bot, None, message("/all"))
     assert "Не выполнен вход" in bot.sent()[0]["text"]
 
 
 async def test_handle_all_ignores_other_commands_and_private():
     bot = FakeBot()
-    await handle_all(bot, None, message("/chatid"))
-    await handle_all(bot, None, {**message("/all"), "chat": {"id": 1, "type": "private"}})
+    assert await handle_all(bot, None, message("/chatid")) is None
+    assert await handle_all(bot, None, {**message("/all"), "chat": {"id": 1, "type": "private"}}) is None
     assert bot.calls == []
+
+
+class SlowUser:
+    def __init__(self):
+        self.go = asyncio.Event()
+
+    async def iter_participants(self, chat_id):
+        await self.go.wait()
+        raise ConnectionError("MTProto connection lost")
+        yield
+
+
+async def test_handle_all_returns_at_once_and_reports_a_failure_in_chat():
+    bot, user = FakeBot(), SlowUser()
+    task = await handle_all(bot, user, message("/all"))
+    assert not task.done()  # other updates are not held up meanwhile
+    assert await handle_all(bot, user, message("/all")) is None  # one /all per chat at a time
+    user.go.set()
+    await task
+    [s] = bot.sent()
+    assert "Не удалось получить список участников" in s["text"] and "ConnectionError" in s["text"]
+    assert await handle_all(bot, FakeUser(), message("/all")) is not None  # the chat is free again
+
+
+async def test_handle_all_gives_up_on_a_hung_member_list(monkeypatch):
+    monkeypatch.setattr("bot.sender.FETCH_TIMEOUT", 0.01)
+    bot = FakeBot()
+    await run_all(bot, SlowUser(), message("/all"))
+    assert "не ответил" in bot.sent()[0]["text"]
