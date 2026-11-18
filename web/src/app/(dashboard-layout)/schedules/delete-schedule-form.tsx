@@ -15,10 +15,11 @@ export function DeleteScheduleForm({
     <ActionForm
       action={deleteSchedule}
       confirmText={`Удалить расписание? Привязанных чатов: ${chats} — они будут отвязаны.`}
+      className="ms-auto"
     >
       <input type="hidden" name="id" value={id} />
       <Button type="submit" variant="outline">
-        Удалить расписание
+        Удалить
       </Button>
     </ActionForm>
   )

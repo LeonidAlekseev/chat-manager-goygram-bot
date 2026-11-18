@@ -1,6 +1,6 @@
 from datetime import UTC, datetime
 
-from bot.chats import handle_group_migration, handle_member_update
+from bot.chats import delete_chats, handle_group_migration, handle_member_update
 
 
 def my_chat_member(chat_id: int, title: str, status: str) -> dict:
@@ -86,3 +86,86 @@ async def test_migration_keeps_the_better_log_of_a_slot_both_rows_have(db):
     await handle_group_migration(db, {"chat": {"id": -555}, "migrate_to_chat_id": -100555})
     rows = await db.fetch("SELECT chat_id, status::text, message_id FROM send_logs ORDER BY slot")
     assert [tuple(r) for r in rows] == [(old, "sent", 7), (old, "sent", 8)]
+
+
+class LeavingTelegram:
+    def __init__(self, error: str | None = None):
+        self.calls: list[tuple[str, dict]] = []
+        self.error = error
+
+    async def bot_req(self, meth: str, **kw):
+        self.calls.append((meth, kw))
+        if self.error:
+            raise RuntimeError(self.error)
+        return True
+
+
+async def test_deleted_chat_is_left_and_removed_with_its_journal_and_jobs(db):
+    await handle_member_update(db, my_chat_member(-100123, "ПВЗ", "member"))
+    await handle_member_update(db, my_chat_member(-100777, "Остаётся", "member"))
+    chat_id = await db.fetchval("SELECT id FROM chats WHERE telegram_id = -100123")
+    await db.execute("INSERT INTO outbox (chat_id, text) VALUES ($1, 'ещё не отправлено')", chat_id)
+    await db.execute("INSERT INTO send_logs (chat_id, slot, status) VALUES ($1, now(), 'sent')", chat_id)
+    await db.execute("UPDATE chats SET deleting = true WHERE id = $1", chat_id)
+    tg = LeavingTelegram()
+    await delete_chats(db, tg)
+    assert tg.calls == [("leaveChat", {"chat_id": -100123})]
+    assert await chats(db) == [(-100777, "Остаётся", True)]
+    assert await db.fetchval("SELECT count(*) FROM outbox") == 0
+    assert await db.fetchval("SELECT count(*) FROM send_logs") == 0
+
+
+async def test_chat_the_bot_already_left_is_removed_without_leaving(db):
+    await handle_member_update(db, my_chat_member(-100123, "ПВЗ", "kicked"))
+    await handle_member_update(db, my_chat_member(-100123, "ПВЗ", "member"))
+    await handle_member_update(db, my_chat_member(-100123, "ПВЗ", "kicked"))
+    await db.execute("UPDATE chats SET deleting = true")
+    tg = LeavingTelegram()
+    await delete_chats(db, tg)
+    assert tg.calls == [] and await chats(db) == []
+
+
+async def test_telegram_saying_the_bot_is_not_there_still_removes_the_chat(db):
+    await handle_member_update(db, my_chat_member(-100123, "ПВЗ", "member"))
+    await db.execute("UPDATE chats SET deleting = true")
+    await delete_chats(db, LeavingTelegram("botapi leaveChat http 400: Bad Request: chat not found"))
+    assert await chats(db) == []
+
+
+async def test_network_failure_keeps_the_chat_for_the_next_try(db):
+    await handle_member_update(db, my_chat_member(-100123, "ПВЗ", "member"))
+    await db.execute("UPDATE chats SET deleting = true")
+    await delete_chats(db, LeavingTelegram("connection reset"))
+    assert await chats(db) == [(-100123, "ПВЗ", True)]
+
+
+async def test_leave_update_after_deletion_does_not_bring_the_chat_back(db):
+    await handle_member_update(db, my_chat_member(-100123, "ПВЗ", "member"))
+    await db.execute("UPDATE chats SET deleting = true")
+    await delete_chats(db, LeavingTelegram())
+    await handle_member_update(db, my_chat_member(-100123, "ПВЗ", "left"))
+    assert await chats(db) == []
+    await handle_member_update(db, my_chat_member(-100123, "ПВЗ", "member"))  # added back later: a new chat
+    assert [tuple(r) for r in await db.fetch("SELECT active, deleting, schedule_id FROM chats")] == [(True, False, None)]
+
+
+async def test_chat_with_a_send_in_flight_waits_for_the_next_pass(db):
+    await handle_member_update(db, my_chat_member(-100123, "ПВЗ", "member"))
+    await db.execute("INSERT INTO send_logs (chat_id, slot) SELECT id, now() FROM chats")  # pending
+    await db.execute("UPDATE chats SET deleting = true")
+    tg = LeavingTelegram()
+    await delete_chats(db, tg)
+    assert tg.calls == [] and len(await chats(db)) == 1
+    await db.execute("UPDATE send_logs SET status = 'sent'")
+    await delete_chats(db, tg)
+    assert await chats(db) == []
+
+
+async def test_a_failing_leave_is_logged_once_not_every_tick(db, caplog):
+    await handle_member_update(db, my_chat_member(-100123, "ПВЗ", "member"))
+    await db.execute("UPDATE chats SET deleting = true")
+    for _ in range(3):
+        await delete_chats(db, LeavingTelegram("connection reset"))
+    assert len([r for r in caplog.records if "leaving chat" in r.message]) == 1
+    await delete_chats(db, LeavingTelegram())
+    assert await chats(db) == []

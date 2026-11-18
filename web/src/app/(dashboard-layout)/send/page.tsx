@@ -34,7 +34,7 @@ export default async function SendPage() {
       select: { id: true, name: true },
     }),
     db.chat.findMany({
-      where: { active: true },
+      where: { active: true, deleting: false },
       orderBy: { title: "asc" },
       select: { id: true, title: true },
     }),

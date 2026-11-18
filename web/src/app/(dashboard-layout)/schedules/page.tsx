@@ -28,6 +28,7 @@ export default async function SchedulesPage() {
       select: { id: true, name: true },
     }),
     db.chat.findMany({
+      where: { deleting: false },
       orderBy: [{ active: "desc" }, { title: "asc" }],
       include: { schedule: { select: { name: true } } },
     }),
@@ -55,8 +56,8 @@ export default async function SchedulesPage() {
             const items = s.items.map(toItemView)
             return (
               <details key={s.id} className="rounded-md border p-3">
-                <summary className="cursor-pointer">
-                  {s.name}{" "}
+                <summary className="flex cursor-pointer flex-wrap items-center gap-x-2">
+                  {s.name}
                   <span className="text-sm text-muted-foreground">
                     ·{" "}
                     {s.items.length
@@ -64,6 +65,10 @@ export default async function SchedulesPage() {
                       : "нет пунктов"}{" "}
                     · чатов: {chats.filter((c) => c.scheduleId === s.id).length}
                   </span>
+                  <DeleteScheduleForm
+                    id={s.id}
+                    chats={chats.filter((c) => c.scheduleId === s.id).length}
+                  />
                 </summary>
                 <div className="mt-3 grid gap-4">
                   <ScheduleForm
@@ -108,10 +113,6 @@ export default async function SchedulesPage() {
                       Сохранить привязку
                     </Button>
                   </ActionForm>
-                  <DeleteScheduleForm
-                    id={s.id}
-                    chats={chats.filter((c) => c.scheduleId === s.id).length}
-                  />
                 </div>
               </details>
             )

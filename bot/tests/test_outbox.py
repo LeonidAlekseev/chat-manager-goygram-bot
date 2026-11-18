@@ -59,6 +59,15 @@ async def test_telegram_error_is_logged_and_other_jobs_still_go_out(world):
     assert rows[1][:2] == (-1002, "sent")
 
 
+async def test_job_for_a_chat_being_deleted_is_not_sent(world):
+    await world.execute("INSERT INTO outbox (chat_id, text) VALUES (1, 'a'), (2, 'b')")
+    await world.execute("UPDATE chats SET deleting = true WHERE id = 1")
+    tg = FakeTelegram()
+    await run_outbox(world, tg)
+    assert [k["chat_id"] for _, k in tg.calls] == [-1002]
+    assert (await jobs(world))[0][1] is None  # unclaimed; the chat's deletion takes it
+
+
 async def test_job_whose_template_was_deleted_is_an_error(world):
     await world.execute("INSERT INTO outbox (chat_id, template_id) VALUES (1, 1)")
     await world.execute("DELETE FROM templates")

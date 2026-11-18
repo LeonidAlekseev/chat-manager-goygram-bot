@@ -129,13 +129,19 @@ export function TemplateForm({ t = empty }: { t?: TemplateView }) {
   )
 }
 
-export function DeleteTemplate({ id }: { id: number }) {
+export function DeleteTemplate({ id, name }: { id: number; name: string }) {
   const [state, action, pending] = useActionState<ActionState, FormData>(
     deleteTemplate,
     null
   )
   return (
-    <form action={action} className="flex items-center gap-2">
+    <form
+      action={action}
+      onSubmit={(e) => {
+        if (!confirm(`Удалить шаблон «${name}»?`)) e.preventDefault()
+      }}
+      className="ms-auto flex flex-wrap items-center gap-2"
+    >
       <input type="hidden" name="id" value={id} />
       <Button type="submit" variant="outline" disabled={pending}>
         Удалить

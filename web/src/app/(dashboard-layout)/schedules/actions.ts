@@ -21,6 +21,7 @@ const Id = z
   .transform(Number)
 const NOT_FOUND = { error: BAD_ID }
 const EXPIRED = { error: "Сессия истекла, войдите заново" }
+const DELETING = { error: "Чат удаляется" }
 
 // P2025: the row is gone; P2003: the other side of a link is gone
 function gone(e: unknown) {
@@ -62,6 +63,7 @@ function revalidate() {
 }
 
 function friendly(e: unknown): { error: string } {
+  if (e === DELETING) return DELETING
   if (e instanceof Prisma.PrismaClientKnownRequestError) {
     if (e.code === "P2002")
       return {
@@ -178,10 +180,11 @@ export async function saveSchedule(
               data: { scheduleItemId: newId },
             })
         }
-        await tx.chat.update({
-          where: { id: chatId },
+        const { count } = await tx.chat.updateMany({
+          where: { id: chatId, deleting: false },
           data: { scheduleId: copy.id },
         })
+        if (!count) throw DELETING // rolls the copy back
         return
       }
       // Items keep their ids, so the bot's (chat, item, slot) claim survives a save in the firing minute.
@@ -229,7 +232,7 @@ export async function bindChats(
         data: { scheduleId: null },
       }),
       db.chat.updateMany({
-        where: { id: { in: ids } },
+        where: { id: { in: ids }, deleting: false },
         data: { scheduleId: id.data },
       }),
     ])
@@ -249,10 +252,14 @@ export async function bindChat(
   const scheduleId = raw ? Id.safeParse(raw) : null
   if (!chatId.success || (scheduleId && !scheduleId.success)) return NOT_FOUND
   try {
-    await db.chat.update({
-      where: { id: chatId.data },
+    const { count } = await db.chat.updateMany({
+      where: { id: chatId.data, deleting: false },
       data: { scheduleId: scheduleId?.data ?? null },
     })
+    if (!count)
+      return (await db.chat.count({ where: { id: chatId.data } }))
+        ? DELETING
+        : NOT_FOUND
   } catch (e) {
     return gone(e)
   }

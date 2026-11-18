@@ -49,7 +49,7 @@ export default async function TemplatesPage({
               open={t.id === opened}
               className="rounded-md border p-3 open:border-primary"
             >
-              <summary className="flex cursor-pointer items-center gap-2">
+              <summary className="flex cursor-pointer flex-wrap items-center gap-2">
                 {t.name}
                 <Badge variant="secondary">
                   {t.kind === "poll"
@@ -67,10 +67,10 @@ export default async function TemplatesPage({
                     {t.author.name || t.author.login}
                   </span>
                 )}
+                <DeleteTemplate id={t.id} name={t.name} />
               </summary>
               <div className="mt-3 grid gap-3">
                 <TemplateForm t={t} />
-                <DeleteTemplate id={t.id} />
               </div>
             </details>
           ))}

@@ -12,6 +12,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { ActionForm } from "@/components/action-form"
 import { renameChat } from "./actions"
+import { DeleteChatForm } from "./delete-chat-form"
 
 export const metadata: Metadata = { title: "Чаты" }
 
@@ -35,57 +36,59 @@ export default async function ChatsPage() {
               Добавьте бота в группу — чат появится здесь.
             </p>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead className="text-left text-muted-foreground">
-                  <tr>
-                    <th className="py-2 font-medium">Название</th>
-                    <th className="py-2 font-medium">Telegram ID</th>
-                    <th className="py-2 font-medium">Статус</th>
-                    <th className="py-2 font-medium">Расписание</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {chats.map((chat) => (
-                    <tr key={chat.id} className="border-t">
-                      <td className="py-2 pe-4">
-                        <ActionForm action={renameChat} className="flex gap-2">
-                          <input type="hidden" name="id" value={chat.id} />
-                          <Input
-                            className="min-w-40"
-                            name="title"
-                            defaultValue={chat.title}
-                            aria-label={`Название чата ${chat.telegramId}`}
-                            required
-                            maxLength={255}
-                          />
-                          <Button type="submit" variant="outline">
-                            Сохранить
-                          </Button>
-                        </ActionForm>
-                      </td>
-                      <td className="py-2 pe-4 font-mono">
-                        {chat.telegramId.toString()}
-                      </td>
-                      <td className="py-2">
-                        {chat.active ? (
-                          <Badge>Активен</Badge>
-                        ) : (
-                          <Badge variant="secondary">Бот удалён</Badge>
-                        )}
-                      </td>
-                      <td className="py-2 ps-4">
-                        <Link
-                          href={`/chats/${chat.id}`}
-                          className="underline underline-offset-4"
-                        >
-                          {chat.schedule?.name ?? "Настроить"}
-                        </Link>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            // one markup: a card per chat on a phone, table-like columns from md up
+            <div className="grid text-sm">
+              <div className="hidden gap-4 py-2 font-medium text-muted-foreground md:grid md:grid-cols-[minmax(0,2fr)_auto_auto_minmax(0,1fr)_auto]">
+                <span>Название</span>
+                <span>Telegram ID</span>
+                <span>Статус</span>
+                <span>Расписание</span>
+                <span />
+              </div>
+              {chats.map((chat) => (
+                <div
+                  key={chat.id}
+                  className="grid gap-2 border-t py-3 md:grid-cols-[minmax(0,2fr)_auto_auto_minmax(0,1fr)_auto] md:items-center md:gap-4 md:py-2"
+                >
+                  <ActionForm action={renameChat} className="flex gap-2">
+                    <input type="hidden" name="id" value={chat.id} />
+                    <Input
+                      className="min-w-0"
+                      name="title"
+                      defaultValue={chat.title}
+                      aria-label={`Название чата ${chat.telegramId}`}
+                      required
+                      maxLength={255}
+                    />
+                    <Button type="submit" variant="outline">
+                      Сохранить
+                    </Button>
+                  </ActionForm>
+                  <span className="font-mono text-muted-foreground md:text-foreground">
+                    {chat.telegramId.toString()}
+                  </span>
+                  <span>
+                    {chat.deleting ? (
+                      <Badge variant="secondary">Удаляется…</Badge>
+                    ) : chat.active ? (
+                      <Badge>Активен</Badge>
+                    ) : (
+                      <Badge variant="secondary">Бот удалён</Badge>
+                    )}
+                  </span>
+                  <span>
+                    {!chat.deleting && (
+                      <Link
+                        href={`/chats/${chat.id}`}
+                        className="underline underline-offset-4"
+                      >
+                        {chat.schedule?.name ?? "Настроить расписание"}
+                      </Link>
+                    )}
+                  </span>
+                  {!chat.deleting && <DeleteChatForm chat={chat} />}
+                </div>
+              ))}
             </div>
           )}
         </CardContent>

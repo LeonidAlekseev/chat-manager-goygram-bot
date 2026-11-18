@@ -38,7 +38,9 @@ export async function sendNow(
   const { templateId, text, chatIds } = parsed.data
   // unknown or deactivated chats / a missing template would otherwise fail on the FK or send to a dead chat
   const [live, tpl] = await Promise.all([
-    db.chat.count({ where: { id: { in: chatIds }, active: true } }),
+    db.chat.count({
+      where: { id: { in: chatIds }, active: true, deleting: false },
+    }),
     templateId ? db.template.count({ where: { id: templateId } }) : 1,
   ])
   if (live !== new Set(chatIds).size || !tpl)
