@@ -15,7 +15,7 @@ export default async function PollAnswersPage({
 }: {
   params: Promise<{ id: string }>
 }) {
-  if (!(await auth())) redirect("/login")
+  if (!(await auth())?.user) redirect("/login")
   const id = Number((await params).id)
   if (!Number.isInteger(id)) notFound()
   const log = await db.sendLog.findUnique({

@@ -17,7 +17,7 @@ export default async function TemplatesPage({
 }: {
   searchParams: Promise<{ id?: string }>
 }) {
-  if (!(await auth())) redirect("/login")
+  if (!(await auth())?.user) redirect("/login")
   const opened = Number((await searchParams).id)
   const templates = await db.template.findMany({
     orderBy: { id: "asc" },

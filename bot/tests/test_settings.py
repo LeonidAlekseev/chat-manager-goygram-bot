@@ -1,9 +1,11 @@
 import asyncio
+import base64
 import json
 from pathlib import Path
 
 import pytest
 from cryptography.exceptions import InvalidTag
+from goygram.security import _vault_env_key
 
 from bot.settings import (
     Settings,
@@ -11,6 +13,7 @@ from bot.settings import (
     encrypt,
     load_settings,
     store_bot_username,
+    vault_key,
     wait_for_token,
     watch_settings,
 )
@@ -96,3 +99,19 @@ async def test_stores_the_bot_username_without_counting_as_a_change(sdb):
     await store_bot_username(sdb, FakeMe())
     assert await sdb.fetchval("SELECT bot_username FROM settings") == "goy_manager_bot"
     assert await load_settings(sdb, SECRET) == current  # no restart loop
+
+
+async def test_a_token_encrypted_with_another_secret_is_shown_in_the_panel(sdb):
+    await put(sdb, "1:tok")
+    waiting = asyncio.create_task(wait_for_token(sdb, "other-secret", interval=0.01))
+    await asyncio.sleep(0.05)
+    assert not waiting.done()
+    assert "AUTH_SECRET" in await sdb.fetchval("SELECT bot_error FROM settings")
+    waiting.cancel()
+
+
+def test_the_vault_key_comes_from_auth_secret_and_goygram_takes_it(monkeypatch):
+    key = vault_key(SECRET)
+    assert key == vault_key(SECRET) != vault_key("other") and len(base64.b64decode(key)) == 32
+    monkeypatch.setenv("GOYGRAM_VAULT_KEY", key)
+    assert _vault_env_key() == base64.b64decode(key)

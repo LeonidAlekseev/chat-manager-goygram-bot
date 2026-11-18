@@ -135,3 +135,81 @@ test("settings: disconnecting the Telegram account asks first", async ({
     })
   }
 })
+
+test("schedule form: a saved time sticks, and a second save does not revert it", async ({
+  page,
+}) => {
+  const name = `E2E time ${Date.now()}`
+  const tpl = await db.template.create({
+    data: { name, kind: "text", text: "hi" },
+  })
+  const sch = await db.schedule.create({
+    data: {
+      name,
+      items: {
+        create: {
+          templateId: tpl.id,
+          time: "08:00",
+          startDate: new Date("2999-01-01T00:00:00Z"),
+          period: "day",
+        },
+      },
+    },
+  })
+  const dbTime = async () =>
+    (await db.scheduleItem.findFirstOrThrow({ where: { scheduleId: sch.id } }))
+      .time
+  await page.goto("/login")
+  await page.getByLabel("Логин").fill(LOGIN)
+  await page.getByLabel("Пароль").fill(PASSWORD)
+  await page.getByRole("button", { name: "Войти" }).click()
+  await page.waitForURL("**/chats")
+
+  await page.goto("/schedules")
+  const item = page.locator("details").filter({
+    has: page.locator("summary", { hasText: name }),
+  })
+  await item.locator("summary").click()
+  const time = item.getByLabel(/^Время/)
+  await time.fill("09:00")
+  await item.getByRole("button", { name: "Сохранить", exact: true }).click()
+  await expect.poll(dbTime).toBe("09:00")
+  await expect(time).toHaveValue("09:00")
+
+  // Saving again must not put the old value back.
+  await item.getByRole("button", { name: "Сохранить", exact: true }).click()
+  await page.waitForTimeout(500)
+  await expect(time).toHaveValue("09:00")
+  expect(await dbTime()).toBe("09:00")
+})
+
+test("journal: 200 rows per page, «Дальше» shows the rest", async ({
+  page,
+}) => {
+  const chat = await db.chat.findFirstOrThrow({ where: { title: CHAT } })
+  const text = `E2E журнал ${Date.now()}`
+  await db.sendLog.deleteMany({ where: { chatId: chat.id } })
+  await db.sendLog.createMany({
+    data: Array.from({ length: 205 }, (_, i) => ({
+      chatId: chat.id,
+      slot: new Date(Date.UTC(2000, 0, 1, 0, 0, i)),
+      status: "sent" as const,
+      text,
+    })),
+  })
+  try {
+    await page.goto("/login")
+    await page.getByLabel("Логин").fill(LOGIN)
+    await page.getByLabel("Пароль").fill(PASSWORD)
+    await page.getByRole("button", { name: "Войти" }).click()
+    await page.waitForURL("**/chats")
+
+    await page.goto(`/logs?chat=${chat.id}`)
+    await expect(page.locator("tbody tr")).toHaveCount(200)
+    await page.getByRole("link", { name: "Дальше" }).click()
+    await expect(page.locator("tbody tr")).toHaveCount(5)
+    await expect(page.getByRole("link", { name: "Дальше" })).toBeHidden()
+  } finally {
+    await db.sendLog.deleteMany({ where: { chatId: chat.id } })
+  }
+})

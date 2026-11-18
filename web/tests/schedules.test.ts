@@ -151,6 +151,80 @@ describe("schedules", () => {
     expect(await db.schedule.count()).toBe(0)
   })
 
+  it("rejects a one-time item in the past, accepts one in the future and repeating ones", async () => {
+    const once = { ...morning, templateId: tpl, period: "none" }
+    const past = await saveSchedule(
+      null,
+      form({ name: "S" }, [{ ...once, startDate: "2000-01-01" }])
+    )
+    expect(past.error).toMatch(/в прошлом/)
+    expect(await db.schedule.count()).toBe(0)
+    expect(
+      (
+        await saveSchedule(
+          null,
+          form({ name: "S" }, [
+            { ...once, startDate: "2999-01-01" },
+            { ...morning, templateId: tpl2, startDate: "2000-01-01" },
+          ])
+        )
+      ).error
+    ).toBeUndefined()
+  })
+
+  it("lets an already-fired one-time item be saved unchanged, but not moved within the past", async () => {
+    const s = await db.schedule.create({
+      data: {
+        name: "S",
+        items: {
+          create: {
+            templateId: tpl,
+            time: "08:00",
+            startDate: new Date("2000-01-01T00:00:00Z"),
+            period: "none",
+          },
+        },
+      },
+      include: { items: true },
+    })
+    const item = {
+      itemId: s.items[0].id,
+      templateId: tpl,
+      time: "08:00",
+      startDate: "2000-01-01",
+      period: "none",
+    }
+    expect(
+      (await saveSchedule(null, form({ id: s.id, name: "Renamed" }, [item])))
+        .error
+    ).toBeUndefined()
+    expect(
+      (
+        await saveSchedule(
+          null,
+          form({ id: s.id, name: "Renamed" }, [{ ...item, time: "09:00" }])
+        )
+      ).error
+    ).toMatch(/в прошлом/)
+  })
+
+  it("answers an out-of-range or missing id with an error, not a throw", async () => {
+    const s = await shared()
+    for (const id of ["2147483648", "999999"]) {
+      expect((await bindChat(form({ chatId: id }))).error).toBeTruthy()
+      expect(
+        (await bindChat(form({ chatId: chats[0], scheduleId: id }))).error
+      ).toBeTruthy()
+      expect((await bindChats(bindForm(Number(id), chats))).error).toBeTruthy()
+      expect((await deleteSchedule(form({ id }))).error).toBeTruthy()
+    }
+    expect(
+      (await saveSchedule(null, form({ name: "S2", id: 999999 }))).error
+    ).toBeTruthy()
+    expect(await db.schedule.count()).toBe(1)
+    expect((await deleteSchedule(form({ id: s.id }))).error).toBeUndefined()
+  })
+
   it("reports a duplicate name instead of throwing", async () => {
     await saveSchedule(null, form({ name: "S" }))
     expect((await saveSchedule(null, form({ name: "S" }))).error).toMatch(
@@ -372,10 +446,59 @@ describe("schedules", () => {
     )
   })
 
-  it("refuses when not signed in", async () => {
+  it("answers an expired session with a message, not a throw", async () => {
     session.current = null
-    await expect(saveSchedule(null, form({ name: "S" }))).rejects.toThrow(
-      "Unauthorized"
+    const expired = { error: "Сессия истекла, войдите заново" }
+    expect(await saveSchedule(null, form({ name: "S" }))).toEqual(expired)
+    expect(await bindChat(form({ chatId: chats[0] }))).toEqual(expired)
+    expect(await bindChats(bindForm(1, chats))).toEqual(expired)
+    expect(await deleteSchedule(form({ id: 1 }))).toEqual(expired)
+    expect(await db.schedule.count()).toBe(0)
+  })
+
+  it("an item id from another schedule does not count as an unchanged past item", async () => {
+    const past = new Date("2000-01-01T00:00:00Z")
+    const other = await db.schedule.create({
+      data: {
+        name: "Other",
+        items: {
+          create: {
+            templateId: tpl,
+            time: "08:00",
+            startDate: past,
+            period: "none",
+          },
+        },
+      },
+      include: { items: true },
+    })
+    const mine = await db.schedule.create({ data: { name: "Mine" } })
+    const r = await saveSchedule(
+      null,
+      form({ id: mine.id, name: "Mine" }, [
+        {
+          itemId: other.items[0].id,
+          templateId: tpl,
+          time: "08:00",
+          startDate: "2000-01-01",
+          period: "none",
+        },
+      ])
     )
+    expect(r.error).toMatch(/в прошлом/)
+  })
+
+  it("shows Russian messages for an empty name and a bad template id", async () => {
+    expect((await saveSchedule(null, form({ name: "  " }))).error).toBe(
+      "Введите название"
+    )
+    expect(
+      (
+        await saveSchedule(
+          null,
+          form({ name: "S" }, [{ ...morning, templateId: 0 }])
+        )
+      ).error
+    ).toBe("Не найдено — обновите страницу")
   })
 })

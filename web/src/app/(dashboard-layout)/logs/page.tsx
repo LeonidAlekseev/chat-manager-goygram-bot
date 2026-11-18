@@ -20,6 +20,14 @@ const STATUS: Record<SendStatus, string> = {
   pending: "В процессе",
 }
 
+const PAGE = 200
+
+// a non-number or an id beyond Postgres INT would make the query throw
+const intId = (v?: string) => {
+  const n = Number(v)
+  return Number.isInteger(n) && n > 0 && n <= 2147483647 ? n : undefined
+}
+
 const fmt = new Intl.DateTimeFormat("ru-RU", {
   dateStyle: "short",
   timeStyle: "short",
@@ -29,21 +37,22 @@ const fmt = new Intl.DateTimeFormat("ru-RU", {
 export default async function LogsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ chat?: string; status?: string }>
+  searchParams: Promise<{ chat?: string; status?: string; before?: string }>
 }) {
-  if (!(await auth())) redirect("/login")
-  const { chat, status } = await searchParams
-  const chatId = Number(chat) || undefined
+  if (!(await auth())?.user) redirect("/login")
+  const { chat, status, before } = await searchParams
+  const chatId = intId(chat)
   const st = status && status in STATUS ? (status as SendStatus) : undefined
-  const [chats, logs] = await Promise.all([
+  const beforeId = intId(before)
+  const [chats, rows] = await Promise.all([
     db.chat.findMany({
       orderBy: { title: "asc" },
       select: { id: true, title: true },
     }),
     db.sendLog.findMany({
-      where: { chatId, status: st },
+      where: { chatId, status: st, id: { lt: beforeId } },
       orderBy: { id: "desc" },
-      take: 200,
+      take: PAGE + 1, // one extra row tells whether there is a next page
       include: {
         chat: { select: { title: true } },
         template: { select: { name: true } },
@@ -51,6 +60,12 @@ export default async function LogsPage({
       },
     }),
   ])
+
+  const logs = rows.slice(0, PAGE)
+  const next = new URLSearchParams()
+  if (chatId) next.set("chat", String(chatId))
+  if (st) next.set("status", st)
+  if (rows.length > PAGE) next.set("before", String(logs[PAGE - 1].id))
 
   return (
     <section className="container p-4">
@@ -130,6 +145,11 @@ export default async function LogsPage({
                 ))}
               </tbody>
             </table>
+          )}
+          {rows.length > PAGE && (
+            <Button asChild variant="outline" className="w-fit">
+              <Link href={`/logs?${next}`}>Дальше</Link>
+            </Button>
           )}
         </CardContent>
       </Card>

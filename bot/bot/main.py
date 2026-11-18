@@ -18,7 +18,7 @@ from bot.mention import handle_all
 from bot.outbox import run_forever as run_outbox_forever
 from bot.polls import handle_poll_answer, purge_forever
 from bot.scheduler import run_forever
-from bot.settings import Settings, store_bot_username, wait_for_token, watch_settings
+from bot.settings import Settings, store_bot_username, vault_key, wait_for_token, watch_settings
 
 log = logging.getLogger(__name__)
 
@@ -27,6 +27,8 @@ async def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
     db = await asyncpg.create_pool(os.environ["DATABASE_URL"])
     secret = os.environ["AUTH_SECRET"]
+    # The user client's vault in /tmp; the vault is rewritten from the DB on each start, so no new login.
+    os.environ.setdefault("GOYGRAM_VAULT_KEY", vault_key(secret))
     try:
         settings, app = await start_bot(db, secret)
         await _serve(db, secret, settings, app)
