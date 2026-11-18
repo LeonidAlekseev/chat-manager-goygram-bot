@@ -35,55 +35,58 @@ export default async function ChatsPage() {
               Добавьте бота в группу — чат появится здесь.
             </p>
           ) : (
-            <table className="w-full text-sm">
-              <thead className="text-left text-muted-foreground">
-                <tr>
-                  <th className="py-2 font-medium">Название</th>
-                  <th className="py-2 font-medium">Telegram ID</th>
-                  <th className="py-2 font-medium">Статус</th>
-                  <th className="py-2 font-medium">Расписание</th>
-                </tr>
-              </thead>
-              <tbody>
-                {chats.map((chat) => (
-                  <tr key={chat.id} className="border-t">
-                    <td className="py-2 pe-4">
-                      <ActionForm action={renameChat} className="flex gap-2">
-                        <input type="hidden" name="id" value={chat.id} />
-                        <Input
-                          name="title"
-                          defaultValue={chat.title}
-                          aria-label={`Название чата ${chat.telegramId}`}
-                          required
-                          maxLength={255}
-                        />
-                        <Button type="submit" variant="outline">
-                          Сохранить
-                        </Button>
-                      </ActionForm>
-                    </td>
-                    <td className="py-2 pe-4 font-mono">
-                      {chat.telegramId.toString()}
-                    </td>
-                    <td className="py-2">
-                      {chat.active ? (
-                        <Badge>Активен</Badge>
-                      ) : (
-                        <Badge variant="secondary">Бот удалён</Badge>
-                      )}
-                    </td>
-                    <td className="py-2 ps-4">
-                      <Link
-                        href={`/chats/${chat.id}`}
-                        className="underline underline-offset-4"
-                      >
-                        {chat.schedule?.name ?? "Настроить"}
-                      </Link>
-                    </td>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="text-left text-muted-foreground">
+                  <tr>
+                    <th className="py-2 font-medium">Название</th>
+                    <th className="py-2 font-medium">Telegram ID</th>
+                    <th className="py-2 font-medium">Статус</th>
+                    <th className="py-2 font-medium">Расписание</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {chats.map((chat) => (
+                    <tr key={chat.id} className="border-t">
+                      <td className="py-2 pe-4">
+                        <ActionForm action={renameChat} className="flex gap-2">
+                          <input type="hidden" name="id" value={chat.id} />
+                          <Input
+                            className="min-w-40"
+                            name="title"
+                            defaultValue={chat.title}
+                            aria-label={`Название чата ${chat.telegramId}`}
+                            required
+                            maxLength={255}
+                          />
+                          <Button type="submit" variant="outline">
+                            Сохранить
+                          </Button>
+                        </ActionForm>
+                      </td>
+                      <td className="py-2 pe-4 font-mono">
+                        {chat.telegramId.toString()}
+                      </td>
+                      <td className="py-2">
+                        {chat.active ? (
+                          <Badge>Активен</Badge>
+                        ) : (
+                          <Badge variant="secondary">Бот удалён</Badge>
+                        )}
+                      </td>
+                      <td className="py-2 ps-4">
+                        <Link
+                          href={`/chats/${chat.id}`}
+                          className="underline underline-offset-4"
+                        >
+                          {chat.schedule?.name ?? "Настроить"}
+                        </Link>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
         </CardContent>
       </Card>

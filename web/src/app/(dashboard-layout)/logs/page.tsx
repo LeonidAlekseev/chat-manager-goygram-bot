@@ -73,9 +73,14 @@ export default async function LogsPage({
         <CardHeader>
           <CardTitle>Журнал отправок</CardTitle>
         </CardHeader>
-        <CardContent className="grid gap-4">
+        <CardContent className="grid grid-cols-[minmax(0,1fr)] gap-4">
           <form className="flex flex-wrap gap-2">
-            <Select name="chat" defaultValue={chatId ?? ""} aria-label="Чат">
+            <Select
+              className="max-w-full"
+              name="chat"
+              defaultValue={chatId ?? ""}
+              aria-label="Чат"
+            >
               <option value="">Все чаты</option>
               {chats.map((c) => (
                 <option key={c.id} value={c.id}>
@@ -98,53 +103,55 @@ export default async function LogsPage({
           {logs.length === 0 ? (
             <p className="text-muted-foreground">Отправок пока нет.</p>
           ) : (
-            <table className="w-full text-sm">
-              <thead className="text-left text-muted-foreground">
-                <tr>
-                  <th className="py-2 font-medium">Когда</th>
-                  <th className="py-2 font-medium">Чат</th>
-                  <th className="py-2 font-medium">Шаблон</th>
-                  <th className="py-2 font-medium">Статус</th>
-                  <th className="py-2 font-medium">Ошибка</th>
-                </tr>
-              </thead>
-              <tbody>
-                {logs.map((l) => (
-                  <tr key={l.id} className="border-t align-top">
-                    <td className="py-2 pe-4 whitespace-nowrap">
-                      {fmt.format(l.slot)}
-                    </td>
-                    <td className="py-2 pe-4">{l.chat.title}</td>
-                    <td className="py-2 pe-4" title={l.text ?? undefined}>
-                      {l.template?.name ??
-                        (l.outbox?.text != null
-                          ? "Ручной текст"
-                          : "— удалён —")}
-                    </td>
-                    <td className="py-2 pe-4">
-                      <Badge
-                        variant={
-                          l.status === "error" ? "destructive" : "secondary"
-                        }
-                      >
-                        {STATUS[l.status]}
-                      </Badge>
-                    </td>
-                    <td className="py-2 break-all text-destructive">
-                      {l.error}
-                      {l.pollId && (
-                        <Link
-                          href={`/logs/${l.id}`}
-                          className="text-foreground underline"
-                        >
-                          Ответы
-                        </Link>
-                      )}
-                    </td>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="text-left text-muted-foreground">
+                  <tr>
+                    <th className="py-2 font-medium">Когда</th>
+                    <th className="py-2 font-medium">Чат</th>
+                    <th className="py-2 font-medium">Шаблон</th>
+                    <th className="py-2 font-medium">Статус</th>
+                    <th className="py-2 font-medium">Ошибка</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {logs.map((l) => (
+                    <tr key={l.id} className="border-t align-top">
+                      <td className="py-2 pe-4 whitespace-nowrap">
+                        {fmt.format(l.slot)}
+                      </td>
+                      <td className="py-2 pe-4">{l.chat.title}</td>
+                      <td className="py-2 pe-4" title={l.text ?? undefined}>
+                        {l.template?.name ??
+                          (l.outbox?.text != null
+                            ? "Ручной текст"
+                            : "— удалён —")}
+                      </td>
+                      <td className="py-2 pe-4">
+                        <Badge
+                          variant={
+                            l.status === "error" ? "destructive" : "secondary"
+                          }
+                        >
+                          {STATUS[l.status]}
+                        </Badge>
+                      </td>
+                      <td className="py-2 break-all text-destructive">
+                        {l.error}
+                        {l.pollId && (
+                          <Link
+                            href={`/logs/${l.id}`}
+                            className="text-foreground underline"
+                          >
+                            Ответы
+                          </Link>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
           {rows.length > PAGE && (
             <Button asChild variant="outline" className="w-fit">

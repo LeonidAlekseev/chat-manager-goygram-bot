@@ -67,45 +67,47 @@ export default async function SendPage() {
           {jobs.length === 0 ? (
             <p className="text-muted-foreground">Заданий пока нет.</p>
           ) : (
-            <table className="w-full text-sm">
-              <thead className="text-left text-muted-foreground">
-                <tr>
-                  <th className="py-2 font-medium">Когда</th>
-                  <th className="py-2 font-medium">Чат</th>
-                  <th className="py-2 font-medium">Что</th>
-                  <th className="py-2 font-medium">Статус</th>
-                  <th className="py-2 font-medium">Ошибка</th>
-                </tr>
-              </thead>
-              <tbody>
-                {jobs.map((j) => {
-                  const status = j.sendLog?.status ?? "queued"
-                  return (
-                    <tr key={j.id} className="border-t align-top">
-                      <td className="py-2 pe-4 whitespace-nowrap">
-                        {fmt.format(j.createdAt)}
-                      </td>
-                      <td className="py-2 pe-4">{j.chat.title}</td>
-                      <td className="py-2 pe-4">
-                        {j.text ?? j.template?.name ?? "— удалён —"}
-                      </td>
-                      <td className="py-2 pe-4">
-                        <Badge
-                          variant={
-                            status === "error" ? "destructive" : "secondary"
-                          }
-                        >
-                          {STATUS[status]}
-                        </Badge>
-                      </td>
-                      <td className="py-2 break-all text-destructive">
-                        {j.sendLog?.error}
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="text-left text-muted-foreground">
+                  <tr>
+                    <th className="py-2 font-medium">Когда</th>
+                    <th className="py-2 font-medium">Чат</th>
+                    <th className="py-2 font-medium">Что</th>
+                    <th className="py-2 font-medium">Статус</th>
+                    <th className="py-2 font-medium">Ошибка</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {jobs.map((j) => {
+                    const status = j.sendLog?.status ?? "queued"
+                    return (
+                      <tr key={j.id} className="border-t align-top">
+                        <td className="py-2 pe-4 whitespace-nowrap">
+                          {fmt.format(j.createdAt)}
+                        </td>
+                        <td className="py-2 pe-4">{j.chat.title}</td>
+                        <td className="py-2 pe-4">
+                          {j.text ?? j.template?.name ?? "— удалён —"}
+                        </td>
+                        <td className="py-2 pe-4">
+                          <Badge
+                            variant={
+                              status === "error" ? "destructive" : "secondary"
+                            }
+                          >
+                            {STATUS[status]}
+                          </Badge>
+                        </td>
+                        <td className="py-2 break-all text-destructive">
+                          {j.sendLog?.error}
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
           )}
         </CardContent>
       </Card>
