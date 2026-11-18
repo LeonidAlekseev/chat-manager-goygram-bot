@@ -15,9 +15,10 @@ class Telegram(Protocol):
 async def send_template(tg: Telegram, chat_id: int, t: Any, user: Any = None) -> dict[str, Any]:
     """Sends one template to one chat; returns the sent Bot API Message.
 
-    `t` is a templates row (kind, text, options, anonymous, multiple, mention_all; a copy also has
-    source_chat_id and source_message_id). With mention_all, a poll or copy is followed by a separate
-    mention message; a text carries the mentions itself.
+    `t` is a templates row (kind, text, options, anonymous, multiple, mention_all, correct_option_id,
+    explanation, source_chat_id, source_message_ids). An album (several source messages) goes out as one
+    album with copyMessages, and the first of its messages is returned.
+    With mention_all, a poll or copy is followed by a separate mention message; a text carries the mentions itself.
     A mention failure never fails the send: it is returned as `mention_error` in the message.
     A mention poll also returns the members it fetched as `member_ids`; other polls fetch none here,
     so the send is not held up (the caller snapshots their members after all sends).
@@ -42,10 +43,14 @@ async def send_template(tg: Telegram, chat_id: int, t: Any, user: Any = None) ->
             options=[{"text": o} for o in t["options"]],
             is_anonymous=t["anonymous"],
             allows_multiple_answers=t["multiple"],
+            **({"type": "quiz", "correct_option_id": t["correct_option_id"], "explanation": t["explanation"]}
+               if t["correct_option_id"] is not None else {}),
         )
+    elif copy and len(src := t["source_message_ids"]) > 1:
+        sent = await tg.bot_req("copyMessages", chat_id=chat_id, from_chat_id=t["source_chat_id"], message_ids=src)
+        msg = sent[0]
     elif copy:
-        msg = await tg.bot_req(
-            "copyMessage", chat_id=chat_id, from_chat_id=t["source_chat_id"], message_id=t["source_message_id"])
+        msg = await tg.bot_req("copyMessage", chat_id=chat_id, from_chat_id=t["source_chat_id"], message_id=src[0])
     elif mentions:
         msg = await tg.bot_req("sendMessage", chat_id=chat_id, text=mentions.pop(0), parse_mode="HTML")
     else:

@@ -53,12 +53,11 @@ export async function saveTemplate(
       .filter(Boolean),
   }
   const editing = z.coerce.number().int().safeParse(formData.get("id"))
+  const current = editing.success
+    ? await db.template.findUnique({ where: { id: editing.data } })
+    : null
   // a copy's content lives in Telegram: only its name and mention-all can change here
-  if (
-    editing.success &&
-    (await db.template.findUnique({ where: { id: editing.data } }))?.kind ===
-      "copy"
-  ) {
+  if (editing.success && current?.kind === "copy") {
     const c = z.object({ name: base.name, mentionAll: flag }).safeParse(raw)
     if (!c.success) return { error: c.error.issues[0].message }
     await db.template.update({ where: { id: editing.data }, data: c.data })
@@ -68,6 +67,11 @@ export async function saveTemplate(
   const parsed = Schema.safeParse(raw)
   if (!parsed.success) return { error: parsed.error.issues[0].message }
   const { id, ...rest } = parsed.data
+  const answer = current?.correctOptionId
+  if (answer != null && rest.kind === "poll" && answer >= rest.options.length)
+    return {
+      error: `Викторина: правильный ответ — вариант ${answer + 1}, вариантов должно быть не меньше`,
+    }
   const data = { ...rest, options: rest.kind === "poll" ? rest.options : [] }
   if (id) await db.template.update({ where: { id }, data })
   else await db.template.create({ data })

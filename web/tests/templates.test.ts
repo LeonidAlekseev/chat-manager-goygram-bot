@@ -78,6 +78,22 @@ describe("templates", () => {
     })
   })
 
+  it("keeps a quiz's correct option within its options", async () => {
+    const t = await db.template.create({
+      data: {
+        ...poll,
+        kind: "poll",
+        options: ["А", "Б", "В"],
+        correctOptionId: 2,
+      },
+    })
+    const edit = form({ ...poll, id: String(t.id), options: "А\nБ" })
+    expect((await saveTemplate(null, edit)).error).toMatch(/Викторин/)
+    expect(
+      await db.template.findUniqueOrThrow({ where: { id: t.id } })
+    ).toMatchObject({ options: ["А", "Б", "В"], correctOptionId: 2 })
+  })
+
   it.each([
     ["one option", { options: "Да" }],
     [
@@ -108,7 +124,7 @@ describe("templates", () => {
         kind: "copy",
         text: "превью",
         sourceChatId: 42,
-        sourceMessageId: 7,
+        sourceMessageIds: [7],
         mediaType: "photo",
       },
     })
@@ -130,7 +146,7 @@ describe("templates", () => {
       mentionAll: true,
       kind: "copy",
       text: "превью",
-      sourceMessageId: BigInt(7),
+      sourceMessageIds: [BigInt(7)],
     })
   })
 
