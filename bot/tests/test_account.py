@@ -86,6 +86,13 @@ class FakeClient:
         self.running = False
         self.ended = False
         self.end_error = None
+        self.ping_error = None
+        self.pings = 0
+
+    async def alive(self):
+        self.pings += 1
+        if self.ping_error:
+            raise self.ping_error
 
     async def end_session(self):
         if self.end_error:
@@ -806,3 +813,70 @@ async def test_an_expired_code_keeps_the_code_step_and_offers_a_new_one(adb, acc
     row = await login_row(adb)
     assert (row["state"], row["error"]) == ("code", "Код просрочен, запросите новый.")
     assert (await delivery(adb))[2] is True and not logins[0].closed
+
+
+SILENT = "Аккаунт Telegram не отвечает"
+
+
+async def check(account):
+    """One liveness check, due now, and its outcome handled by the next tick."""
+    account.ping_at = 0
+    await account.tick()
+    await asyncio.wait({account._ping})
+    await account.tick()
+
+
+async def test_a_check_answered_with_401_forgets_the_session(adb, account, clients):
+    await logged_in(adb, account)
+    clients[0].ping_error = rpc_error(401, "AUTH_KEY_UNREGISTERED")
+    await check(account)
+    assert await account_state(adb) == (None, None, ENDED)
+    assert account.client is None and not clients[0].running
+
+
+async def test_unanswered_checks_warn_and_reconnect_but_keep_the_session(adb, account, clients):
+    await logged_in(adb, account)
+    clients[0].ping_error = TimeoutError()
+    for _ in range(2):
+        await check(account)
+    assert await adb.fetchval("SELECT error FROM mtproto_login") is None and account.client is clients[0]
+    await check(account)
+    session, name, error = await account_state(adb)
+    assert session is not None and name == "Анна (@anna)" and error.startswith(SILENT)
+    assert not clients[0].running
+    await account.tick()  # reconnects from the stored session
+    await asyncio.sleep(0)
+    assert len(clients) == 2 and clients[1].running and clients[1].args == clients[0].args
+    await check(account)  # the new client answers
+    assert await account_state(adb) == (session, name, None)
+    assert account.client is clients[1]
+
+
+async def test_a_flood_wait_counts_as_an_answer_and_delays_the_next_check(adb, account, clients):
+    await logged_in(adb, account)
+    clients[0].ping_error = rpc_error(420, "FLOOD_WAIT_3600")
+    for _ in range(3):
+        await check(account)
+    assert account.misses == 0 and account.client is clients[0]
+    assert account.ping_at > time.monotonic() + 3000
+
+
+async def test_no_check_before_it_is_due(adb, account, clients):
+    await logged_in(adb, account)
+    await account.tick()
+    assert clients[0].pings == 0 and account._ping is None
+
+
+async def test_members_alive_waits_for_the_restored_session_and_never_sleeps_on_flood_wait():
+    members = MembersClient.__new__(MembersClient)
+    calls = []
+
+    async def call(act, **kw):
+        calls.append((act, kw))
+
+    members.mt = type("Mt", (), {"reader_task": None, "call": staticmethod(call)})()
+    with pytest.raises(TimeoutError):  # a call now would make a fresh key and a false 401
+        await members.alive()
+    members.mt.reader_task = object()
+    await members.alive()
+    assert calls == [("updates.getState", {"retry": 0})]

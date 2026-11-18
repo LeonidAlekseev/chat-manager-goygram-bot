@@ -68,6 +68,11 @@ RETRY = {
     "resend": ("SEND_CODE_UNAVAILABLE",),
 }
 ENDED = "Сессия завершена в Telegram, войдите заново."
+SILENT = "Аккаунт Telegram не отвечает: бот переподключается. Если не пройдёт, отключите аккаунт и войдите заново."
+# Liveness check of the user client (#66): goygram never reports a dead auth key, it only times out.
+PING_EVERY = 5 * 60
+PING_TIMEOUT = 45  # goygram itself gives up on a call after 30 s
+MISSES = 3  # unanswered checks in a row before the warning and a reconnect; a session is never dropped for them
 UNREADABLE = "Сессия не расшифровывается (сменился AUTH_SECRET?), войдите заново."
 REASONS = {
     "SEND_CODE_UNAVAILABLE": "Других способов отправить код нет.",
@@ -146,6 +151,9 @@ class Account:
         self.client: Any = None
         self._task: asyncio.Task[None] | None = None
         self._session: str | None = None  # the stored ciphertext the client runs with
+        self._ping: asyncio.Task[None] | None = None
+        self.ping_at = 0.0  # time.monotonic() of the next liveness check
+        self.misses = 0  # liveness checks in a row the client did not answer
 
     async def iter_participants(self, chat_id: int) -> AsyncIterator[Any]:
         if self.client is None:
@@ -188,6 +196,11 @@ class Account:
             await self.step("qr_renew", None)
         if self._task and self._task.done() and not self._task.cancelled() and _ended(self._task.exception()):
             await self._forget(self._session, ENDED)
+        if self._ping and self._ping.done():
+            ping, self._ping = self._ping, None
+            await self._pinged(ping.exception())
+        if self.client is not None and self._ping is None and time.monotonic() >= self.ping_at:
+            self._ping = asyncio.create_task(self._check())
         session = await self.db.fetchval("SELECT api_session FROM settings WHERE id = 1")
         if session != self._session:  # a login, or «Выйти» in the panel
             await self._stop_client()
@@ -199,6 +212,7 @@ class Account:
                 self.client = await self.open_client(s.api_id, s.api_hash, json.loads(plain))  # type: ignore[arg-type]
                 self._task = asyncio.create_task(self.client.run())
                 self._task.add_done_callback(_log_client_stop)
+                self.ping_at = time.monotonic() + PING_EVERY
             self._session = session  # only now: a failed start is retried on the next tick
 
     async def stop(self) -> None:
@@ -223,9 +237,36 @@ class Account:
 
     async def _stop_client(self) -> None:
         task, self._task, self.client = self._task, None, None
-        if task:
-            task.cancel()
-            await asyncio.gather(task, return_exceptions=True)
+        ping, self._ping, self.misses = self._ping, None, 0
+        for t in filter(None, (task, ping)):
+            t.cancel()
+            await asyncio.gather(t, return_exceptions=True)
+
+    async def _check(self) -> None:
+        if self._task is None or self._task.done():
+            raise TimeoutError("the user client is not running")
+        async with asyncio.timeout(PING_TIMEOUT):
+            await self.client.alive()
+
+    async def _pinged(self, e: BaseException | None) -> None:
+        """A liveness check's outcome: 401 drops the session, silence warns and reconnects, an answer clears it."""
+        # FLOOD_WAIT is an answer too, but the next check waits it out.
+        self.ping_at = time.monotonic() + max(PING_EVERY, getattr(e, "seconds", 0))
+        if _ended(e):
+            return await self._forget(self._session, ENDED)
+        if e is None or isinstance(e, RPCError):
+            self.misses = 0
+            await self.db.execute("UPDATE mtproto_login SET error = NULL WHERE id = 1 AND error = $1", SILENT)
+            return
+        self.misses += 1
+        log.warning("user client did not answer (%d in a row): %r", self.misses, e)
+        if self.misses >= MISSES:
+            await self.db.execute(
+                "INSERT INTO mtproto_login (id, error) VALUES (1, $1) "
+                "ON CONFLICT (id) DO UPDATE SET error = $1, updated_at = now()", SILENT,
+            )
+            await self._stop_client()
+            self._session = None  # the next tick starts the client again from the stored session
 
     async def step(self, step: str, cipher: str | None) -> None:
         log.info("login step %s taken", step)
@@ -336,9 +377,9 @@ class Account:
 
 
 def _ended(e: BaseException | None) -> bool:
-    """Telegram ended the session (AUTH_KEY_UNREGISTERED, SESSION_REVOKED, USER_DEACTIVATED, …): all are 401."""
-    # shortcut: goygram 0.8.29 drops the transport's -404 (a 4-byte packet) silently, so a dead key shows up
-    # only as timeouts, not here; handle it if goygram starts raising on it.
+    """Telegram ended the session (AUTH_KEY_UNREGISTERED, SESSION_REVOKED, USER_DEACTIVATED, …): all are 401.
+
+    goygram 0.8.29 drops the transport's -404 (a dead auth key) silently: that shows up only as timeouts (_pinged)."""
     return isinstance(e, RPCError) and e.code == 401 and "SESSION_PASSWORD_NEEDED" not in e.message
 
 
@@ -465,12 +506,20 @@ async def connect(api_id: int, api_hash: str) -> GoyGramLogin:
 
 class MembersClient(GoyGram):
     vault: Path
+    mt: Any  # GoyGram's stub leaves its transport out
 
     async def run(self) -> None:
         try:
             await super().run()
         finally:
             shutil.rmtree(self.vault.parent, ignore_errors=True)  # logout or restart: no session copy on disk
+
+    async def alive(self) -> None:
+        """updates.getState, the lightest call; retry=0: a FLOOD_WAIT is reported, not slept on."""
+        # Before run() restores the session a call would make a fresh, unauthorised key (and a false 401).
+        if self.mt.reader_task is None:
+            raise TimeoutError("the session is not restored yet")
+        await self.mt.call("updates.getState", retry=0)
 
     async def end_session(self) -> None:
         if err := _extract_error(await self.mt_req("auth.logOut")):
