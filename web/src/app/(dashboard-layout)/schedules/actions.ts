@@ -34,7 +34,7 @@ const Schema = z.object({
 const Id = z.coerce.number().int()
 
 async function requireAuth() {
-  if (!(await auth())) throw new Error("Unauthorized")
+  if (!(await auth())?.user) throw new Error("Unauthorized")
 }
 
 function revalidate() {

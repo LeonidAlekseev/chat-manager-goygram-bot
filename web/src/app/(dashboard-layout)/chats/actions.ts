@@ -12,7 +12,7 @@ const RenameSchema = z.object({
 })
 
 export async function renameChat(formData: FormData) {
-  if (!(await auth())) throw new Error("Unauthorized")
+  if (!(await auth())?.user) throw new Error("Unauthorized")
   const { id, title } = RenameSchema.parse(Object.fromEntries(formData))
   await db.chat.update({ where: { id }, data: { title } })
   revalidatePath("/chats")
