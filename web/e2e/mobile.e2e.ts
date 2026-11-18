@@ -170,3 +170,35 @@ test("mobile: menu order, Профиль duplicate, profile button has an icon",
   await page.waitForTimeout(500) // the drawer slides in
   await page.screenshot({ path: "/tmp/shots70/menu.png" })
 })
+
+test("mobile: a dropped connection shows a message and the button works again", async ({
+  page,
+}) => {
+  const db = new PrismaClient()
+  const name = `E2E net ${Date.now()}`
+  await db.schedule.create({ data: { name } })
+  try {
+    await page.goto("/login")
+    await page.getByLabel("Логин").fill(LOGIN)
+    await page.getByLabel("Пароль").fill(PASSWORD)
+    await page.getByRole("button", { name: "Войти" }).click()
+    await page.waitForURL("**/chats")
+    await page.goto("/schedules")
+    const row = page
+      .locator("details")
+      .filter({ has: page.locator("summary", { hasText: name }) })
+      .locator("xpath=..")
+    const button = row.getByRole("button", { name: "Удалить" })
+    page.on("dialog", (d) => void d.accept())
+    await page.route("**/schedules", (r) =>
+      r.request().method() === "POST" ? r.abort() : r.continue()
+    )
+    await button.click()
+    await expect(row.getByRole("alert")).toHaveText(/Нет связи с сервером/)
+    await expect(button).toBeEnabled()
+    expect(await db.schedule.count({ where: { name } })).toBe(1)
+  } finally {
+    await db.schedule.deleteMany({ where: { name } })
+    await db.$disconnect()
+  }
+})
