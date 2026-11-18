@@ -255,3 +255,17 @@ test("poll answers: named votes, or counts for an anonymous poll", async ({
   await expect(page.getByText("Да: 3")).toBeVisible()
   await expect(page.getByText("Нет: 1")).toBeVisible()
 })
+
+// No docker-proxy in e2e: the page and its menu item render and explain why there are no logs.
+test("system logs: superadmin menu item and page without docker-proxy", async ({
+  page,
+}) => {
+  await page.goto("/login")
+  await page.getByLabel("Логин").fill(LOGIN)
+  await page.getByLabel("Пароль").fill(PASSWORD)
+  await page.getByRole("button", { name: "Войти" }).click()
+  await page.waitForURL("**/chats")
+  await page.getByRole("link", { name: "Системные логи" }).first().click()
+  await page.waitForURL("**/system-logs")
+  await expect(page.getByText(/docker-proxy не настроен/)).toBeVisible()
+})

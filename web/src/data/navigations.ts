@@ -19,6 +19,7 @@ export const adminNavigationsData: NavigationType[] = [
     items: [
       { title: "Менеджеры", href: "/managers", iconName: "Users" },
       { title: "Настройки", href: "/settings", iconName: "Settings" },
+      { title: "Системные логи", href: "/system-logs", iconName: "Terminal" },
     ],
   },
 ]
