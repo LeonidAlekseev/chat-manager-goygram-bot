@@ -64,3 +64,22 @@ async def test_a_network_failure_on_start_is_not_mistaken_for_a_wrong_token(sdb)
     await sdb.execute("UPDATE settings SET bot_token = $1", encrypt(GOOD, SECRET))
     with pytest.raises(ConnectionError):
         await start_bot(sdb, SECRET, Offline, interval=0.01)
+
+
+async def test_poll_updates_reach_the_journal_through_goygram(pool):
+    # Smoke test of the real GoyGram routing: update -> its norm -> dispatcher -> our handlers.
+    from goygram import GoyGram
+    from goygram.transports.botapi import BotNet
+
+    from bot.main import register_polls
+
+    await pool.execute("TRUNCATE poll_answers, poll_results")
+    app = GoyGram(bot_token=GOOD)
+    register_polls(app, pool)
+    for upd in (
+        {"update_id": 1, "poll": {"id": "p", "options": [{"text": "a", "voter_count": 2}], "is_anonymous": True}},
+        {"update_id": 2, "poll_answer": {"poll_id": "p", "user": {"id": 5, "first_name": "A"}, "option_ids": [0]}},
+    ):
+        await app.core.disp.one({"src": "bot", "data": BotNet.norm(None, upd)})
+    assert await pool.fetchval("SELECT counts FROM poll_results WHERE poll_id = 'p'") == [2]
+    assert await pool.fetchval("SELECT option_ids FROM poll_answers WHERE poll_id = 'p'") == [0]
