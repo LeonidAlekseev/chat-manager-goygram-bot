@@ -6,7 +6,7 @@ import stat
 import time
 
 import pytest
-from goygram.errors import rpc_error
+from goygram.errors import RPCError, rpc_error
 
 import bot.account
 from bot.account import Account, GoyGramLogin, MembersClient, open_client
@@ -88,6 +88,10 @@ class FakeClient:
         self.end_error = None
         self.ping_error = None
         self.pings = 0
+        self.home = True  # still on the session's own DC and key
+
+    def at_home(self):
+        return self.home
 
     async def alive(self):
         self.pings += 1
@@ -731,19 +735,82 @@ async def account_state(db):
     return (*await db.fetchrow("SELECT api_session, api_account FROM settings"), (await login_row(db))["error"])
 
 
+def later(account):
+    """DENY_GAP has passed: the restart hold is over and a first 401 is old enough to be confirmed."""
+    account.hold = (account.hold[0], 0.0)
+    if account.denied:
+        account.denied = (account.denied[0], account.denied[1] - bot.account.DENY_GAP)
+
+
+async def reopened(account):
+    later(account)
+    await account.tick()
+    await asyncio.sleep(0)
+
+
 @pytest.mark.parametrize("rpc", ["AUTH_KEY_UNREGISTERED", "SESSION_REVOKED", "USER_DEACTIVATED"])
-async def test_a_session_ended_in_telegram_is_forgotten_and_explained(adb, account, clients, rpc):
+async def test_a_second_401_a_while_later_forgets_the_session_and_explains(adb, account, clients, rpc):
     await logged_in(adb, account)
     clients[0].members_error = rpc_error(401, rpc)
+    with pytest.raises(RPCError):  # the first one only restarts the client
+        await fetch_user_ids(account, -100)
+    assert await adb.fetchval("SELECT api_account FROM settings") == "Анна (@anna)" and not clients[0].running
+    await account.tick()
+    assert len(clients) == 1  # no restart before DENY_GAP
+    await reopened(account)
+    assert clients[1].running
+    clients[1].members_error = rpc_error(401, rpc)
     with pytest.raises(MentionError, match=re.escape(NO_SESSION)):
         await fetch_user_ids(account, -100)
     assert await account_state(adb) == (None, None, ENDED)
-    assert account.client is None and not clients[0].running
+    assert account.client is None and not clients[1].running
+    await reopened(account)
+    assert len(clients) == 2  # nothing to restart
+
+
+async def test_two_401s_too_close_together_keep_the_session(adb, account, clients):
+    await logged_in(adb, account)
+    clients[0].members_error = rpc_error(401, "AUTH_KEY_UNREGISTERED")
+    with pytest.raises(RPCError):
+        await fetch_user_ids(account, -100)
+    account.hold = (account.hold[0], 0.0)  # the client is back, but the first 401 is fresh
     await account.tick()
-    assert len(clients) == 1  # nothing to restart
+    await asyncio.sleep(0)
+    clients[1].members_error = rpc_error(401, "AUTH_KEY_UNREGISTERED")
+    with pytest.raises(RPCError):
+        await fetch_user_ids(account, -100)
+    assert await adb.fetchval("SELECT api_account FROM settings") == "Анна (@anna)"
 
 
-async def test_a_user_client_stopped_by_an_ended_session_is_forgotten(adb, account, clients):
+async def test_a_401_away_from_the_home_dc_or_key_keeps_the_session(adb, account, clients):
+    await logged_in(adb, account)
+    for i in range(3):  # goygram moved the session to another DC or followed *_MIGRATE with a new key
+        clients[i].home = False
+        clients[i].members_error = rpc_error(401, "AUTH_KEY_UNREGISTERED")
+        with pytest.raises(RPCError):
+            await fetch_user_ids(account, -100)
+        assert account.denied is None and not clients[i].running
+        await reopened(account)
+    assert await adb.fetchval("SELECT api_account FROM settings") == "Анна (@anna)" and account.denied is None
+    assert clients[3].running
+
+
+async def test_an_answer_between_two_401s_keeps_the_session(adb, account, clients):
+    await logged_in(adb, account)
+    clients[0].members_error = rpc_error(401, "AUTH_KEY_UNREGISTERED")
+    with pytest.raises(RPCError):
+        await fetch_user_ids(account, -100)
+    await reopened(account)
+    await check(account)  # answered
+    assert account.denied is None
+    clients[1].members_error = rpc_error(401, "AUTH_KEY_UNREGISTERED")
+    later(account)
+    with pytest.raises(RPCError):
+        await fetch_user_ids(account, -100)
+    assert await adb.fetchval("SELECT api_account FROM settings") == "Анна (@anna)"
+
+
+async def test_a_user_client_stopped_by_an_ended_session_is_restarted_then_forgotten(adb, account, clients):
     real = account.open_client
 
     async def failing(*a):
@@ -754,7 +821,10 @@ async def test_a_user_client_stopped_by_an_ended_session_is_forgotten(adb, accou
     account.open_client = failing
     await logged_in(adb, account)
     await account.tick()
-    assert await account_state(adb) == (None, None, ENDED)
+    assert await adb.fetchval("SELECT api_account FROM settings") == "Анна (@anna)"
+    await reopened(account)
+    await account.tick()
+    assert len(clients) == 2 and await account_state(adb) == (None, None, ENDED)
     with pytest.raises(MentionError):
         await fetch_user_ids(account, -100)
 
@@ -826,12 +896,17 @@ async def check(account):
     await account.tick()
 
 
-async def test_a_check_answered_with_401_forgets_the_session(adb, account, clients):
+async def test_a_401_confirmed_by_the_next_check_forgets_the_session(adb, account, clients):
     await logged_in(adb, account)
     clients[0].ping_error = rpc_error(401, "AUTH_KEY_UNREGISTERED")
     await check(account)
+    assert await adb.fetchval("SELECT api_account FROM settings") == "Анна (@anna)" and not clients[0].running
+    await reopened(account)
+    assert account.ping_at < time.monotonic() + bot.account.PING_EVERY  # confirmed soon, not in 5 minutes
+    clients[1].ping_error = rpc_error(401, "AUTH_KEY_UNREGISTERED")
+    await check(account)
     assert await account_state(adb) == (None, None, ENDED)
-    assert account.client is None and not clients[0].running
+    assert account.client is None and not clients[1].running
 
 
 async def test_unanswered_checks_warn_and_reconnect_but_keep_the_session(adb, account, clients):
@@ -844,8 +919,7 @@ async def test_unanswered_checks_warn_and_reconnect_but_keep_the_session(adb, ac
     session, name, error = await account_state(adb)
     assert session is not None and name == "Анна (@anna)" and error.startswith(SILENT)
     assert not clients[0].running
-    await account.tick()  # reconnects from the stored session
-    await asyncio.sleep(0)
+    await reopened(account)  # reconnects from the stored session, DENY_GAP later
     assert len(clients) == 2 and clients[1].running and clients[1].args == clients[0].args
     await check(account)  # the new client answers
     assert await account_state(adb) == (session, name, None)
@@ -880,3 +954,14 @@ async def test_members_alive_waits_for_the_restored_session_and_never_sleeps_on_
     members.mt.reader_task = object()
     await members.alive()
     assert calls == [("updates.getState", {"retry": 0})]
+
+
+def test_members_client_is_at_home_only_on_the_stored_dc_with_the_stored_key():
+    members = MembersClient.__new__(MembersClient)
+    members.home = (2, b"key")
+    members.mt = type("Mt", (), {"host": "149.154.167.50", "port": 443, "auth_key": b"key"})()
+    assert members.at_home()
+    members.mt.host = "149.154.167.91"  # re-homed to dc4 (bootstrap) or _connect picked another DC
+    assert not members.at_home()
+    members.mt.host, members.mt.auth_key = "149.154.167.50", b"new"  # *_MIGRATE: a fresh, unauthorised key
+    assert not members.at_home()

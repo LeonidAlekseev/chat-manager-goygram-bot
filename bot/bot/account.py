@@ -73,6 +73,9 @@ SILENT = "Аккаунт Telegram не отвечает: бот переподк
 PING_EVERY = 5 * 60
 PING_TIMEOUT = 45  # goygram itself gives up on a call after 30 s
 MISSES = 3  # unanswered checks in a row before the warning and a reconnect; a session is never dropped for them
+# A 401 ends the session only if a second one comes at least this long (s) after the first; a restarted client
+# waits as long, so restarts never hammer Telegram.
+DENY_GAP = 60
 UNREADABLE = "Сессия не расшифровывается (сменился AUTH_SECRET?), войдите заново."
 REASONS = {
     "SEND_CODE_UNAVAILABLE": "Других способов отправить код нет.",
@@ -154,6 +157,8 @@ class Account:
         self._ping: asyncio.Task[None] | None = None
         self.ping_at = 0.0  # time.monotonic() of the next liveness check
         self.misses = 0  # liveness checks in a row the client did not answer
+        self.denied: tuple[str | None, float] | None = None  # (session, time.monotonic()) of its first 401 at home
+        self.hold: tuple[str | None, float] = (None, 0.0)  # a restarted session reopens only after that time
 
     async def iter_participants(self, chat_id: int) -> AsyncIterator[Any]:
         if self.client is None:
@@ -165,8 +170,9 @@ class Account:
         except RPCError as e:
             if not _ended(e):
                 raise
-            await self._forget(session, ENDED)
-            raise MentionError(NO_SESSION) from e
+            if await self._rejected(session):
+                raise MentionError(NO_SESSION) from e
+            raise
 
     async def run(self, interval: float = 2) -> None:
         while True:
@@ -195,14 +201,15 @@ class Account:
         ):
             await self.step("qr_renew", None)
         if self._task and self._task.done() and not self._task.cancelled() and _ended(self._task.exception()):
-            await self._forget(self._session, ENDED)
+            await self._rejected(self._session)
         if self._ping and self._ping.done():
             ping, self._ping = self._ping, None
             await self._pinged(ping.exception())
         if self.client is not None and self._ping is None and time.monotonic() >= self.ping_at:
             self._ping = asyncio.create_task(self._check())
         session = await self.db.fetchval("SELECT api_session FROM settings WHERE id = 1")
-        if session != self._session:  # a login, or «Выйти» in the panel
+        held = self.hold[0] == session and time.monotonic() < self.hold[1]
+        if session != self._session and not held:  # a login, «Выйти» in the panel, or a restart
             await self._stop_client()
             plain = _open(session, self.secret)
             if session and plain is None:
@@ -212,7 +219,9 @@ class Account:
                 self.client = await self.open_client(s.api_id, s.api_hash, json.loads(plain))  # type: ignore[arg-type]
                 self._task = asyncio.create_task(self.client.run())
                 self._task.add_done_callback(_log_client_stop)
-                self.ping_at = time.monotonic() + PING_EVERY
+                # A first 401 is confirmed by the next check, once the client has restored the session.
+                confirm = self.denied is not None and self.denied[0] == session
+                self.ping_at = time.monotonic() + (DENY_GAP if confirm else PING_EVERY)
             self._session = session  # only now: a failed start is retried on the next tick
 
     async def stop(self) -> None:
@@ -253,9 +262,10 @@ class Account:
         # FLOOD_WAIT is an answer too, but the next check waits it out.
         self.ping_at = time.monotonic() + max(PING_EVERY, getattr(e, "seconds", 0))
         if _ended(e):
-            return await self._forget(self._session, ENDED)
+            await self._rejected(self._session)
+            return
         if e is None or isinstance(e, RPCError):
-            self.misses = 0
+            self.misses, self.denied = 0, None
             await self.db.execute("UPDATE mtproto_login SET error = NULL WHERE id = 1 AND error = $1", SILENT)
             return
         self.misses += 1
@@ -265,9 +275,33 @@ class Account:
                 "INSERT INTO mtproto_login (id, error) VALUES (1, $1) "
                 "ON CONFLICT (id) DO UPDATE SET error = $1, updated_at = now()", SILENT,
             )
-            await self._stop_client()
-            self._session = None  # the next tick starts the client again from the stored session
+            await self._restart()
 
+    async def _rejected(self, session: str | None) -> bool:
+        """Telegram answered 401; True if the session is now forgotten.
+
+        goygram moves a session to a reachable DC (bootstrap) or follows *_MIGRATE with a fresh, unauthorised key,
+        and a 401 there says nothing about the stored session: only two 401s at least DENY_GAP apart, both at the
+        session's home DC with its own key, end it. Any other 401 restarts the client from the stored session."""
+        if session != self._session or self.client is None:
+            return False  # a login or logout came first
+        now = time.monotonic()
+        if not self.client.at_home():
+            log.warning("401 away from the session's home DC or key: restarting the user client")
+        elif self.denied and self.denied[0] == session and now - self.denied[1] >= DENY_GAP:
+            await self._forget(session, ENDED)
+            return True
+        elif not (self.denied and self.denied[0] == session):
+            log.warning("401 at the session's home DC: dropping the session if the next check gets one too")
+            self.denied = (session, now)
+        await self._restart()
+        return False
+
+    async def _restart(self) -> None:
+        """The next tick DENY_GAP from now starts the client again from the stored session."""
+        self.hold = (self._session, time.monotonic() + DENY_GAP)
+        await self._stop_client()
+        self._session = None
     async def step(self, step: str, cipher: str | None) -> None:
         log.info("login step %s taken", step)
         try:
@@ -507,6 +541,11 @@ async def connect(api_id: int, api_hash: str) -> GoyGramLogin:
 class MembersClient(GoyGram):
     vault: Path
     mt: Any  # GoyGram's stub leaves its transport out
+    home: tuple[Any, bytes | None]  # the stored session's DC and auth key
+
+    def at_home(self) -> bool:
+        """Still on the stored session's DC with its key (goygram may move it, see Account._rejected)."""
+        return (_current_dc_id(self), self.mt.auth_key) == self.home
 
     async def run(self) -> None:
         try:
@@ -541,5 +580,5 @@ async def open_client(api_id: int, api_hash: str, data: dict[str, Any]) -> GoyGr
     except BaseException:
         shutil.rmtree(vault.parent, ignore_errors=True)
         raise
-    client.vault = vault
+    client.vault, client.home = vault, (data.get("dc"), _extract_auth_blob(data))
     return client
