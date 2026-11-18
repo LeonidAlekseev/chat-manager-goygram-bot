@@ -71,7 +71,9 @@ docker compose up -d --build
 
 ## Деплой на VPS
 
-**Нужно:** VPS с Docker и плагином compose; DNS A-запись домена на IP сервера; открытые порты 80 и 443 (TCP, 443 ещё и UDP) в файрволе/security group — 80 нужен Caddy для выпуска сертификата.
+**Нужно:** VPS с Docker и плагином compose; DNS A-запись домена на IP сервера; открытые порты 80 и 443 (TCP) в файрволе/security group — 80 нужен Caddy для выпуска сертификата.
+
+> HTTP/3 (QUIC) выключен в Caddy (`protocols h1 h2`): Safari зависал, когда UDP деградировал, и не откатывался на TCP (#54).
 
 1. `git clone <репозиторий> && cd chat-manager-goygram-bot`
 2. `cp .env.example .env` и заполните: `PANEL_DOMAIN`, `BASE_URL=https://<домен>`, пароли, `AUTH_SECRET` (см. таблицу выше).

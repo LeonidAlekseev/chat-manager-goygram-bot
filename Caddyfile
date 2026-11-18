@@ -1,3 +1,10 @@
+{
+	# HTTP/3 off: Safari hangs when QUIC/UDP degrades instead of falling back to TCP (#54).
+	servers {
+		protocols h1 h2
+	}
+}
+
 # HTTPS certificates are issued automatically for PANEL_DOMAIN.
 # reverse_proxy overwrites an untrusted client X-Forwarded-For with the client IP,
 # which is what web/src/lib/loginLimit.ts relies on.
