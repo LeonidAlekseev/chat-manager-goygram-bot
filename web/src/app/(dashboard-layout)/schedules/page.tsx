@@ -55,66 +55,73 @@ export default async function SchedulesPage() {
           {schedules.map((s) => {
             const items = s.items.map(toItemView)
             return (
-              <details key={s.id} className="rounded-md border p-3">
-                <summary className="flex cursor-pointer flex-wrap items-center gap-x-2">
-                  {s.name}
-                  <span className="text-sm text-muted-foreground">
-                    ·{" "}
-                    {s.items.length
-                      ? `пунктов: ${s.items.length}`
-                      : "нет пунктов"}{" "}
-                    · чатов: {chats.filter((c) => c.scheduleId === s.id).length}
-                  </span>
-                  <DeleteScheduleForm
-                    id={s.id}
-                    chats={chats.filter((c) => c.scheduleId === s.id).length}
-                  />
-                </summary>
-                <div className="mt-3 grid gap-4">
-                  <ScheduleForm
-                    key={JSON.stringify(items)} // remount on saved changes, or the form resets to stale values
-                    schedule={{ ...s, items }}
-                    templates={templates}
-                    timezone={TIMEZONE}
-                  />
-                  <ActionForm action={bindChats} className="grid gap-2">
-                    <input type="hidden" name="id" value={s.id} />
-                    <p className="text-sm font-medium">Чаты</p>
-                    {chats.length === 0 && (
-                      <p className="text-sm text-muted-foreground">
-                        Чатов пока нет.
-                      </p>
-                    )}
-                    {chats.map((c) => (
-                      <label
-                        key={c.id}
-                        className="flex items-center gap-2 text-sm"
-                      >
-                        <input
-                          type="checkbox"
-                          name="chatId"
-                          value={c.id}
-                          defaultChecked={c.scheduleId === s.id}
-                        />
-                        {c.title}
-                        {c.schedule && c.scheduleId !== s.id && (
-                          <span className="text-muted-foreground">
-                            (сейчас: {c.schedule.name})
-                          </span>
-                        )}
-                        {!c.active && (
-                          <span className="text-muted-foreground">
-                            (бот удалён)
-                          </span>
-                        )}
-                      </label>
-                    ))}
-                    <Button type="submit" variant="outline" className="w-fit">
-                      Сохранить привязку
-                    </Button>
-                  </ActionForm>
-                </div>
-              </details>
+              // the delete form sits beside <details>, not in <summary>: iOS Safari may toggle instead of submit
+              <div
+                key={s.id}
+                className="flex flex-col items-start gap-2 sm:flex-row"
+              >
+                <details className="w-full min-w-0 rounded-md sm:flex-1 border p-3">
+                  <summary className="flex cursor-pointer flex-wrap items-center gap-x-2">
+                    {s.name}
+                    <span className="text-sm text-muted-foreground">
+                      ·{" "}
+                      {s.items.length
+                        ? `шаблонов: ${s.items.length}`
+                        : "нет шаблонов"}{" "}
+                      · чатов:{" "}
+                      {chats.filter((c) => c.scheduleId === s.id).length}
+                    </span>
+                  </summary>
+                  <div className="mt-3 grid gap-4">
+                    <ScheduleForm
+                      key={JSON.stringify(items)} // remount on saved changes, or the form resets to stale values
+                      schedule={{ ...s, items }}
+                      templates={templates}
+                      timezone={TIMEZONE}
+                    />
+                    <ActionForm action={bindChats} className="grid gap-2">
+                      <input type="hidden" name="id" value={s.id} />
+                      <p className="text-sm font-medium">Чаты</p>
+                      {chats.length === 0 && (
+                        <p className="text-sm text-muted-foreground">
+                          Чатов пока нет.
+                        </p>
+                      )}
+                      {chats.map((c) => (
+                        <label
+                          key={c.id}
+                          className="flex items-center gap-2 text-sm"
+                        >
+                          <input
+                            type="checkbox"
+                            name="chatId"
+                            value={c.id}
+                            defaultChecked={c.scheduleId === s.id}
+                          />
+                          {c.title}
+                          {c.schedule && c.scheduleId !== s.id && (
+                            <span className="text-muted-foreground">
+                              (сейчас: {c.schedule.name})
+                            </span>
+                          )}
+                          {!c.active && (
+                            <span className="text-muted-foreground">
+                              (бот удалён)
+                            </span>
+                          )}
+                        </label>
+                      ))}
+                      <Button type="submit" variant="outline" className="w-fit">
+                        Сохранить привязку
+                      </Button>
+                    </ActionForm>
+                  </div>
+                </details>
+                <DeleteScheduleForm
+                  id={s.id}
+                  chats={chats.filter((c) => c.scheduleId === s.id).length}
+                />
+              </div>
             )
           })}
         </CardContent>

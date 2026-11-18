@@ -4,11 +4,12 @@ export const navigationsData: NavigationType[] = [
   {
     title: "Управление",
     items: [
-      { title: "Чаты", href: "/chats", iconName: "MessagesSquare" },
       { title: "Шаблоны", href: "/templates", iconName: "FileText" },
       { title: "Расписания", href: "/schedules", iconName: "CalendarClock" },
+      { title: "Чаты", href: "/chats", iconName: "MessagesSquare" },
       { title: "Отправка", href: "/send", iconName: "Send" },
       { title: "Журнал", href: "/logs", iconName: "ScrollText" },
+      { title: "Профиль", href: "/profile", iconName: "User" }, // same page as the top-right button
     ],
   },
 ]

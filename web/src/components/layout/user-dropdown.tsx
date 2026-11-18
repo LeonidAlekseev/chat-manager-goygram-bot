@@ -2,11 +2,8 @@
 
 import Link from "next/link"
 import { signOut, useSession } from "next-auth/react"
-import { LogOut } from "lucide-react"
+import { LogOut, User } from "lucide-react"
 
-import { getInitials } from "@/lib/utils"
-
-import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
 import {
   DropdownMenu,
@@ -29,11 +26,7 @@ export function UserDropdown() {
           className="rounded-lg"
           aria-label="Пользователь"
         >
-          <Avatar className="size-9">
-            <AvatarFallback className="bg-transparent">
-              {login && getInitials(login)}
-            </AvatarFallback>
-          </Avatar>
+          <User className="size-5" />
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent forceMount>

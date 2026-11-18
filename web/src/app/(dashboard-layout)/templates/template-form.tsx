@@ -140,7 +140,7 @@ export function DeleteTemplate({ id, name }: { id: number; name: string }) {
       onSubmit={(e) => {
         if (!confirm(`Удалить шаблон «${name}»?`)) e.preventDefault()
       }}
-      className="ms-auto flex flex-wrap items-center gap-2"
+      className="grid gap-1"
     >
       <input type="hidden" name="id" value={id} />
       <Button type="submit" variant="outline" disabled={pending}>

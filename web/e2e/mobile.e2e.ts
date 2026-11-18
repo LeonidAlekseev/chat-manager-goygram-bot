@@ -79,9 +79,10 @@ test("mobile: delete buttons fit the screen; deleting a chat hands it to the bot
     }
     for (const path of ["/templates", "/schedules"]) {
       await page.goto(path)
-      const item = page.locator("details").filter({
-        has: page.locator("summary", { hasText: name }),
-      })
+      const item = page
+        .locator("details")
+        .filter({ has: page.locator("summary", { hasText: name }) })
+        .locator("xpath=..")
       await fits(item.getByRole("button", { name: "Удалить" })) // closed block
     }
     await page.goto("/chats")
@@ -105,4 +106,67 @@ test("mobile: delete buttons fit the screen; deleting a chat hands it to the bot
     await db.template.deleteMany({ where: { id: tpl.id } })
     await db.$disconnect()
   }
+})
+
+test("mobile: deleting a schedule and a template from the closed list removes the row", async ({
+  page,
+  hasTouch,
+}) => {
+  const db = new PrismaClient()
+  const name = `E2E rm ${Date.now()}`
+  await db.template.create({ data: { name, kind: "text", text: "x" } })
+  await db.schedule.create({ data: { name } })
+  try {
+    await page.goto("/login")
+    await page.getByLabel("Логин").fill(LOGIN)
+    await page.getByLabel("Пароль").fill(PASSWORD)
+    await page.getByRole("button", { name: "Войти" }).click()
+    await page.waitForURL("**/chats")
+    for (const path of ["/schedules", "/templates"]) {
+      await page.goto(path)
+      const item = page
+        .locator("details")
+        .filter({ has: page.locator("summary", { hasText: name }) })
+        .locator("xpath=..")
+      page.once("dialog", (d) => void d.accept())
+      const button = item.getByRole("button", { name: "Удалить" })
+      await (hasTouch ? button.tap() : button.click()) // a finger, as on the phone
+      await expect(item).toHaveCount(0)
+      const left =
+        path === "/schedules"
+          ? await db.schedule.count({ where: { name } })
+          : await db.template.count({ where: { name } })
+      expect(left).toBe(0)
+    }
+  } finally {
+    await db.schedule.deleteMany({ where: { name } })
+    await db.template.deleteMany({ where: { name } })
+    await db.$disconnect()
+  }
+})
+
+test("mobile: menu order, Профиль duplicate, profile button has an icon", async ({
+  page,
+}) => {
+  await page.goto("/login")
+  await page.getByLabel("Логин").fill(LOGIN)
+  await page.getByLabel("Пароль").fill(PASSWORD)
+  await page.getByRole("button", { name: "Войти" }).click()
+  await page.waitForURL("**/chats")
+  const profile = page.getByRole("button", { name: "Пользователь" })
+  await expect(profile.locator("svg")).toBeVisible()
+  await page.screenshot({
+    path: "/tmp/shots70/header.png",
+    clip: { x: 0, y: 0, width: 390, height: 80 },
+  })
+  await page.getByRole("button", { name: "Toggle Sidebar" }).first().click()
+  const links = page.locator("[data-sidebar=menu-button]")
+  await expect(links.nth(0)).toHaveText("Шаблоны")
+  await expect(links.nth(1)).toHaveText("Расписания")
+  await expect(links.nth(2)).toHaveText("Чаты")
+  await expect(
+    page.getByRole("link", { name: "Профиль" }).first()
+  ).toHaveAttribute("href", "/profile")
+  await page.waitForTimeout(500) // the drawer slides in
+  await page.screenshot({ path: "/tmp/shots70/menu.png" })
 })
