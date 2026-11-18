@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
+import { encrypt } from "@/lib/crypto"
+import { db } from "@/lib/db"
 import { demux, loadSystemLogs, mask } from "@/lib/systemLogs"
 
 const session = vi.hoisted(() => ({ current: null as unknown }))
@@ -47,6 +49,10 @@ describe("mask", () => {
     ["phone 79991234567 sent", "phone *** sent"],
     ['{"api_hash": "0123456789abcdef"}', '{"api_hash": "***"}'],
     ["AUTH_SECRET=abc/def+ghi=", "AUTH_SECRET=***"],
+    ['{"password": "a b c", "x": 1}', '{"password": "***", "x": 1}'],
+    ["passwordHash: $2b$12$abc", "passwordHash: ***"],
+    ["bot_token='a b'", "bot_token='***'"],
+    ["hash 0123456789abcdef0123456789ABCDEF ok", "hash *** ok"],
   ])("%s", (raw, masked) => expect(mask(raw)).toBe(masked))
 
   it("masks the panel's own secret values wherever they appear", () => {
@@ -95,13 +101,16 @@ describe("loadSystemLogs", () => {
     },
   ]
 
+  let log: string | undefined
   beforeEach(() => {
+    log = undefined
     calls.length = 0
     vi.stubEnv("DOCKER_PROXY_URL", "http://proxy:2375")
     vi.stubEnv("COMPOSE_PROJECT", "p")
     vi.stubGlobal("fetch", async (url: string) => {
       calls.push(url)
       if (url.includes("/containers/json")) return Response.json(containers)
+      if (log) return new Response(log)
       return new Response(
         Buffer.concat([
           frame(1, "2026 started\n"),
@@ -138,7 +147,7 @@ describe("loadSystemLogs", () => {
   it("reads the chosen service's logs, masked, with errors-only and search", async () => {
     const res = await loadSystemLogs({ container: "web", tail: "500" })
     expect(calls[1]).toBe(
-      "http://proxy:2375/containers/aaa/logs?stdout=1&stderr=1&timestamps=1&tail=500"
+      "http://proxy:2375/containers/p-web-1/logs?stdout=1&stderr=1&timestamps=1&tail=500"
     )
     expect(res.lines).toEqual([
       "2026 started",
@@ -157,8 +166,26 @@ describe("loadSystemLogs", () => {
   it("never reads a container outside the project, and clamps tail", async () => {
     const res = await loadSystemLogs({ container: "zzz", tail: "100000" })
     expect(res.current).toBe("bot")
-    expect(calls[1]).toContain("/containers/bbb/logs")
+    expect(calls[1]).toContain("/containers/p-bot-1/logs")
     expect(calls[1]).toContain("tail=200")
+  })
+
+  it("masks the bot token and API hash saved in Настройки, whatever their form", async () => {
+    log = "uses tok-from-db-value and hash-from-db-value\n"
+    await db.settings.upsert({
+      where: { id: 1 },
+      create: {
+        id: 1,
+        botToken: encrypt("tok-from-db-value"),
+        apiHash: encrypt("hash-from-db-value"),
+      },
+      update: {
+        botToken: encrypt("tok-from-db-value"),
+        apiHash: encrypt("hash-from-db-value"),
+      },
+    })
+    expect((await loadSystemLogs({})).lines).toEqual(["uses *** and ***"])
+    await db.settings.deleteMany()
   })
 
   it("explains when the proxy is not configured", async () => {

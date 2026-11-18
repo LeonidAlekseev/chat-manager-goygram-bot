@@ -1,5 +1,8 @@
 import { auth } from "@/auth"
 
+import { decrypt } from "@/lib/crypto"
+import { db } from "@/lib/db"
+
 export const TAILS = [200, 500, 1000]
 const ERRORS = /error|warn|exception|traceback|fatal|panic/i
 const PROJECT_LABEL = "com.docker.compose.project"
@@ -31,21 +34,28 @@ export function mask(text: string, secrets: (string | undefined)[] = []) {
     .replace(/\d{8,10}:[A-Za-z0-9_-]{30,}/g, "***") // bot token
     .replace(/(\w+:\/\/[^\s:/@]*:)[^\s@]+@/g, "$1***@") // URL password
     .replace(
-      /((?:secret|password|passwd|token|api_hash|apikey|api_key)["']?\s*[=:]\s*["']?)[^\s"',}]+/gi,
-      "$1***"
+      /([\w-]*(?:secret|passw(?:or)?d|token|api_?hash|api_?key)[\w-]*["']?\s*[=:]\s*)("[^"]*"|'[^']*'|[^\s"',}]+)/gi,
+      (_, key: string, v: string) =>
+        key + (/^["']/.test(v) ? `${v[0]}***${v[0]}` : "***")
     )
+    .replace(/\b[0-9a-f]{32}\b/gi, "***") // API hash
     .replace(/\+\d[\d ()-]{8,}\d/g, "***") // phone, formatted
     .replace(/(?<![\w-])\d{11,15}(?!\w)/g, "***") // phone, bare digits; chat ids are -100…
 }
 
-const panelSecrets = () => {
+// Exact values to hide, whatever form they take in a log line.
+async function panelSecrets() {
   const { AUTH_SECRET, SUPERADMIN_PASSWORD, DATABASE_URL } = process.env
-  let dbPassword
+  const out = [AUTH_SECRET, SUPERADMIN_PASSWORD]
   try {
-    dbPassword =
-      DATABASE_URL && decodeURIComponent(new URL(DATABASE_URL).password)
+    out.push(DATABASE_URL && decodeURIComponent(new URL(DATABASE_URL).password))
   } catch {}
-  return [AUTH_SECRET, SUPERADMIN_PASSWORD, dbPassword || undefined]
+  const s = await db.settings.findUnique({ where: { id: 1 } })
+  for (const c of [s?.botToken, s?.apiHash])
+    try {
+      if (c) out.push(decrypt(c))
+    } catch {} // AUTH_SECRET changed: the patterns still apply
+  return out
 }
 
 async function docker(path: string) {
@@ -58,7 +68,7 @@ async function docker(path: string) {
 }
 
 type DockerContainer = {
-  Id: string
+  Names: string[]
   State: string
   Labels: Record<string, string>
 }
@@ -88,6 +98,7 @@ export async function loadSystemLogs(p: {
         "Логи недоступны: docker-proxy не настроен (DOCKER_PROXY_URL, COMPOSE_PROJECT).",
     }
   try {
+    // byte-exact query: docker-proxy/haproxy.cfg.template allows only this list request
     const filters = JSON.stringify({ label: [`${PROJECT_LABEL}=${project}`] })
     const all: DockerContainer[] = await (
       await docker(
@@ -98,8 +109,8 @@ export async function loadSystemLogs(p: {
     const containers = all
       .filter((c) => c.Labels?.[PROJECT_LABEL] === project)
       .map((c) => ({
-        id: c.Id,
-        name: c.Labels["com.docker.compose.service"] ?? c.Id.slice(0, 12),
+        id: c.Names[0].slice(1), // the proxy allows logs only by this project's container names
+        name: c.Labels["com.docker.compose.service"] ?? c.Names[0].slice(1),
         state: c.State,
       }))
       .sort((a, b) => a.name.localeCompare(b.name))
@@ -112,7 +123,7 @@ export async function loadSystemLogs(p: {
     const q = p.q?.toLowerCase()
     const lines = mask(
       demux(Buffer.from(await raw.arrayBuffer())),
-      panelSecrets()
+      await panelSecrets()
     )
       .split("\n")
       .filter(

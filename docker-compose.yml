@@ -79,7 +79,10 @@ services:
     restart: unless-stopped
     logging: *log
     read_only: true
+    security_opt: [no-new-privileges:true]
     tmpfs: ["/tmp", "/run"]
+    environment:
+      COMPOSE_PROJECT: ${COMPOSE_PROJECT_NAME} # logs only of this project's containers
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - ./docker-proxy/haproxy.cfg.template:/usr/local/etc/haproxy/haproxy.cfg.template:ro
