@@ -75,7 +75,7 @@ docker compose up -d --build
 
 1. `git clone <репозиторий> && cd chat-manager-goygram-bot`
 2. `cp .env.example .env` и заполните: `PANEL_DOMAIN`, `BASE_URL=https://<домен>`, пароли, `AUTH_SECRET` (см. таблицу выше).
-3. `docker compose up -d --build`
+3. `docker compose up -d --build`, затем почистите кэш сборки (он растёт с каждым деплоем): `docker builder prune -f --filter until=72h && docker image prune -f`
 4. Проверьте: `docker compose ps` (все сервисы `running`/`healthy`), откройте `https://<домен>` и войдите под `SUPERADMIN_LOGIN`.
 
 Логи: `docker compose logs -f caddy` (или `web`, `bot`, `db`). Сертификаты лежат в томе `caddy-data` — не удаляйте его (лимиты Let's Encrypt). Обновление и резервная копия — в разделе ниже. Лимит попыток входа берёт IP клиента из `X-Forwarded-For`, который Caddy перезаписывает сам, так что клиент подделать его не может — не публикуйте `web` в обход Caddy.
@@ -111,6 +111,7 @@ docker compose exec -T db pg_dump -U chatmanager chatmanager > backup.sql
 
 # обновление: миграции применятся при старте web
 git pull && docker compose up -d --build
+docker builder prune -f --filter until=72h && docker image prune -f  # кэш сборки растёт с каждым деплоем
 
 # восстановление в пустую БД
 docker compose exec -T db psql -U chatmanager chatmanager < backup.sql
