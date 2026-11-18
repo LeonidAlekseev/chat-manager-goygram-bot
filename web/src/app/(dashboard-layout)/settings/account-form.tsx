@@ -78,6 +78,10 @@ export function AccountForm({
           {waiting}
         </form>
         {login.stuck && startOver}
+        {/* e.g. «Аккаунт Telegram не отвечает» from the bot's liveness check */}
+        {login.error && (
+          <p className="text-sm text-destructive">{login.error}</p>
+        )}
       </div>
     )
 
