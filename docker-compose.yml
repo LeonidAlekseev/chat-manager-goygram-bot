@@ -1,7 +1,7 @@
-# Docker logs total <= 96 MB: 4 services x 3 files x 8 MB. Caddy logs to stdout only.
+# Docker logs total <= 90 MB: 5 services x 3 files x 6 MB. Caddy logs to stdout only.
 x-log: &log
   driver: json-file
-  options: { max-size: "8m", max-file: "3" }
+  options: { max-size: "6m", max-file: "3" }
 
 services:
   db:
@@ -33,6 +33,9 @@ services:
       SUPERADMIN_LOGIN: ${SUPERADMIN_LOGIN}
       SUPERADMIN_PASSWORD: ${SUPERADMIN_PASSWORD}
       TIMEZONE_NAME: ${TIMEZONE_NAME:-Europe/Moscow} # journal times
+      DOCKER_PROXY_URL: http://docker-proxy:2375 # «Системные логи»
+      COMPOSE_PROJECT: ${COMPOSE_PROJECT_NAME} # only this project's containers are shown
+    networks: [default, docker-proxy]
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/login >/dev/null"]
       interval: 10s
@@ -69,6 +72,26 @@ services:
       PANEL_URL: ${PANEL_URL:-}
       TIMEZONE_NAME: ${TIMEZONE_NAME:-Europe/Moscow}
     tmpfs: ["/tmp:size=64m"] # MTProto vault, goygram offsets and caches: never on disk
+
+  # Read-only Docker API for the panel's «Системные логи»: GET container list and logs only (see the template).
+  docker-proxy:
+    image: tecnativa/docker-socket-proxy:v0.5.0
+    restart: unless-stopped
+    logging: *log
+    read_only: true
+    security_opt: [no-new-privileges:true]
+    tmpfs: ["/tmp", "/run"]
+    environment:
+      COMPOSE_PROJECT: ${COMPOSE_PROJECT_NAME} # logs only of this project's containers
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./docker-proxy/haproxy.cfg.template:/usr/local/etc/haproxy/haproxy.cfg.template:ro
+    networks: [docker-proxy] # no ports: reachable only from web
+
+networks:
+  default:
+  docker-proxy:
+    internal: true
 
 volumes:
   db-data:

@@ -1,0 +1,28 @@
+# Replaces the image's template: its CONTAINERS=1 would also allow GET /containers/{id}/json (env with secrets)
+# and /archive, /export (container files). The panel needs only the container list and logs.
+global
+    log stdout format raw daemon info
+    pidfile /run/haproxy.pid
+
+defaults
+    mode http
+    log global
+    option httplog
+    option dontlognull
+    timeout http-request 10s
+    timeout connect 10s
+    timeout client 30s
+    timeout server 30s
+
+backend dockerbackend
+    server dockersocket /var/run/docker.sock
+
+frontend dockerfrontend
+    bind ${BIND_CONFIG}
+    http-request deny unless METH_GET
+    http-request deny if { query,url_dec -m sub -i follow } # streaming logs would hold the connection
+    # Only this project's list (the exact filter web sends) and its services' logs; COMPOSE_PROJECT comes from compose.
+    http-request allow if { path -m reg ^(/v[0-9.]+)?/containers/json$ } { query -m str "all=1&filters=%7B%22label%22%3A%5B%22com.docker.compose.project%3D${COMPOSE_PROJECT}%22%5D%7D" }
+    http-request allow if { path,url_dec -m reg "^(/v[0-9.]+)?/containers/${COMPOSE_PROJECT}-(bot|web|db|caddy|docker-proxy)-[0-9]+/logs\$" } # \$: a bare $ in quotes starts an env var
+    http-request deny
+    default_backend dockerbackend
