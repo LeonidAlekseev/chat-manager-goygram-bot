@@ -2,5 +2,16 @@
 # reverse_proxy overwrites an untrusted client X-Forwarded-For with the client IP,
 # which is what web/src/lib/loginLimit.ts relies on.
 {$PANEL_DOMAIN} {
+	encode zstd gzip
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options nosniff
+		X-Frame-Options DENY
+		Referrer-Policy strict-origin-when-cross-origin
+		-Server
+	}
+	request_body {
+		max_size 10MB
+	}
 	reverse_proxy web:3000
 }

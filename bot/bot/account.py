@@ -19,7 +19,7 @@ import asyncpg
 from goygram import GoyGram
 from goygram import ext as tl
 from goygram.dc_fetcher import get_dynamic_dc_config, pick_dc_endpoint, pick_reachable_dc
-from goygram.errors import FloodWaitError, rpc_error
+from goygram.errors import FloodWaitError, RPCError, rpc_error
 from goygram.security import (
     _current_dc_id,
     _extension,
@@ -61,8 +61,14 @@ CLIENT: dict[str, Any] = {
     "lang_code": "ru",
 }
 
-# An error Telegram lets the user retry within the same login; any other starts the login over.
-RETRY = {"code": "PHONE_CODE_INVALID", "password": "PASSWORD_HASH_INVALID", "resend": "SEND_CODE_UNAVAILABLE"}
+# Errors Telegram lets the user retry within the same login; any other starts the login over.
+RETRY = {
+    "code": ("PHONE_CODE_INVALID", "PHONE_CODE_EXPIRED"),
+    "password": ("PASSWORD_HASH_INVALID",),
+    "resend": ("SEND_CODE_UNAVAILABLE",),
+}
+ENDED = "Сессия завершена в Telegram, войдите заново."
+UNREADABLE = "Сессия не расшифровывается (сменился AUTH_SECRET?), войдите заново."
 REASONS = {
     "SEND_CODE_UNAVAILABLE": "Других способов отправить код нет.",
     "PHONE_CODE_INVALID": "Неверный код.",
@@ -141,11 +147,18 @@ class Account:
         self._task: asyncio.Task[None] | None = None
         self._session: str | None = None  # the stored ciphertext the client runs with
 
-    def iter_participants(self, chat_id: int) -> AsyncIterator[Any]:
+    async def iter_participants(self, chat_id: int) -> AsyncIterator[Any]:
         if self.client is None:
             raise MentionError(NO_SESSION)
-        it: AsyncIterator[Any] = self.client.iter_participants(chat_id)
-        return it
+        session = self._session
+        try:
+            async for p in self.client.iter_participants(chat_id):
+                yield p
+        except RPCError as e:
+            if not _ended(e):
+                raise
+            await self._forget(session, ENDED)
+            raise MentionError(NO_SESSION) from e
 
     async def run(self, interval: float = 2) -> None:
         while True:
@@ -173,10 +186,15 @@ class Account:
             and (self.login.scanned() or time.time() > self.qr["expires"] - 5)
         ):
             await self.step("qr_renew", None)
+        if self._task and self._task.done() and not self._task.cancelled() and _ended(self._task.exception()):
+            await self._forget(self._session, ENDED)
         session = await self.db.fetchval("SELECT api_session FROM settings WHERE id = 1")
         if session != self._session:  # a login, or «Выйти» in the panel
             await self._stop_client()
-            if plain := _open(session, self.secret):
+            plain = _open(session, self.secret)
+            if session and plain is None:
+                return await self._forget(session, UNREADABLE)
+            if plain:
                 s = await load_settings(self.db, self.secret)
                 self.client = await self.open_client(s.api_id, s.api_hash, json.loads(plain))  # type: ignore[arg-type]
                 self._task = asyncio.create_task(self.client.run())
@@ -186,6 +204,22 @@ class Account:
     async def stop(self) -> None:
         await self._drop()
         await self._stop_client()
+
+    async def _forget(self, session: str | None, error: str) -> None:
+        """The session stopped working: the panel shows why and asks for a new login."""
+        log.warning("user session dropped: %s", error)
+        await self._stop_client()
+        self._session = None
+        async with self.db.acquire() as c, c.transaction():
+            # Only this session: a login finished meanwhile stays.
+            if await c.fetchval(
+                "UPDATE settings SET api_session = NULL, api_account = NULL WHERE id = 1 AND api_session = $1 "
+                "RETURNING 1", session,
+            ):
+                await c.execute(
+                    "INSERT INTO mtproto_login (id, error) VALUES (1, $1) "
+                    "ON CONFLICT (id) DO UPDATE SET error = $1, updated_at = now()", error,
+                )
 
     async def _stop_client(self) -> None:
         task, self._task, self.client = self._task, None, None
@@ -200,7 +234,9 @@ class Account:
         except Exception as e:  # noqa: BLE001  any failure must reach the panel, not stop the loop
             if "SESSION_PASSWORD_NEEDED" in str(e):
                 return await self._report("password")
-            if (retry := RETRY.get(step)) and retry in str(e):
+            if any(r in str(e) for r in RETRY.get(step, ())):
+                if "PHONE_CODE_EXPIRED" in str(e):  # auth.resendCode sends a new one
+                    self.sent = (self.sent[0], True)
                 return await self._report("code" if step == "resend" else step, reason(e))
             log.warning("login step %s failed: %r", step, e)
             await self._drop()
@@ -253,10 +289,13 @@ class Account:
         name = " ".join(filter(None, [user.get("first_name"), user.get("last_name")]))
         if user.get("username"):
             name += f" (@{user['username']})"
-        await self.db.execute(
-            "UPDATE settings SET api_session = $1, api_account = $2 WHERE id = 1",
-            encrypt(json.dumps(session), self.secret), name,
-        )
+        async with self.db.acquire() as c, c.transaction():
+            # No login row: «Начать заново» was pressed while Telegram answered, so this login is withdrawn.
+            if await c.fetchval("SELECT 1 FROM mtproto_login WHERE id = 1 FOR UPDATE"):
+                await c.execute(
+                    "UPDATE settings SET api_session = $1, api_account = $2 WHERE id = 1",
+                    encrypt(json.dumps(session), self.secret), name,
+                )
         await self._drop()
         await self._report(None)
 
@@ -289,14 +328,21 @@ class Account:
         if state != "qr":
             self.qr = {}  # scanned, needs the password, failed or gave up: stop renewing
         await self.db.execute(
-            "UPDATE mtproto_login SET step = NULL, state = $1, error = $2, sent = $3, resend = $4, qr = $5, "
-            "updated_at = now() WHERE id = 1",
+            # A step the panel sent meanwhile (input set) stays for the next tick.
+            "UPDATE mtproto_login SET step = CASE WHEN input IS NULL THEN NULL ELSE step END, "
+            "state = $1, error = $2, sent = $3, resend = $4, qr = $5, updated_at = now() WHERE id = 1",
             state, error, sent, resend, self.qr.get("url"),
         )
 
 
-# shortcut: a stopped client (crash, session ended in Telegram) is only logged; the panel still shows the
-# account. Clear api_session here if admins need to see it, but not on transient network errors.
+def _ended(e: BaseException | None) -> bool:
+    """Telegram ended the session (AUTH_KEY_UNREGISTERED, SESSION_REVOKED, USER_DEACTIVATED, …): all are 401."""
+    # shortcut: goygram 0.8.29 drops the transport's -404 (a 4-byte packet) silently, so a dead key shows up
+    # only as timeouts, not here; handle it if goygram starts raising on it.
+    return isinstance(e, RPCError) and e.code == 401 and "SESSION_PASSWORD_NEEDED" not in e.message
+
+
+# A stopped client is logged here; tick() forgets the session if Telegram ended it.
 def _log_client_stop(task: "asyncio.Task[None]") -> None:
     if not task.cancelled():
         log.error("user client stopped: %r", task.exception() or "exited")

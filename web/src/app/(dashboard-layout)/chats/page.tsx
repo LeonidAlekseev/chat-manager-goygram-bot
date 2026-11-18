@@ -10,13 +10,14 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
+import { ActionForm } from "@/components/action-form"
 import { renameChat } from "./actions"
 
 export const metadata: Metadata = { title: "Чаты" }
 
 export default async function ChatsPage() {
   // Layouts are not re-rendered on client navigation, so data pages check the session themselves.
-  if (!(await auth())) redirect("/login")
+  if (!(await auth())?.user) redirect("/login")
   const chats = await db.chat.findMany({
     orderBy: [{ active: "desc" }, { title: "asc" }],
     include: { schedule: { select: { name: true } } },
@@ -47,7 +48,7 @@ export default async function ChatsPage() {
                 {chats.map((chat) => (
                   <tr key={chat.id} className="border-t">
                     <td className="py-2 pe-4">
-                      <form action={renameChat} className="flex gap-2">
+                      <ActionForm action={renameChat} className="flex gap-2">
                         <input type="hidden" name="id" value={chat.id} />
                         <Input
                           name="title"
@@ -59,7 +60,7 @@ export default async function ChatsPage() {
                         <Button type="submit" variant="outline">
                           Сохранить
                         </Button>
-                      </form>
+                      </ActionForm>
                     </td>
                     <td className="py-2 pe-4 font-mono">
                       {chat.telegramId.toString()}

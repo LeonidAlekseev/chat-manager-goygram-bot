@@ -41,6 +41,17 @@ describe("managers CRUD", () => {
     })
   })
 
+  it("limits the password by bytes: 37 Cyrillic letters are 74 bytes", async () => {
+    const res = await createManager(
+      null,
+      form({ ...newManager, password: "ж".repeat(37) })
+    )
+    expect(res.error).toBeTruthy()
+    expect(await db.manager.count()).toBe(0)
+    await createManager(null, form({ ...newManager, password: "ж".repeat(36) }))
+    expect(await db.manager.count()).toBe(1)
+  })
+
   it.each([["manager"], [null]])("refuses create for %s", async (role) => {
     asRole(role)
     await expect(createManager(null, form(newManager))).rejects.toThrow(

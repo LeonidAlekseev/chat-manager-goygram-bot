@@ -18,25 +18,29 @@ const base = {
   mentionAll: flag,
 }
 // Telegram limits: poll question 1-300, 2-10 options of 1-100 chars, message 1-4096.
-const Schema = z.discriminatedUnion("kind", [
-  z.object({
-    ...base,
-    kind: z.literal("poll"),
-    text: z.string().trim().min(1).max(300),
-    options: z
-      .array(z.string().trim().min(1).max(100))
-      .min(2, "Нужно минимум 2 варианта")
-      .max(10, "Не больше 10 вариантов"),
-  }),
-  z.object({
-    ...base,
-    kind: z.literal("text"),
-    text: z.string().trim().min(1).max(4096),
-  }),
-])
+const Schema = z.discriminatedUnion(
+  "kind",
+  [
+    z.object({
+      ...base,
+      kind: z.literal("poll"),
+      text: z.string().trim().min(1).max(300),
+      options: z
+        .array(z.string().trim().min(1).max(100))
+        .min(2, "Нужно минимум 2 варианта")
+        .max(10, "Не больше 10 вариантов"),
+    }),
+    z.object({
+      ...base,
+      kind: z.literal("text"),
+      text: z.string().trim().min(1).max(4096),
+    }),
+  ],
+  { error: "Неизвестный тип шаблона" }
+)
 
 async function requireAuth() {
-  if (!(await auth())) throw new Error("Unauthorized")
+  if (!(await auth())?.user) throw new Error("Unauthorized")
 }
 
 export async function saveTemplate(

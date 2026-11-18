@@ -4,7 +4,7 @@ import { defineConfig } from "@playwright/test"
 // the test adds a chat and uniquely named template/schedule rows. With SUPERADMIN_* unset, an e2e superadmin is created.
 export const LOGIN = process.env.SUPERADMIN_LOGIN || "e2e-admin"
 export const PASSWORD = process.env.SUPERADMIN_PASSWORD || "e2e-password"
-const PORT = 3100
+const PORT = Number(process.env.E2E_PORT) || 3100
 
 export default defineConfig({
   testDir: "e2e",
