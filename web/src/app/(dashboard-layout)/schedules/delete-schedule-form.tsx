@@ -14,14 +14,7 @@ export function DeleteScheduleForm({
   return (
     <ActionForm
       action={deleteSchedule}
-      onSubmit={(e) => {
-        if (
-          !confirm(
-            `Удалить расписание? Привязанных чатов: ${chats} — они будут отвязаны.`
-          )
-        )
-          e.preventDefault()
-      }}
+      confirmText={`Удалить расписание? Привязанных чатов: ${chats} — они будут отвязаны.`}
     >
       <input type="hidden" name="id" value={id} />
       <Button type="submit" variant="outline">

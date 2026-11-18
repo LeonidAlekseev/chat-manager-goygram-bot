@@ -13,8 +13,14 @@ export type ActionState = { error?: string } | null
 const PERIODS = ["none", "day", "week", "twoweek", "month"] as const
 
 // Postgres INT: a larger id can never exist, and Prisma would throw on it
-const Id = z.coerce.number().int().min(1).max(2147483647)
-const NOT_FOUND = { error: "Не найдено — обновите страницу" }
+const BAD_ID = "Не найдено — обновите страницу"
+const Id = z
+  .string()
+  .regex(/^\d+$/, BAD_ID)
+  .refine((v) => +v >= 1 && +v <= 2147483647, BAD_ID)
+  .transform(Number)
+const NOT_FOUND = { error: BAD_ID }
+const EXPIRED = { error: "Сессия истекла, войдите заново" }
 
 // P2025: the row is gone; P2003: the other side of a link is gone
 function gone(e: unknown) {
@@ -39,16 +45,16 @@ const Item = z.object({
 
 const Schema = z.object({
   id: Id.optional(),
-  name: z.string().trim().min(1).max(255),
+  name: z
+    .string()
+    .trim()
+    .min(1, "Введите название")
+    .max(255, "Название — до 255 символов"),
   // set when saving from a chat page: "this" edits only that chat's copy
   chatId: Id.optional(),
   scope: z.enum(["all", "this"]).optional(),
   items: z.array(Item),
 })
-
-async function requireAuth() {
-  if (!(await auth())) throw new Error("Unauthorized")
-}
 
 function revalidate() {
   revalidatePath("/schedules")
@@ -74,7 +80,7 @@ export async function saveSchedule(
   _prev: ActionState,
   formData: FormData
 ): Promise<{ error?: string }> {
-  await requireAuth()
+  if (!(await auth())) return EXPIRED
   const col = (k: string) => formData.getAll(k).map(String)
   const times = col("time")
   const itemIds = col("itemId")
@@ -96,9 +102,14 @@ export async function saveSchedule(
   const { id, name, chatId, scope, items } = parsed.data
 
   // a one-time item in the past is refused, unless it is saved unchanged (it may have fired already)
-  const saved = await db.scheduleItem.findMany({
-    where: { id: { in: items.flatMap((i) => (i.id ? [i.id] : [])) } },
-  })
+  const saved = id
+    ? await db.scheduleItem.findMany({
+        where: {
+          scheduleId: id, // another schedule's item id must not count as "unchanged"
+          id: { in: items.flatMap((i) => (i.id ? [i.id] : [])) },
+        },
+      })
+    : []
   const now = nowInZone()
   const stale = items.find((i) => {
     const day = i.startDate.toISOString().slice(0, 10)
@@ -206,7 +217,7 @@ export async function saveSchedule(
 export async function bindChats(
   formData: FormData
 ): Promise<{ error?: string }> {
-  await requireAuth()
+  if (!(await auth())) return EXPIRED
   const id = Id.safeParse(formData.get("id"))
   const chatIds = formData.getAll("chatId").map((c) => Id.safeParse(c))
   if (!id.success || chatIds.some((c) => !c.success)) return NOT_FOUND
@@ -232,7 +243,7 @@ export async function bindChats(
 export async function bindChat(
   formData: FormData
 ): Promise<{ error?: string }> {
-  await requireAuth()
+  if (!(await auth())) return EXPIRED
   const chatId = Id.safeParse(formData.get("chatId"))
   const raw = formData.get("scheduleId")
   const scheduleId = raw ? Id.safeParse(raw) : null
@@ -252,7 +263,7 @@ export async function bindChat(
 export async function deleteSchedule(
   formData: FormData
 ): Promise<{ error?: string }> {
-  await requireAuth()
+  if (!(await auth())) return EXPIRED
   const id = Id.safeParse(formData.get("id"))
   if (!id.success) return NOT_FOUND
   try {

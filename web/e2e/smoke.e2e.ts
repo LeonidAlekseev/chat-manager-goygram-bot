@@ -182,3 +182,34 @@ test("schedule form: a saved time sticks, and a second save does not revert it",
   await expect(time).toHaveValue("09:00")
   expect(await dbTime()).toBe("09:00")
 })
+
+test("journal: 200 rows per page, «Дальше» shows the rest", async ({
+  page,
+}) => {
+  const chat = await db.chat.findFirstOrThrow({ where: { title: CHAT } })
+  const text = `E2E журнал ${Date.now()}`
+  await db.sendLog.deleteMany({ where: { chatId: chat.id } })
+  await db.sendLog.createMany({
+    data: Array.from({ length: 205 }, (_, i) => ({
+      chatId: chat.id,
+      slot: new Date(Date.UTC(2000, 0, 1, 0, 0, i)),
+      status: "sent" as const,
+      text,
+    })),
+  })
+  try {
+    await page.goto("/login")
+    await page.getByLabel("Логин").fill(LOGIN)
+    await page.getByLabel("Пароль").fill(PASSWORD)
+    await page.getByRole("button", { name: "Войти" }).click()
+    await page.waitForURL("**/chats")
+
+    await page.goto(`/logs?chat=${chat.id}`)
+    await expect(page.locator("tbody tr")).toHaveCount(200)
+    await page.getByRole("link", { name: "Дальше" }).click()
+    await expect(page.locator("tbody tr")).toHaveCount(5)
+    await expect(page.getByRole("link", { name: "Дальше" })).toBeHidden()
+  } finally {
+    await db.sendLog.deleteMany({ where: { chatId: chat.id } })
+  }
+})

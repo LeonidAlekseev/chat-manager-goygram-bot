@@ -8,21 +8,27 @@ import { z } from "zod"
 import { db } from "@/lib/db"
 
 // Postgres INT: a larger id can never exist
-const IdSchema = z.coerce.number().int().min(1).max(2147483647)
-
 const RenameSchema = z.object({
-  id: IdSchema,
+  id: z
+    .string()
+    .regex(/^\d+$/)
+    .refine((v) => +v >= 1 && +v <= 2147483647)
+    .transform(Number),
   title: z.string().trim().min(1).max(255),
 })
 
 export async function renameChat(
   formData: FormData
 ): Promise<{ error?: string }> {
-  if (!(await auth())) throw new Error("Unauthorized")
-  const fields = Object.fromEntries(formData)
-  if (!IdSchema.safeParse(fields.id).success)
-    return { error: "Чат не найден — обновите страницу" }
-  const { id, title } = RenameSchema.parse(fields)
+  if (!(await auth())) return { error: "Сессия истекла, войдите заново" }
+  const parsed = RenameSchema.safeParse(Object.fromEntries(formData))
+  if (!parsed.success)
+    return {
+      error: parsed.error.issues.some((i) => i.path[0] === "id")
+        ? "Чат не найден — обновите страницу"
+        : "Название — от 1 до 255 символов",
+    }
+  const { id, title } = parsed.data
   try {
     await db.chat.update({ where: { id }, data: { title } })
   } catch (e) {

@@ -35,23 +35,31 @@ describe("renameChat", () => {
       expect((await renameChat(form(id, "X"))).error).toBeTruthy()
   })
 
-  it("rejects an empty title", async () => {
-    const chat = await db.chat.create({
-      data: { telegramId: BigInt(-100124), title: "Old" },
-    })
-    await expect(renameChat(form(chat.id, "   "))).rejects.toThrow()
-    expect(
-      (await db.chat.findUniqueOrThrow({ where: { id: chat.id } })).title
-    ).toBe("Old")
-  })
+  it.each([
+    ["spaces only", "   "],
+    ["over 255 characters", "x".repeat(256)],
+  ])(
+    "answers a title with %s with a message and keeps the old one",
+    async (_, title) => {
+      const chat = await db.chat.create({
+        data: { telegramId: BigInt(-100124), title: "Old" },
+      })
+      expect((await renameChat(form(chat.id, title))).error).toBe(
+        "Название — от 1 до 255 символов"
+      )
+      expect(
+        (await db.chat.findUniqueOrThrow({ where: { id: chat.id } })).title
+      ).toBe("Old")
+    }
+  )
 
-  it("refuses when not signed in", async () => {
+  it("answers an expired session with a message", async () => {
     session.current = null
     const chat = await db.chat.create({
       data: { telegramId: BigInt(-100125), title: "Old" },
     })
-    await expect(renameChat(form(chat.id, "New"))).rejects.toThrow(
-      "Unauthorized"
+    expect((await renameChat(form(chat.id, "New"))).error).toBe(
+      "Сессия истекла, войдите заново"
     )
     expect(
       (await db.chat.findUniqueOrThrow({ where: { id: chat.id } })).title
