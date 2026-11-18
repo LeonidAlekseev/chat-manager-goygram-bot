@@ -9,6 +9,7 @@ from bot.sender import Telegram
 log = logging.getLogger(__name__)
 
 ACTIVE_STATUSES = {"member", "administrator", "creator", "restricted"}
+_leave_warned: set[int] = set()  # chats whose failing leaveChat was logged once; retries are quiet
 
 
 async def handle_member_update(db: asyncpg.Pool, update: dict[str, Any]) -> None:
@@ -78,14 +79,25 @@ async def migrate_chat(db: asyncpg.Pool, old_id: int, new_id: int) -> None:
 
 
 async def delete_chats(db: asyncpg.Pool, tg: Telegram) -> None:
-    """Chats deleted in the panel: the bot leaves the group, then the row goes with its journal and jobs (FK cascade)."""
-    for r in await db.fetch("SELECT id, telegram_id, active FROM chats WHERE deleting ORDER BY id"):
+    """Chats deleted in the panel: the bot leaves the group, then the row goes with its journal and jobs (FK cascade).
+
+    A chat with a send in flight (`pending` log) waits for the next pass, so the cascade does not pull rows from
+    under it; a stuck one turns into an error after STUCK_MINUTES (scheduler.fail_stuck).
+    """
+    rows = await db.fetch(
+        "SELECT id, telegram_id, active FROM chats c WHERE deleting AND NOT EXISTS "
+        "(SELECT 1 FROM send_logs l WHERE l.chat_id = c.id AND l.status = 'pending') ORDER BY id"
+    )
+    for r in rows:
         if r["active"]:
             try:
                 await tg.bot_req("leaveChat", chat_id=r["telegram_id"])
             except Exception as e:  # noqa: BLE001
                 # 400/403 (chat not found, not a member, kicked): the bot is not there anyway; else retry next tick
                 if not re.search(r"http 40[03]\b", str(e)):
-                    log.warning("leaving chat %s failed: %s", r["telegram_id"], e)
+                    if r["telegram_id"] not in _leave_warned:
+                        _leave_warned.add(r["telegram_id"])
+                        log.warning("leaving chat %s failed, will retry: %s", r["telegram_id"], e)
                     continue
         await db.execute("DELETE FROM chats WHERE id = $1 AND deleting", r["id"])
+        _leave_warned.discard(r["telegram_id"])

@@ -147,3 +147,25 @@ async def test_leave_update_after_deletion_does_not_bring_the_chat_back(db):
     assert await chats(db) == []
     await handle_member_update(db, my_chat_member(-100123, "ПВЗ", "member"))  # added back later: a new chat
     assert [tuple(r) for r in await db.fetch("SELECT active, deleting, schedule_id FROM chats")] == [(True, False, None)]
+
+
+async def test_chat_with_a_send_in_flight_waits_for_the_next_pass(db):
+    await handle_member_update(db, my_chat_member(-100123, "ПВЗ", "member"))
+    await db.execute("INSERT INTO send_logs (chat_id, slot) SELECT id, now() FROM chats")  # pending
+    await db.execute("UPDATE chats SET deleting = true")
+    tg = LeavingTelegram()
+    await delete_chats(db, tg)
+    assert tg.calls == [] and len(await chats(db)) == 1
+    await db.execute("UPDATE send_logs SET status = 'sent'")
+    await delete_chats(db, tg)
+    assert await chats(db) == []
+
+
+async def test_a_failing_leave_is_logged_once_not_every_tick(db, caplog):
+    await handle_member_update(db, my_chat_member(-100123, "ПВЗ", "member"))
+    await db.execute("UPDATE chats SET deleting = true")
+    for _ in range(3):
+        await delete_chats(db, LeavingTelegram("connection reset"))
+    assert len([r for r in caplog.records if "leaving chat" in r.message]) == 1
+    await delete_chats(db, LeavingTelegram())
+    assert await chats(db) == []

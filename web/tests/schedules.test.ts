@@ -252,6 +252,22 @@ describe("schedules", () => {
     expect(bound.map((c) => c.scheduleId)).toEqual([null, s.id, s.id])
   })
 
+  it("does not bind a chat that is being deleted, nor give it a copy", async () => {
+    const s = await shared()
+    await db.chat.update({ where: { id: chats[0] }, data: { deleting: true } })
+    expect(
+      await bindChat(form({ chatId: chats[0], scheduleId: s.id }))
+    ).toEqual({ error: "Чат удаляется" })
+    const r = await saveSchedule(
+      null,
+      form({ id: s.id, name: s.name, chatId: chats[0], scope: "this" }, [
+        { ...morning, templateId: tpl, time: "08:30" },
+      ])
+    )
+    expect(r).toEqual({ error: "Чат удаляется" })
+    expect(await db.schedule.count()).toBe(1) // the copy was rolled back
+  })
+
   it("an edit 'in all chats' changes the shared schedule for every chat", async () => {
     const s = await shared()
     const edited = [{ ...morning, templateId: tpl, time: "08:30" }]

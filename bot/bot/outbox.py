@@ -25,7 +25,9 @@ async def run_outbox(db: asyncpg.Pool, tg: Telegram, user: Any = None) -> None:
         "COALESCE(t.mention_all, false) AS mention_all, t.source_chat_id, t.source_message_ids, "
         "t.correct_option_id, t.explanation "
         "FROM outbox o JOIN chats c ON c.id = o.chat_id LEFT JOIN templates t ON t.id = o.template_id "
-        "WHERE NOT EXISTS (SELECT 1 FROM send_logs l WHERE l.outbox_id = o.id) ORDER BY o.id LIMIT 100"
+        # a deleting chat's jobs are never sent; they go with the chat (FK cascade)
+        "WHERE NOT c.deleting AND NOT EXISTS (SELECT 1 FROM send_logs l WHERE l.outbox_id = o.id) "
+        "ORDER BY o.id LIMIT 100"
     )
     polls = []
     for r in rows:
