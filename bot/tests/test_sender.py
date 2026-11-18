@@ -214,7 +214,8 @@ async def test_hung_member_fetches_share_one_budget_so_the_next_tick_is_not_late
 
 
 COPY = {"kind": "copy", "text": "превью", "options": [], "anonymous": False, "multiple": False,
-        "mention_all": False, "source_chat_id": 42, "source_message_id": 7}
+        "mention_all": False, "source_chat_id": 42, "source_message_ids": [7], "correct_option_id": None,
+        "explanation": None}
 
 
 async def test_copy_is_sent_with_copy_message_and_mentions_follow_separately():
@@ -234,10 +235,41 @@ async def test_deleted_source_is_logged_as_an_error(world):
             return await super().bot_req(meth, **kw)
 
     await world.execute(
-        "UPDATE templates SET kind = 'copy', source_chat_id = 42, source_message_id = 7 WHERE name = 'Ключ'")
+        "UPDATE templates SET kind = 'copy', source_chat_id = 42, source_message_ids = '{7}' WHERE name = 'Ключ'")
     await run_due(world, Gone(), NOW)
     row = await world.fetchrow("SELECT status::text, error FROM send_logs WHERE chat_id = 5")
     assert row["status"] == "error" and "message to copy not found" in row["error"]
+
+
+async def test_album_is_sent_with_copy_messages_as_one_album():
+    class Albums(FakeTelegram):
+        async def bot_req(self, meth, **kw):
+            await super().bot_req(meth, **kw)
+            return [{"message_id": 201}, {"message_id": 202}]
+
+    tg = Albums()
+    msg = await send_template(tg, -1001, {**COPY, "source_message_ids": [7, 8]})
+    assert tg.calls == [("copyMessages", {"chat_id": -1001, "from_chat_id": 42, "message_ids": [7, 8]})]
+    assert msg["message_id"] == 201
+
+
+async def test_album_with_deleted_sources_is_sent_with_a_warning():
+    class Partly(FakeTelegram):
+        async def bot_req(self, meth, **kw):
+            await super().bot_req(meth, **kw)
+            return [{"message_id": 201}]
+
+    msg = await send_template(Partly(), -1001, {**COPY, "source_message_ids": [7, 8, 9]})
+    assert msg["message_id"] == 201 and msg["mention_error"] == "Отправлено 1 из 3 сообщений альбома"
+
+
+async def test_quiz_is_sent_as_a_quiz():
+    tg = FakeTelegram()
+    quiz = {**COPY, "kind": "poll", "text": "2+2?", "options": ["3", "4"], "anonymous": True,
+            "correct_option_id": 1, "explanation": "Счёт"}
+    await send_template(tg, -1001, quiz)
+    kw = tg.calls[0][1]
+    assert (kw["type"], kw["correct_option_id"], kw["explanation"], kw["is_anonymous"]) == ("quiz", 1, "Счёт", True)
 
 
 async def test_chat_migrated_to_a_supergroup_is_updated_and_the_send_retried(world):

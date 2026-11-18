@@ -79,6 +79,38 @@ describe("templates", () => {
   })
 
   it.each([
+    ["options", { options: "Б\nА\nВ" }],
+    ["multiple answers", { options: "А\nБ\nВ", multiple: "on" }],
+    ["kind", { kind: "text", text: "x" }],
+  ])("refuses to change a quiz's %s", async (_, change) => {
+    const t = await db.template.create({
+      data: {
+        ...poll,
+        kind: "poll",
+        options: ["А", "Б", "В"],
+        correctOptionId: 2,
+      },
+    })
+    const edit = form({ ...poll, id: String(t.id), ...change })
+    expect((await saveTemplate(null, edit)).error).toMatch(/викторин/i)
+    const ok = form({
+      ...poll,
+      id: String(t.id),
+      name: "Новое",
+      options: "А\nБ\nВ",
+    })
+    expect((await saveTemplate(null, ok)).error).toBeUndefined()
+    expect(
+      await db.template.findUniqueOrThrow({ where: { id: t.id } })
+    ).toMatchObject({
+      name: "Новое",
+      options: ["А", "Б", "В"],
+      multiple: false,
+      correctOptionId: 2,
+    })
+  })
+
+  it.each([
     ["one option", { options: "Да" }],
     [
       "eleven options",
@@ -108,7 +140,7 @@ describe("templates", () => {
         kind: "copy",
         text: "превью",
         sourceChatId: 42,
-        sourceMessageId: 7,
+        sourceMessageIds: [7],
         mediaType: "photo",
       },
     })
@@ -130,7 +162,7 @@ describe("templates", () => {
       mentionAll: true,
       kind: "copy",
       text: "превью",
-      sourceMessageId: BigInt(7),
+      sourceMessageIds: [BigInt(7)],
     })
   })
 

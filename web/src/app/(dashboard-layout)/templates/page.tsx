@@ -53,10 +53,14 @@ export default async function TemplatesPage({
                 {t.name}
                 <Badge variant="secondary">
                   {t.kind === "poll"
-                    ? "Опрос"
-                    : t.kind === "copy"
-                      ? `Копия · ${t.mediaType}`
-                      : "Текст"}
+                    ? t.correctOptionId === null
+                      ? "Опрос"
+                      : "Викторина"
+                    : t.mediaType === "album"
+                      ? `Альбом, ${t.sourceMessageIds.length} шт.`
+                      : t.kind === "copy"
+                        ? `Копия · ${t.mediaType}`
+                        : "Текст"}
                 </Badge>
                 {t.author && (
                   <span className="text-sm text-muted-foreground">

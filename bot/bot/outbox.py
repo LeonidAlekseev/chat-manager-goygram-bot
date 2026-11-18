@@ -21,7 +21,8 @@ async def run_outbox(db: asyncpg.Pool, tg: Telegram, user: Any = None) -> None:
         "SELECT o.id, o.chat_id, c.telegram_id, c.active, o.template_id, "
         "CASE WHEN o.text IS NOT NULL THEN 'text' ELSE t.kind::text END AS kind, "
         "COALESCE(o.text, t.text) AS text, t.options, t.anonymous, t.multiple, "
-        "COALESCE(t.mention_all, false) AS mention_all, t.source_chat_id, t.source_message_id "
+        "COALESCE(t.mention_all, false) AS mention_all, t.source_chat_id, t.source_message_ids, "
+        "t.correct_option_id, t.explanation "
         "FROM outbox o JOIN chats c ON c.id = o.chat_id LEFT JOIN templates t ON t.id = o.template_id "
         "WHERE NOT EXISTS (SELECT 1 FROM send_logs l WHERE l.outbox_id = o.id) ORDER BY o.id LIMIT 100"
     )

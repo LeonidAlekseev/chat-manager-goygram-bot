@@ -60,10 +60,14 @@ model Template {
   anonymous  Boolean        @default(false)
   multiple   Boolean        @default(false)
   mentionAll Boolean        @default(false) @map("mention_all")
-  // kind = copy: the source message in the manager's private chat with the bot.
-  sourceChatId    BigInt? @map("source_chat_id")
-  sourceMessageId BigInt? @map("source_message_id")
-  mediaType       String? @map("media_type")
+  // kind = poll: a quiz has its correct option (and maybe an explanation); a regular poll has neither.
+  correctOptionId Int?    @map("correct_option_id")
+  explanation     String?
+  // kind = copy: the source message(s) in the manager's private chat with the bot; an album has several.
+  sourceChatId     BigInt?  @map("source_chat_id")
+  sourceMessageIds BigInt[] @default([]) @map("source_message_ids")
+  mediaGroupId     String?  @map("media_group_id")
+  mediaType        String?  @map("media_type")
   authorId        Int?    @map("author_id")
   author          Manager? @relation(fields: [authorId], references: [id], onDelete: SetNull)
   createdAt  DateTime       @default(now()) @map("created_at")
@@ -71,6 +75,7 @@ model Template {
   sendLogs   SendLog[]
   outbox     Outbox[]
 
+  @@unique([sourceChatId, mediaGroupId])
   @@map("templates")
 }
 

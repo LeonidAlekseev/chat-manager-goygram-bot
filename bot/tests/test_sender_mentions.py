@@ -2,7 +2,8 @@ import asyncio
 
 from bot.sender import send_template
 
-POLL = {"kind": "poll", "text": "Q", "options": ["a"], "anonymous": False, "multiple": False, "mention_all": True}
+POLL = {"kind": "poll", "text": "Q", "options": ["a"], "anonymous": False, "multiple": False, "mention_all": True,
+        "correct_option_id": None, "explanation": None}
 TEXT = {"kind": "text", "text": "Привет", "options": [], "anonymous": False, "multiple": False, "mention_all": True}
 
 
