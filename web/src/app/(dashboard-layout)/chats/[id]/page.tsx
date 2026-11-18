@@ -13,6 +13,7 @@ import { ActionForm } from "@/components/action-form"
 import { bindChat } from "../../schedules/actions"
 import { toItemView } from "../../schedules/item-view"
 import { ScheduleForm } from "../../schedules/schedule-form"
+import { DeleteChatForm } from "../delete-chat-form"
 
 export const metadata: Metadata = { title: "Чат" }
 
@@ -30,7 +31,7 @@ export default async function ChatPage({
       schedule: { include: { items: { orderBy: { time: "asc" } } } },
     },
   })
-  if (!chat) notFound()
+  if (!chat || chat.deleting) notFound()
   const items = chat.schedule?.items.map(toItemView) ?? []
   const [schedules, templates, sharedWith] = await Promise.all([
     db.schedule.findMany({
@@ -51,8 +52,9 @@ export default async function ChatPage({
   return (
     <section className="container grid gap-4 p-4">
       <Card>
-        <CardHeader>
+        <CardHeader className="flex-row flex-wrap items-center justify-between gap-2 space-y-0">
           <CardTitle>{chat.title}</CardTitle>
+          <DeleteChatForm chat={chat} />
         </CardHeader>
         <CardContent>
           <ActionForm action={bindChat} className="flex flex-wrap gap-2">

@@ -97,6 +97,15 @@ describe("sendNow", () => {
     expect(await db.outbox.count()).toBe(0)
   })
 
+  it("rejects a chat that is being deleted", async () => {
+    await db.chat.update({ where: { id: chats[0] }, data: { deleting: true } })
+    expect(
+      (await sendNow(null, form({ text: "x", chatIds: String(chats[0]) })))
+        .error
+    ).toBeTruthy()
+    expect(await db.outbox.count()).toBe(0)
+  })
+
   it("rejects an unknown chat or template", async () => {
     expect(
       (await sendNow(null, form({ text: "x", chatIds: "999999" }))).error

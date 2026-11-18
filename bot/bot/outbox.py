@@ -5,6 +5,7 @@ from typing import Any
 
 import asyncpg
 
+from bot.chats import delete_chats
 from bot.scheduler import CLAIM, deliver, snapshot_members
 from bot.sender import Telegram
 
@@ -44,6 +45,7 @@ async def run_outbox(db: asyncpg.Pool, tg: Telegram, user: Any = None) -> None:
 async def run_forever(db: asyncpg.Pool, tg: Telegram, user: Any = None) -> None:
     while True:
         try:
+            await delete_chats(db, tg)  # first, so a deleted chat's queued jobs go with it unsent
             await run_outbox(db, tg, user)
         except Exception:
             log.exception("outbox tick failed")

@@ -35,6 +35,8 @@ model Chat {
   telegramId BigInt    @unique @map("telegram_id")
   title      String
   active     Boolean   @default(true)
+  // Set by the panel's «Удалить»: the bot leaves the group and deletes the row (journal by cascade).
+  deleting   Boolean   @default(false)
   createdAt  DateTime  @default(now()) @map("created_at")
   updatedAt  DateTime  @default(now()) @updatedAt @map("updated_at")
   scheduleId Int?      @map("schedule_id") // a chat follows at most one schedule

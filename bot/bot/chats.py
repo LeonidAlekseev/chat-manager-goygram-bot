@@ -1,6 +1,12 @@
+import logging
+import re
 from typing import Any
 
 import asyncpg
+
+from bot.sender import Telegram
+
+log = logging.getLogger(__name__)
 
 ACTIVE_STATUSES = {"member", "administrator", "creator", "restricted"}
 
@@ -14,6 +20,10 @@ async def handle_member_update(db: asyncpg.Pool, update: dict[str, Any]) -> None
     if chat.get("type") == "private":
         return
     active = mem["new_chat_member"]["status"] in ACTIVE_STATUSES
+    if not active:
+        # never inserts: the "left" update that follows a panel deletion must not bring the chat back
+        await db.execute("UPDATE chats SET active = false, updated_at = now() WHERE telegram_id = $1", chat["id"])
+        return
     # Title is set only on first insert so a rename made in the panel survives re-adding the bot.
     await db.execute(
         """
@@ -65,3 +75,17 @@ async def migrate_chat(db: asyncpg.Pool, old_id: int, new_id: int) -> None:
             "schedule_id = COALESCE(schedule_id, $4), updated_at = now() WHERE id = $1",
             chat_id, new_id, dup and dup["active"], dup and dup["schedule_id"],
         )
+
+
+async def delete_chats(db: asyncpg.Pool, tg: Telegram) -> None:
+    """Chats deleted in the panel: the bot leaves the group, then the row goes with its journal and jobs (FK cascade)."""
+    for r in await db.fetch("SELECT id, telegram_id, active FROM chats WHERE deleting ORDER BY id"):
+        if r["active"]:
+            try:
+                await tg.bot_req("leaveChat", chat_id=r["telegram_id"])
+            except Exception as e:  # noqa: BLE001
+                # 400/403 (chat not found, not a member, kicked): the bot is not there anyway; else retry next tick
+                if not re.search(r"http 40[03]\b", str(e)):
+                    log.warning("leaving chat %s failed: %s", r["telegram_id"], e)
+                    continue
+        await db.execute("DELETE FROM chats WHERE id = $1 AND deleting", r["id"])

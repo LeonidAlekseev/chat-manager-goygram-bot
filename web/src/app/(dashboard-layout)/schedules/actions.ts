@@ -229,7 +229,7 @@ export async function bindChats(
         data: { scheduleId: null },
       }),
       db.chat.updateMany({
-        where: { id: { in: ids } },
+        where: { id: { in: ids }, deleting: false },
         data: { scheduleId: id.data },
       }),
     ])
