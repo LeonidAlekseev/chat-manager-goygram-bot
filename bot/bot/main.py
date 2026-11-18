@@ -102,7 +102,9 @@ async def _serve(db: asyncpg.Pool, secret: str, settings: Settings, app: Any) ->
 
     account = asyncio.create_task(user.run())  # login steps, the user client, the bot's heartbeat
     tz = ZoneInfo(os.environ.get("TIMEZONE_NAME") or "Europe/Moscow")
-    scheduler = asyncio.create_task(run_forever(db, app, tz, user))
+    # read before our own heartbeat; the column is UTC without a zone, like every Prisma DateTime
+    seen = await db.fetchval("SELECT bot_seen_at AT TIME ZONE 'UTC' FROM settings WHERE id = 1")
+    scheduler = asyncio.create_task(run_forever(db, app, tz, user, seen))
     outbox = asyncio.create_task(run_outbox_forever(db, app, user))
     retention = asyncio.create_task(purge_forever(db))
     runner = asyncio.create_task(app.run())

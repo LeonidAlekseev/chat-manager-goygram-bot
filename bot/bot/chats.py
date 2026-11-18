@@ -44,7 +44,14 @@ async def migrate_chat(db: asyncpg.Pool, old_id: int, new_id: int) -> None:
             return  # already migrated
         dup = await conn.fetchrow("SELECT id, active, schedule_id FROM chats WHERE telegram_id = $1 FOR UPDATE", new_id)
         if dup:
-            # a log the old row already has for the same (item, slot) would break the unique key; it is dropped
+            # a slot both rows have keeps its better log (sent > pending > error); the other goes with the dup
+            await conn.execute(
+                "DELETE FROM send_logs o USING send_logs d WHERE o.chat_id = $1 AND d.chat_id = $2 "
+                "AND o.schedule_item_id = d.schedule_item_id AND o.slot = d.slot "
+                "AND array_position('{error,pending,sent}'::text[], d.status::text) "
+                "> array_position('{error,pending,sent}'::text[], o.status::text)",
+                chat_id, dup["id"],
+            )
             await conn.execute(
                 "UPDATE send_logs l SET chat_id = $1 WHERE chat_id = $2 AND NOT EXISTS (SELECT 1 FROM send_logs o "
                 "WHERE o.chat_id = $1 AND o.schedule_item_id = l.schedule_item_id AND o.slot = l.slot)",

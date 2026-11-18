@@ -53,6 +53,7 @@ async def world(pool):
         [(-1001, "ПВЗ 1", True, sid), (-1002, "ПВЗ 2", True, sid), (-1003, "Удалён", False, sid),
          (-1004, "Без расписания", True, None), (-1005, "ПВЗ 9", True, other)],
     )
+    await pool.execute("UPDATE chats SET updated_at = '2026-01-01'")  # bound long before NOW
     return pool
 
 
@@ -151,7 +152,21 @@ async def test_db_error_after_a_send_is_logged_and_the_tick_goes_on(world):
     # the journal does not blame a restart that never happened
     await world.execute("UPDATE send_logs SET created_at = now() - interval '1 hour'")
     await fail_stuck(world)
-    assert "не удалось записать результат" in (await logs(world))[0][4]
+    assert "отправлено, но статус не записан" in (await logs(world))[0][4]
+
+
+class FailingErrorWrite(FlakyDb):
+    async def execute(self, sql, *args):
+        if "status = 'error'" in sql:
+            raise asyncpg.PostgresError("connection lost")
+        return await self.pool.execute(sql, *args)
+
+
+async def test_an_unrecorded_send_error_has_its_own_text(world):
+    await run_due(FailingErrorWrite(world, 0), FakeTelegram(fail_for={-1001}), NOW)
+    await world.execute("UPDATE send_logs SET created_at = now() - interval '1 hour'")
+    await fail_stuck(world)
+    assert "ошибка отправки не записана" in (await logs(world))[0][4]
 
 
 async def test_a_failed_status_write_is_retried_once(world):
@@ -238,3 +253,33 @@ async def test_chat_migrated_to_a_supergroup_is_updated_and_the_send_retried(wor
     await run_due(world, tg, NOW)
     assert tg.calls[-1] == ("sendMessage", {"chat_id": -1009, "text": "Не забудьте ключ"})
     assert (await logs(world))[-1] == (-1009, "sent", 103, None, None)
+    assert await world.fetchval("SELECT telegram_id FROM chats WHERE title = 'ПВЗ 9'") == -1009
+
+
+def migration_error(meth, to):
+    return RuntimeError(f"botapi {meth} http 400: {{'ok': False, 'error_code': 400, "
+                        f"'parameters': {{'migrate_to_chat_id': {to}}}}}")
+
+
+async def test_a_second_migration_answer_is_an_error_not_a_loop(world):
+    class Bouncing(FakeTelegram):
+        async def bot_req(self, meth, **kw):
+            if kw["chat_id"] in (-1005, -1009):
+                self.calls.append((meth, kw))
+                raise migration_error(meth, -1009 if kw["chat_id"] == -1005 else -1005)
+            return await super().bot_req(meth, **kw)
+
+    tg = Bouncing()
+    await run_due(world, tg, NOW)
+    assert [c[1]["chat_id"] for c in tg.calls[-2:]] == [-1005, -1009]
+    last = (await logs(world))[-1]
+    assert last[:2] == (-1009, "error") and "migrate_to_chat_id" in last[4]
+
+
+async def test_a_reply_without_message_id_is_still_recorded(world):
+    class NoId(FakeTelegram):
+        async def bot_req(self, meth, **kw):
+            return {k: v for k, v in (await super().bot_req(meth, **kw)).items() if k != "message_id"}
+
+    await run_due(world, NoId(), NOW)
+    assert [r[1:3] for r in await logs(world)] == [("sent", None)] * 3

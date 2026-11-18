@@ -33,6 +33,9 @@ def is_due(time: str, start: date, period: str, now: datetime) -> bool:
     return False
 
 
+CATCH_UP = timedelta(minutes=15)  # how far back a late tick or a restart still sends
+MINUTE = timedelta(minutes=1)
+
 CLAIM = (
     "INSERT INTO send_logs (chat_id, schedule_item_id, template_id, slot, outbox_id, text, options) "
     "VALUES ($1, $2, $3, $4, $5, $6, COALESCE($7::text[], '{}')) ON CONFLICT DO NOTHING RETURNING id"
@@ -49,31 +52,34 @@ async def _write(db: asyncpg.Pool, sql: str, *args: Any) -> None:
 
 STUCK_MINUTES = 5  # a send takes seconds; an older pending row means the bot died after the claim
 _sending: set[int] = set()  # log ids this process is delivering now
-_unrecorded: set[int] = set()  # log ids whose outcome could not be written
+_unrecorded: dict[int, str] = {}  # log id → journal text, for outcomes that could not be written
+SENT_UNRECORDED = "Сообщение отправлено, но статус не записан (ошибка базы данных)"
+ERROR_UNRECORDED = "Отправка не удалась, но ошибка отправки не записана (ошибка базы данных)"
 
 
 async def fail_stuck(db: asyncpg.Pool) -> None:
     """Marks pending rows left by a crash as errors; they are never re-sent, so no duplicates."""
     done = await db.fetch(
-        "UPDATE send_logs SET status = 'error', error = CASE WHEN id = ANY($3::int[]) "
-        "THEN 'Статус неизвестен: не удалось записать результат отправки (ошибка базы данных)' "
-        "ELSE 'Статус неизвестен: отправка прервана (бот перезапустился)' END "
+        "UPDATE send_logs l SET status = 'error', error = COALESCE("
+        "(SELECT u.text FROM unnest($3::int[], $4::text[]) u(id, text) WHERE u.id = l.id), "
+        "'Статус неизвестен: отправка прервана (бот перезапустился)') "
         "WHERE status = 'pending' AND created_at < now() - make_interval(mins => $1) AND id <> ALL($2::int[]) "
         "RETURNING id",
-        STUCK_MINUTES, list(_sending), list(_unrecorded),
+        STUCK_MINUTES, list(_sending), list(_unrecorded), list(_unrecorded.values()),
     )
-    _unrecorded.difference_update(r["id"] for r in done)
+    for r in done:
+        _unrecorded.pop(r["id"], None)
 
 
-async def _record(db: asyncpg.Pool, log_id: int, sql: str, *args: Any) -> None:
-    """Writes a send's outcome, retrying once; a lost write is left to fail_stuck with its own text."""
+async def _record(db: asyncpg.Pool, log_id: int, lost: str, sql: str, *args: Any) -> None:
+    """Writes a send's outcome, retrying once; a lost write is left to fail_stuck with the text `lost`."""
     for attempt in (1, 2):
         try:
             await db.execute(sql, log_id, *args)
             return
         except Exception:
             log.exception("send log write failed (attempt %d): %s", attempt, sql[:40])
-    _unrecorded.add(log_id)
+    _unrecorded[log_id] = lost
 
 
 async def _send(db: asyncpg.Pool, tg: Telegram, telegram_id: int, t: Any, user: Any) -> tuple[dict[str, Any], int]:
@@ -103,13 +109,14 @@ async def deliver(
             msg, telegram_id = await _send(db, tg, telegram_id, t, user)
         except Exception as e:
             log.exception("send to %s failed", telegram_id)
-            await _record(db, log_id, "UPDATE send_logs SET status = 'error', error = $2 WHERE id = $1", str(e))
+            await _record(db, log_id, ERROR_UNRECORDED,
+                          "UPDATE send_logs SET status = 'error', error = $2 WHERE id = $1", str(e))
             return None
         poll_id = (msg.get("poll") or {}).get("id")
         await _record(
-            db, log_id,
+            db, log_id, SENT_UNRECORDED,
             "UPDATE send_logs SET status = 'sent', message_id = $2, poll_id = $3, error = $4 WHERE id = $1",
-            msg["message_id"], poll_id, msg.get("mention_error"),
+            msg.get("message_id"), poll_id, msg.get("mention_error"),
         )
     finally:
         _sending.discard(log_id)
@@ -160,8 +167,9 @@ async def run_due(db: asyncpg.Pool, tg: Telegram, now: datetime, user: Any = Non
         "t.source_chat_id, t.source_message_id "
         "FROM chats c JOIN schedule_items i ON i.schedule_id = c.schedule_id "
         "JOIN templates t ON t.id = i.template_id "
-        "WHERE c.active AND i.time = $1 ORDER BY c.id, i.id",
-        slot.strftime("%H:%M"),
+        # a chat bound or reactivated after the slot (both bump updated_at) does not get it on catch-up
+        "WHERE c.active AND i.time = $1 AND c.updated_at < ($2::timestamptz AT TIME ZONE 'UTC') ORDER BY c.id, i.id",
+        slot.strftime("%H:%M"), slot + MINUTE,
     )
     polls = []
     for r in rows:
@@ -177,26 +185,36 @@ async def run_due(db: asyncpg.Pool, tg: Telegram, now: datetime, user: Any = Non
     await snapshot_members(db, user, polls)
 
 
-CATCH_UP = timedelta(minutes=15)  # how far back a late tick or a restart still sends
-MINUTE = timedelta(minutes=1)
 
 
 async def run_pending(db: asyncpg.Pool, tg: Telegram, last: datetime | None, now: datetime, user: Any = None) -> datetime:
-    """Runs every minute after `last` (None at startup) up to `now`, at most CATCH_UP back.
+    """Runs every minute after `last` up to `now`, at most CATCH_UP back; with no `last`, only `now`'s.
 
     A tick slower than a minute (429 retries, member fetches) or downtime would otherwise skip slots;
-    re-running an already sent one sends nothing, as its log row exists. Returns the last minute run.
+    re-running an already sent one sends nothing, as its log row exists. Only minutes after `last` are run,
+    so an item added or moved into an already handled minute is not sent late. Returns the last minute run.
     """
-    end = now.astimezone(UTC).replace(second=0, microsecond=0)  # UTC steps: local time may jump at DST
-    slot = end - CATCH_UP if last is None else max(last + MINUTE, end - CATCH_UP)
+    end = _minute(now)
+    slot = end if last is None else max(_minute(last) + MINUTE, end - CATCH_UP)
     while slot <= end:
         await run_due(db, tg, slot.astimezone(now.tzinfo), user)
         slot += MINUTE
     return slot - MINUTE
 
 
-async def run_forever(db: asyncpg.Pool, tg: Telegram, tz: tzinfo, user: Any = None) -> None:
-    last = None
+def _minute(t: datetime) -> datetime:
+    return t.astimezone(UTC).replace(second=0, microsecond=0)  # UTC steps: local time may jump at DST
+
+
+async def run_forever(
+    db: asyncpg.Pool, tg: Telegram, tz: tzinfo, user: Any = None, seen: datetime | None = None
+) -> None:
+    """`seen` is the previous process's last heartbeat: a restart catches up only the minutes it missed.
+
+    shortcut: the heartbeat is the account loop's, not this loop's; a scheduler hung while the process
+    lived would make a restart skip its minutes. Store the scheduler's own last minute if that matters.
+    """
+    last = seen and seen - MINUTE  # the heartbeat may land just before that minute's tick
     while True:
         try:
             await fail_stuck(db)  # the first tick is at startup
