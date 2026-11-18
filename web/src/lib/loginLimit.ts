@@ -1,5 +1,6 @@
 const MAX_FAILS = 5
 const WINDOW_MS = 15 * 60_000
+const MAX_IP_FAILS = 30
 const MAX_KEYS = 10_000
 export const MAX_LOGIN_LENGTH = 64
 
@@ -13,11 +14,41 @@ function recent(key: string, now: number) {
   return list
 }
 
+// Per-IP counter lives apart from the login|IP map so junk logins cannot evict it.
+const ipFails = new Map<string, number[]>()
+
+// No proxy header means no real IP: skip the per-IP counter, or 30 failures would lock everyone out.
+const ipOf = (key: string) => {
+  const ip = key.slice(key.lastIndexOf("|") + 1)
+  return ip === "unknown" ? null : ip
+}
+
+function recentIp(ip: string | null, now: number) {
+  if (!ip) return []
+  const list = (ipFails.get(ip) ?? []).filter((t) => now - t < WINDOW_MS)
+  if (list.length) ipFails.set(ip, list)
+  else ipFails.delete(ip)
+  return list
+}
+
 export function isLoginBlocked(key: string, now = Date.now()) {
-  return recent(key, now).length >= MAX_FAILS
+  return (
+    recent(key, now).length >= MAX_FAILS ||
+    recentIp(ipOf(key), now).length >= MAX_IP_FAILS
+  )
 }
 
 export function recordLoginFailure(key: string, now = Date.now()) {
+  const ip = ipOf(key)
+  if (ip) {
+    const ipList = [...recentIp(ip, now), now]
+    ipFails.delete(ip)
+    ipFails.set(ip, ipList)
+    for (const k of ipFails.keys()) {
+      if (ipFails.size <= MAX_KEYS) break
+      ipFails.delete(k)
+    }
+  }
   const list = [...recent(key, now), now]
   fails.delete(key) // re-insert so the key becomes the newest
   fails.set(key, list)
