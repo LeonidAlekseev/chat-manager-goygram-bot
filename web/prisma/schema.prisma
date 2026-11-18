@@ -142,8 +142,19 @@ model PollAnswer {
   @@map("poll_answers")
 }
 
+// Written by the bot from `poll` updates, sent on every vote change of a poll the bot sent. The only source
+// of results for an anonymous poll (no poll_answer updates for it); counts[i] = votes for option i.
+model PollResult {
+  pollId    String   @id @map("poll_id")
+  anonymous Boolean
+  counts    Int[]
+  updatedAt DateTime @default(now()) @map("updated_at")
+
+  @@map("poll_results")
+}
+
 // Chat members at the time a poll was sent (the panel cannot call MTProto); no rows = list unavailable.
-// The bot deletes poll_members and poll_answers rows older than a year.
+// Journal tables (send_logs, outbox, poll_*) are trimmed daily by the bot: a year, and ~100 MB in total.
 model PollMember {
   pollId    String   @map("poll_id")
   userId    BigInt   @map("user_id")

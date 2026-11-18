@@ -30,6 +30,11 @@ export default async function PollAnswersPage({
   const members = await db.pollMember.findMany({
     where: { pollId: log.pollId },
   })
+  const result = await db.pollResult.findUnique({
+    where: { pollId: log.pollId },
+  })
+  // Telegram sends no answers for an anonymous poll, only counts (once someone has voted).
+  const anonymous = result?.anonymous ?? log.template?.anonymous ?? false
   // the snapshot taken at send time; rows sent before it existed fall back to the template
   const text = log.text ?? log.template?.text
   const options = log.text != null ? log.options : (log.template?.options ?? [])
@@ -52,7 +57,22 @@ export default async function PollAnswersPage({
           </p>
         </CardHeader>
         <CardContent className="grid gap-2">
-          {voted.length === 0 ? (
+          {anonymous ? (
+            <>
+              <p className="text-muted-foreground">
+                Анонимный опрос — ответы не видны.
+              </p>
+              {result && (
+                <ul className="grid gap-1 text-sm">
+                  {options.map((o, i) => (
+                    <li key={i}>
+                      {o}: <b>{result.counts[i] ?? 0}</b>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </>
+          ) : voted.length === 0 ? (
             <p className="text-muted-foreground">Ответов пока нет.</p>
           ) : (
             <ul className="grid gap-1 text-sm">
@@ -64,7 +84,7 @@ export default async function PollAnswersPage({
               ))}
             </ul>
           )}
-          {members.length === 0 ? (
+          {anonymous ? null : members.length === 0 ? (
             <p className="text-sm text-muted-foreground">
               Список участников чата недоступен — «не ответили» не показываем.
             </p>

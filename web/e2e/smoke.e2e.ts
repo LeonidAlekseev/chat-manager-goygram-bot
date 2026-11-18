@@ -135,3 +135,45 @@ test("settings: disconnecting the Telegram account asks first", async ({
     })
   }
 })
+
+test("poll answers: named votes, or counts for an anonymous poll", async ({
+  page,
+}) => {
+  // Stand in for the bot: two sent polls, one vote by name and the counts of the anonymous one.
+  const chat = await db.chat.findFirstOrThrow({ where: { title: CHAT } })
+  const tag = `e2e-${Date.now()}`
+  const sent = (pollId: string) =>
+    db.sendLog.create({
+      data: {
+        chatId: chat.id,
+        slot: new Date(),
+        status: "sent",
+        pollId,
+        text: "Смена открыта?",
+        options: ["Да", "Нет"],
+      },
+    })
+  const named = await sent(`${tag}-n`)
+  const anon = await sent(`${tag}-a`)
+  await db.pollAnswer.create({
+    data: { pollId: `${tag}-n`, userId: 5, name: "Анна К", optionIds: [1] },
+  })
+  await db.pollResult.create({
+    data: { pollId: `${tag}-a`, anonymous: true, counts: [3, 1] },
+  })
+  await page.goto("/login")
+  await page.getByLabel("Логин").fill(LOGIN)
+  await page.getByLabel("Пароль").fill(PASSWORD)
+  await page.getByRole("button", { name: "Войти" }).click()
+  await page.waitForURL("**/chats")
+
+  await page.goto(`/logs/${named.id}`)
+  await expect(page.getByText("Анна К: Нет")).toBeVisible()
+
+  await page.goto(`/logs/${anon.id}`)
+  await expect(
+    page.getByText("Анонимный опрос — ответы не видны.")
+  ).toBeVisible()
+  await expect(page.getByText("Да: 3")).toBeVisible()
+  await expect(page.getByText("Нет: 1")).toBeVisible()
+})

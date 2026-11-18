@@ -16,7 +16,7 @@ from bot.intake import handle_private
 from bot.link import handle_link_start
 from bot.mention import handle_all
 from bot.outbox import run_forever as run_outbox_forever
-from bot.polls import handle_poll_answer, purge_forever
+from bot.polls import handle_poll, handle_poll_answer, purge_forever
 from bot.scheduler import run_forever
 from bot.settings import Settings, store_bot_username, wait_for_token, watch_settings
 
@@ -94,11 +94,15 @@ async def _serve(db: asyncpg.Pool, secret: str, settings: Settings, app: Any) ->
     async def on_member(evt):  # type: ignore[no-untyped-def]
         await handle_member_update(db, evt.raw["raw"])
 
-    # allowed_updates=[] (GoyGram's default) is Telegram's default set, which includes poll_answer.
+    # allowed_updates=[] (GoyGram's default) is Telegram's default set, which includes poll_answer and poll.
     @app.on_update
     async def on_update(evt):  # type: ignore[no-untyped-def]
         if evt.update_type == "poll_answer":
             await handle_poll_answer(db, evt.raw["raw"])
+
+    @app.on_poll
+    async def on_poll(evt):  # type: ignore[no-untyped-def]
+        await handle_poll(db, evt.raw["raw"])
 
     account = asyncio.create_task(user.run())  # login steps, the user client, the bot's heartbeat
     tz = ZoneInfo(os.environ.get("TIMEZONE_NAME") or "Europe/Moscow")
