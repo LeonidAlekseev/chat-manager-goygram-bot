@@ -1,9 +1,14 @@
 import { redirect } from "next/navigation"
-import { auth } from "@/auth"
 
 import type { SendStatus } from "@prisma/client"
 import type { Metadata } from "next"
 
+import {
+  getViewer,
+  visibleChats,
+  visibleSends,
+  visibleTemplates,
+} from "@/lib/access"
 import { db } from "@/lib/db"
 
 import { Badge } from "@/components/ui/badge"
@@ -27,18 +32,21 @@ const fmt = new Intl.DateTimeFormat("ru-RU", {
 })
 
 export default async function SendPage() {
-  if (!(await auth())?.user) redirect("/login")
+  const v = await getViewer()
+  if (!v) redirect("/login")
   const [templates, chats, jobs] = await Promise.all([
     db.template.findMany({
+      where: visibleTemplates(v),
       orderBy: { name: "asc" },
       select: { id: true, name: true },
     }),
     db.chat.findMany({
-      where: { active: true, deleting: false },
+      where: { active: true, deleting: false, ...visibleChats(v) },
       orderBy: { title: "asc" },
       select: { id: true, title: true },
     }),
     db.outbox.findMany({
+      where: visibleSends(v),
       orderBy: { id: "desc" },
       take: 50,
       include: {

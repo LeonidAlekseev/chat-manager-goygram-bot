@@ -26,6 +26,8 @@ model Manager {
   linkCode          String?   @unique @map("link_code")
   linkCodeExpiresAt DateTime? @map("link_code_expires_at") @db.Timestamptz(3)
   templates         Template[]
+  schedules         Schedule[]
+  chats             ChatManager[]
 
   @@map("managers")
 }
@@ -43,8 +45,21 @@ model Chat {
   schedule   Schedule? @relation(fields: [scheduleId], references: [id], onDelete: SetNull)
   sendLogs   SendLog[]
   outbox     Outbox[]
+  managers   ChatManager[] // who may see and work with the chat; the superadmin sees all
 
   @@map("chats")
+}
+
+// Assigned by the superadmin; a manager sees only the chats assigned to them.
+model ChatManager {
+  chatId    Int     @map("chat_id")
+  managerId Int     @map("manager_id")
+  chat      Chat    @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  manager   Manager @relation(fields: [managerId], references: [id], onDelete: Cascade)
+
+  @@id([chatId, managerId])
+  @@index([managerId])
+  @@map("chat_managers")
 }
 
 enum TemplateKind {
@@ -71,7 +86,7 @@ model Template {
   mediaGroupId     String?  @map("media_group_id")
   mediaType        String?  @map("media_type")
   authorId        Int?    @map("author_id")
-  author          Manager? @relation(fields: [authorId], references: [id], onDelete: SetNull)
+  author          Manager? @relation(fields: [authorId], references: [id], onDelete: Restrict)
   createdAt  DateTime       @default(now()) @map("created_at")
   items      ScheduleItem[]
   sendLogs   SendLog[]
@@ -84,6 +99,9 @@ model Template {
 model Schedule {
   id    Int            @id @default(autoincrement())
   name  String         @unique
+  // NULL or a superadmin = the superadmin's schedule: every manager sees it, only a superadmin edits it
+  authorId Int?        @map("author_id")
+  author   Manager?    @relation(fields: [authorId], references: [id], onDelete: Restrict)
   items ScheduleItem[]
   chats Chat[]
 

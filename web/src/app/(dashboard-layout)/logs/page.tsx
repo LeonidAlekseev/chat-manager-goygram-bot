@@ -1,10 +1,10 @@
 import Link from "next/link"
 import { redirect } from "next/navigation"
-import { auth } from "@/auth"
 
 import type { SendStatus } from "@prisma/client"
 import type { Metadata } from "next"
 
+import { getViewer, visibleChats, visibleSends } from "@/lib/access"
 import { db } from "@/lib/db"
 
 import { Badge } from "@/components/ui/badge"
@@ -39,18 +39,20 @@ export default async function LogsPage({
 }: {
   searchParams: Promise<{ chat?: string; status?: string; before?: string }>
 }) {
-  if (!(await auth())?.user) redirect("/login")
+  const v = await getViewer()
+  if (!v) redirect("/login")
   const { chat, status, before } = await searchParams
   const chatId = intId(chat)
   const st = status && status in STATUS ? (status as SendStatus) : undefined
   const beforeId = intId(before)
   const [chats, rows] = await Promise.all([
     db.chat.findMany({
+      where: visibleChats(v),
       orderBy: { title: "asc" },
       select: { id: true, title: true },
     }),
     db.sendLog.findMany({
-      where: { chatId, status: st, id: { lt: beforeId } },
+      where: { chatId, status: st, id: { lt: beforeId }, ...visibleSends(v) },
       orderBy: { id: "desc" },
       take: PAGE + 1, // one extra row tells whether there is a next page
       include: {

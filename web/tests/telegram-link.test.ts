@@ -12,6 +12,10 @@ vi.mock("next/cache", () => ({ revalidatePath: () => {} }))
 
 describe("telegram link", () => {
   beforeEach(async () => {
+    // authors are RESTRICT: clear their rows first
+    await db.scheduleItem.deleteMany()
+    await db.schedule.deleteMany()
+    await db.template.deleteMany()
     await db.manager.deleteMany()
     await db.manager.create({
       data: { login: "m1", passwordHash: "x", telegramUserId: BigInt(5) },

@@ -26,6 +26,10 @@ const newManager = { login: "anna", name: "Анна", password: "longenough1" }
 
 describe("managers CRUD", () => {
   beforeEach(async () => {
+    // authors are RESTRICT: clear their rows first
+    await db.scheduleItem.deleteMany()
+    await db.schedule.deleteMany()
+    await db.template.deleteMany()
     await db.manager.deleteMany()
     asRole("superadmin")
   })
@@ -140,6 +144,10 @@ describe("managers CRUD", () => {
 
 describe("disabled manager", () => {
   beforeEach(async () => {
+    // authors are RESTRICT: clear their rows first
+    await db.scheduleItem.deleteMany()
+    await db.schedule.deleteMany()
+    await db.template.deleteMany()
     await db.manager.deleteMany()
     asRole("superadmin")
   })

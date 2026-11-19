@@ -16,7 +16,7 @@ async def tg_id(db, login="m1"):
 
 
 async def test_valid_code_links_the_account_and_is_one_time(db):
-    await db.execute("DELETE FROM managers")
+    await db.execute("TRUNCATE managers CASCADE")  # authors of templates/schedules are RESTRICT
     await manager(db)
     assert "привяз" in (await handle_link_start(db, msg("/start link_abc"))).lower()
     assert await tg_id(db) == 42
@@ -25,7 +25,7 @@ async def test_valid_code_links_the_account_and_is_one_time(db):
 
 
 async def test_expired_unknown_and_disabled_codes_are_refused(db):
-    await db.execute("DELETE FROM managers")
+    await db.execute("TRUNCATE managers CASCADE")  # authors of templates/schedules are RESTRICT
     await manager(db, "old", "e1", "now() - interval '1 second'")
     await manager(db, "off", "d1", active=False)
     for code in ("e1", "d1", "nope"):
@@ -34,7 +34,7 @@ async def test_expired_unknown_and_disabled_codes_are_refused(db):
 
 
 async def test_telegram_account_links_to_one_manager_only(db):
-    await db.execute("DELETE FROM managers")
+    await db.execute("TRUNCATE managers CASCADE")  # authors of templates/schedules are RESTRICT
     await manager(db, "a", "c1")
     await manager(db, "b", "c2")
     await handle_link_start(db, msg("/start link_c1"))

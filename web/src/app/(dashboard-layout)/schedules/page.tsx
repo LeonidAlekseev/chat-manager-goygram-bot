@@ -1,9 +1,15 @@
 import { redirect } from "next/navigation"
-import { auth } from "@/auth"
 import { ChevronRight } from "lucide-react"
 
 import type { Metadata } from "next"
 
+import {
+  canEdit,
+  getViewer,
+  visibleChats,
+  visibleSchedules,
+  visibleTemplates,
+} from "@/lib/access"
 import { db } from "@/lib/db"
 import { TIMEZONE } from "@/lib/timezone"
 
@@ -18,20 +24,22 @@ import { ScheduleForm } from "./schedule-form"
 export const metadata: Metadata = { title: "Расписания" }
 
 export default async function SchedulesPage() {
-  if (!(await auth())?.user) redirect("/login")
+  const v = await getViewer()
+  if (!v) redirect("/login")
   const [schedules, templates, chats] = await Promise.all([
     db.schedule.findMany({
+      where: visibleSchedules(v),
       orderBy: { name: "asc" },
       include: { items: { orderBy: { time: "asc" } } },
     }),
     db.template.findMany({
+      where: visibleTemplates(v),
       orderBy: { name: "asc" },
       select: { id: true, name: true },
     }),
     db.chat.findMany({
-      where: { deleting: false },
+      where: { deleting: false, ...visibleChats(v) },
       orderBy: [{ active: "desc" }, { title: "asc" }],
-      include: { schedule: { select: { name: true } } },
     }),
   ])
 
@@ -81,6 +89,7 @@ export default async function SchedulesPage() {
                       schedule={{ ...s, items }}
                       templates={templates}
                       timezone={TIMEZONE}
+                      own={canEdit(v, s)}
                     />
                     <ActionForm action={bindChats} className="grid gap-2">
                       <input type="hidden" name="id" value={s.id} />
@@ -102,9 +111,12 @@ export default async function SchedulesPage() {
                             defaultChecked={c.scheduleId === s.id}
                           />
                           {c.title}
-                          {c.schedule && c.scheduleId !== s.id && (
+                          {c.scheduleId && c.scheduleId !== s.id && (
                             <span className="text-muted-foreground">
-                              (сейчас: {c.schedule.name})
+                              (сейчас:{" "}
+                              {schedules.find((x) => x.id === c.scheduleId)
+                                ?.name ?? "расписание другого менеджера"}
+                              )
                             </span>
                           )}
                           {!c.active && (
@@ -120,11 +132,13 @@ export default async function SchedulesPage() {
                     </ActionForm>
                   </div>
                 </details>
-                <DeleteScheduleForm
-                  id={s.id}
-                  name={s.name}
-                  chats={chats.filter((c) => c.scheduleId === s.id).length}
-                />
+                {canEdit(v, s) && (
+                  <DeleteScheduleForm
+                    id={s.id}
+                    name={s.name}
+                    chats={chats.filter((c) => c.scheduleId === s.id).length}
+                  />
+                )}
               </div>
             )
           })}
