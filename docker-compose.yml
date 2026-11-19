@@ -71,7 +71,9 @@ services:
       AUTH_SECRET: ${AUTH_SECRET} # decrypts the token and API data set in the panel (Настройки)
       PANEL_URL: ${PANEL_URL:-}
       TIMEZONE_NAME: ${TIMEZONE_NAME:-Europe/Moscow}
-    tmpfs: ["/tmp:size=64m"] # MTProto vault, goygram offsets and caches: never on disk
+    tmpfs: ["/tmp:size=64m"] # MTProto vault and goygram caches: never on disk
+    volumes:
+      - bot-offsets:/offsets # long-polling offset: a restart must not get the last updates again
 
   # Read-only Docker API for the panel's «Системные логи»: GET container list and logs only (see the template).
   docker-proxy:
@@ -97,3 +99,4 @@ volumes:
   db-data:
   caddy-data:
   caddy-config:
+  bot-offsets:

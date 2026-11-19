@@ -1,7 +1,9 @@
 import asyncio
+import hashlib
 import logging
 import os
 import re
+import sys
 from collections.abc import Callable
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -25,6 +27,8 @@ log = logging.getLogger(__name__)
 
 async def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
+    for handler in logging.root.handlers:  # handler filters also see records of child loggers (goygram's)
+        handler.addFilter(RedactTokens())
     db = await asyncpg.create_pool(os.environ["DATABASE_URL"])
     secret = os.environ["AUTH_SECRET"]
     # The user client's vault in /tmp; the vault is rewritten from the DB on each start, so no new login.
@@ -45,6 +49,27 @@ def redact(text: str) -> str:
     return re.sub(r"\d+:[\w-]{30,}", "***", text)
 
 
+class RedactTokens(logging.Filter):
+    """Masks bot tokens in a log line and its traceback: Bot API errors quote URLs with /bot<token>/."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        record.msg, record.args = redact(record.getMessage()), None
+        if record.exc_info and not record.exc_text:
+            record.exc_text = logging.Formatter().formatException(record.exc_info)
+        if record.exc_text:
+            record.exc_text = redact(record.exc_text)
+        return True
+
+
+def offset_path(token: str) -> str | None:
+    """Long-polling offset on a volume (OFFSET_DIR), so a restart does not get the last updates again.
+
+    One file per token, as GoyGram's default: a new bot must not start from the old bot's offset.
+    """
+    folder = os.environ.get("OFFSET_DIR")
+    return f"{folder}/{hashlib.sha256(token.encode()).hexdigest()[:24]}.offset" if folder else None
+
+
 async def store_error(db: asyncpg.Pool, e: Exception) -> None:
     await db.execute("UPDATE settings SET bot_error = $1 WHERE id = 1", redact(str(e) or type(e).__name__))
 
@@ -55,7 +80,7 @@ async def start_bot(
     """Waits for a token the Bot API accepts: a rejected one is shown in the panel until it is replaced."""
     while True:
         settings = await wait_for_token(db, secret, interval)
-        app = make_app(bot_token=settings.bot_token)
+        app = make_app(bot_token=settings.bot_token, bot_offset_path=offset_path(settings.bot_token or ""))
         try:
             await store_bot_username(db, app)
             commands = [{"command": c, "description": d} for c, d in BOT_COMMANDS]
@@ -128,6 +153,8 @@ async def _serve(db: asyncpg.Pool, secret: str, settings: Settings, app: Any) ->
             log.info("settings changed in the panel, restarting")
         else:
             runner.result()  # re-raise a crash of the bot itself
+            # GoyGram's run() returns on its own only after getUpdates got 401/404 and polling stopped.
+            raise RuntimeError("Токен бота отклонён Telegram: проверьте токен в Настройках")
     finally:
         runner.cancel()
         watcher.cancel()
@@ -138,5 +165,13 @@ async def _serve(db: asyncpg.Pool, secret: str, settings: Settings, app: Any) ->
         retention.cancel()
 
 
+def run() -> None:
+    try:
+        asyncio.run(main())
+    except Exception:
+        log.exception("bot stopped")  # through RedactTokens: the default excepthook would print the token
+        sys.exit(1)
+
+
 if __name__ == "__main__":
-    asyncio.run(main())
+    run()

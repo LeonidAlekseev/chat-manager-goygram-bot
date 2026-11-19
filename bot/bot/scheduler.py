@@ -196,6 +196,8 @@ async def run_pending(db: asyncpg.Pool, tg: Telegram, last: datetime | None, now
     """
     end = _minute(now)
     slot = end if last is None else max(_minute(last) + MINUTE, end - CATCH_UP)
+    if last is not None and (lost := (slot - _minute(last)) // MINUTE - 1) > 0:
+        log.warning("catch-up limit: skipped %d minute(s) of schedules after %s", lost, _minute(last))
     while slot <= end:
         await run_due(db, tg, slot.astimezone(now.tzinfo), user)
         slot += MINUTE

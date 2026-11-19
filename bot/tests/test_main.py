@@ -1,4 +1,5 @@
 import asyncio
+import logging
 
 import pytest
 
@@ -16,7 +17,7 @@ def test_redacts_bot_tokens_bare_or_in_a_url():
 
 
 class FakeApp:
-    def __init__(self, bot_token):
+    def __init__(self, bot_token, **kw):
         self.token, self.calls, self.closed = bot_token, [], False
         self.core = self  # GoyGram keeps close() on app.core
 
@@ -40,7 +41,7 @@ async def sdb(pool):
 async def test_a_wrong_token_is_shown_and_the_bot_waits_for_a_new_one(sdb):
     apps = []
 
-    def make_app(bot_token):
+    def make_app(bot_token, **kw):
         apps.append(FakeApp(bot_token))
         return apps[-1]
 
@@ -83,3 +84,57 @@ async def test_poll_updates_reach_the_journal_through_goygram(pool):
         await app.core.disp.one({"src": "bot", "data": BotNet.norm(None, upd)})
     assert await pool.fetchval("SELECT counts FROM poll_results WHERE poll_id = 'p'") == [2]
     assert await pool.fetchval("SELECT option_ids FROM poll_answers WHERE poll_id = 'p'") == [0]
+
+
+async def test_a_token_revoked_while_polling_is_shown_and_the_bot_exits(sdb):
+    # GoyGram stops polling quietly on getUpdates 401/404; the process must not keep up its heartbeat.
+    from goygram import GoyGram
+
+    from bot.main import _serve
+    from bot.settings import load_settings
+
+    await sdb.execute("UPDATE settings SET bot_token = $1", encrypt(GOOD, SECRET))
+    app = GoyGram(bot_token=GOOD)
+
+    async def req(meth, data=None):
+        if meth == "getUpdates":
+            raise RuntimeError(f"botapi getUpdates http 401 https://api.telegram.org/bot{GOOD}/getUpdates")
+        return True
+
+    app.core.bot.req = req
+    with pytest.raises(RuntimeError, match="Токен бота отклонён Telegram"):
+        await asyncio.wait_for(_serve(sdb, SECRET, await load_settings(sdb, SECRET), app), 5)
+
+
+def test_bot_tokens_are_masked_in_every_log_line_and_traceback(caplog):
+    from bot.main import RedactTokens
+
+    logger = logging.getLogger("bot.test")
+    caplog.handler.addFilter(RedactTokens())
+    try:
+        raise RuntimeError(f"botapi sendMessage https://api.telegram.org/bot{GOOD}/sendMessage")
+    except RuntimeError:
+        logger.exception("send to %s failed via %s", 1, f"bot{GOOD}")
+    assert GOOD not in caplog.text and "bot***/sendMessage" in caplog.text
+
+
+def test_offset_stays_goygrams_default_without_offset_dir(monkeypatch):
+    from bot.main import offset_path
+
+    monkeypatch.setenv("OFFSET_DIR", "")
+    assert offset_path(GOOD) is None
+    monkeypatch.setenv("OFFSET_DIR", "/offsets")
+    assert offset_path(GOOD).startswith("/offsets/") and GOOD not in offset_path(GOOD)
+
+
+def test_a_crash_is_logged_without_the_token_and_exits_nonzero(monkeypatch, caplog):
+    import bot.main
+
+    async def crash():
+        raise RuntimeError(f"botapi getMe https://api.telegram.org/bot{GOOD}/getMe")
+
+    monkeypatch.setattr(bot.main, "main", crash)
+    caplog.handler.addFilter(bot.main.RedactTokens())
+    with pytest.raises(SystemExit) as exit:
+        bot.main.run()
+    assert exit.value.code == 1 and "bot***/getMe" in caplog.text and GOOD not in caplog.text
