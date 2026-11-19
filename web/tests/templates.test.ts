@@ -29,7 +29,36 @@ describe("templates", () => {
     await db.scheduleItem.deleteMany()
     await db.schedule.deleteMany()
     await db.template.deleteMany()
+    for (const login of ["boss", "other"])
+      await db.manager.upsert({
+        where: { login },
+        create: { login, passwordHash: "x" },
+        update: {},
+      })
     session.current = { user: { name: "boss" } }
+  })
+
+  it("records the signed-in manager as the author on create", async () => {
+    await saveTemplate(null, form(poll))
+    const boss = await db.manager.findUniqueOrThrow({
+      where: { login: "boss" },
+    })
+    expect(await db.template.findFirstOrThrow()).toMatchObject({
+      authorId: boss.id,
+    })
+  })
+
+  it("keeps the author when another manager edits the template", async () => {
+    await saveTemplate(null, form(poll))
+    const t = await db.template.findFirstOrThrow()
+    const boss = await db.manager.findUniqueOrThrow({
+      where: { login: "boss" },
+    })
+    session.current = { user: { name: "other" } }
+    await saveTemplate(null, form({ ...poll, id: String(t.id), name: "Новое" }))
+    expect(
+      await db.template.findUniqueOrThrow({ where: { id: t.id } })
+    ).toMatchObject({ name: "Новое", authorId: boss.id })
   })
 
   it("creates a non-anonymous poll by default-off flags", async () => {
