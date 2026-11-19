@@ -1,25 +1,22 @@
-"use client"
-
-import { Button } from "@/components/ui/button"
-import { ActionForm } from "@/components/action-form"
+import { DeleteForm } from "@/components/delete-form"
 import { deleteSchedule } from "./actions"
 
 export function DeleteScheduleForm({
   id,
+  name,
   chats,
 }: {
   id: number
+  name: string
   chats: number
 }) {
   return (
-    <ActionForm
+    <DeleteForm
       action={deleteSchedule}
+      id={id}
+      label={`Удалить расписание «${name}»`}
       confirmText={`Удалить расписание? Привязанных чатов: ${chats} — они будут отвязаны.`}
-    >
-      <input type="hidden" name="id" value={id} />
-      <Button type="submit" variant="outline">
-        Удалить
-      </Button>
-    </ActionForm>
+      className="absolute right-2 top-2"
+    />
   )
 }
