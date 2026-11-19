@@ -116,7 +116,7 @@ docker compose up -d --build
 # резервная копия (по умолчанию POSTGRES_USER/DB — chatmanager)
 docker compose exec -T db pg_dump -U chatmanager chatmanager > backup.sql
 
-# обновление: миграции применятся при старте web
+# обновление: миграции применятся при старте web; сборка web ограничена кучей 1 ГБ (web/Dockerfile), чтобы OOM не убил db/bot
 git pull && docker compose up -d --build
 docker builder prune -f --filter until=72h && docker image prune -f  # кэш сборки растёт с каждым деплоем
 

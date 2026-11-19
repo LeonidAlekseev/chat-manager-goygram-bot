@@ -5,6 +5,8 @@ COPY package.json pnpm-lock.yaml .npmrc pnpm-workspace.yaml ./
 COPY prisma ./prisma
 RUN pnpm install --frozen-lockfile
 COPY . .
+# Build runs on a 2 GB VPS next to db/bot: cap V8 heap so OOM doesn't hit them.
+ENV NODE_OPTIONS=--max-old-space-size=1024 NEXT_TELEMETRY_DISABLED=1
 RUN pnpm build
 RUN chown -R node:node /app/.next
 ENV NODE_ENV=production
