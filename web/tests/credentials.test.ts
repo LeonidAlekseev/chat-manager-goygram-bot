@@ -5,6 +5,10 @@ import { db } from "@/lib/db"
 
 describe("superadmin login from env", () => {
   beforeEach(async () => {
+    // authors are RESTRICT: clear their rows first
+    await db.scheduleItem.deleteMany()
+    await db.schedule.deleteMany()
+    await db.template.deleteMany()
     await db.manager.deleteMany()
   })
 

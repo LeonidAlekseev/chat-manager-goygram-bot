@@ -4,14 +4,19 @@ import { revalidatePath } from "next/cache"
 import { Prisma } from "@prisma/client"
 import { z } from "zod"
 
-import { editError, getViewer, visibleTemplates } from "@/lib/access"
+import {
+  NOT_FOUND,
+  duplicated,
+  editError,
+  getViewer,
+  visibleTemplates,
+} from "@/lib/access"
 import { db } from "@/lib/db"
 
 export type ActionState = { error?: string } | null
 
 const flag = z.preprocess((v) => v === "on", z.boolean())
 const base = {
-  id: z.coerce.number().int().optional(),
   name: z.string().trim().min(1).max(255),
   multiple: flag,
   anonymous: flag,
@@ -51,6 +56,7 @@ export async function saveTemplate(
   formData: FormData
 ): Promise<{ error?: string }> {
   const v = await requireViewer()
+  if (duplicated(formData, "id")) return { error: NOT_FOUND }
   const raw = {
     ...Object.fromEntries(formData),
     // one option per line; blank lines ignored
@@ -83,7 +89,7 @@ export async function saveTemplate(
   }
   const parsed = Schema.safeParse(raw)
   if (!parsed.success) return { error: parsed.error.issues[0].message }
-  const { id, ...rest } = parsed.data
+  const rest = parsed.data
   // a quiz's correct answer is an option index: its options and mode stay as Telegram sent them
   if (
     current?.correctOptionId != null &&
@@ -96,7 +102,9 @@ export async function saveTemplate(
         "Варианты, тип и «Несколько ответов» викторины не меняются — перешлите викторину боту заново",
     }
   const data = { ...rest, options: rest.kind === "poll" ? rest.options : [] }
-  if (id) await db.template.update({ where: { id }, data })
+  // the id checked above is the one written: never a second read of the form
+  if (editing.success)
+    await db.template.update({ where: { id: editing.data }, data })
   else await db.template.create({ data: { ...data, authorId: v.id } })
   revalidatePath("/templates")
   return {}
@@ -107,6 +115,7 @@ export async function deleteTemplate(
   formData: FormData
 ): Promise<{ error?: string }> {
   const v = await requireViewer()
+  if (duplicated(formData, "id")) return { error: NOT_FOUND }
   const id = z.coerce.number().int().parse(formData.get("id"))
   const error = editError(
     v,

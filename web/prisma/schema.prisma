@@ -86,7 +86,7 @@ model Template {
   mediaGroupId     String?  @map("media_group_id")
   mediaType        String?  @map("media_type")
   authorId        Int?    @map("author_id")
-  author          Manager? @relation(fields: [authorId], references: [id], onDelete: SetNull)
+  author          Manager? @relation(fields: [authorId], references: [id], onDelete: Restrict)
   createdAt  DateTime       @default(now()) @map("created_at")
   items      ScheduleItem[]
   sendLogs   SendLog[]
@@ -101,7 +101,7 @@ model Schedule {
   name  String         @unique
   // NULL or a superadmin = the superadmin's schedule: every manager sees it, only a superadmin edits it
   authorId Int?        @map("author_id")
-  author   Manager?    @relation(fields: [authorId], references: [id], onDelete: SetNull)
+  author   Manager?    @relation(fields: [authorId], references: [id], onDelete: Restrict)
   items ScheduleItem[]
   chats Chat[]
 

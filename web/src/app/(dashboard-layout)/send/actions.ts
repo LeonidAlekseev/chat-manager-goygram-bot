@@ -3,7 +3,12 @@
 import { revalidatePath } from "next/cache"
 import { z } from "zod"
 
-import { getViewer, visibleChats, visibleTemplates } from "@/lib/access"
+import {
+  duplicated,
+  getViewer,
+  visibleChats,
+  visibleTemplates,
+} from "@/lib/access"
 import { db } from "@/lib/db"
 
 export type ActionState = { error?: string } | null
@@ -32,6 +37,8 @@ export async function sendNow(
 ): Promise<{ error?: string }> {
   const v = await getViewer()
   if (!v) throw new Error("Unauthorized")
+  if (duplicated(formData, "templateId", "text", "mentionAll"))
+    return { error: "Чат или шаблон не найден — обновите страницу" }
   const parsed = Schema.safeParse({
     templateId: formData.get("templateId") || undefined,
     text: formData.get("text") || undefined,

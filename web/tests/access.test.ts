@@ -351,6 +351,148 @@ describe("manager scopes (#92)", () => {
       expect(await db.chat.count({ where: visibleChats(m1) })).toBe(1)
       expect(await db.chat.count({ where: visibleChats(m2) })).toBe(2)
     })
+
+    it("unassigning a manager unbinds the chat from that manager's schedule", async () => {
+      await db.chat.update({
+        where: { id: chat.c1 },
+        data: { scheduleId: sch.own }, // m1's
+      })
+      await db.chat.update({
+        where: { id: chat.c2 },
+        data: { scheduleId: sch.super },
+      })
+      as("acc-root")
+      await assignManagers(form({ id: chat.c1, managerId: [m1.id, m2.id] }))
+      const scheduleOf = async (id: number) =>
+        (await db.chat.findUniqueOrThrow({ where: { id } })).scheduleId
+      expect(await scheduleOf(chat.c1)).toBe(sch.own) // m1 still assigned
+      await assignManagers(form({ id: chat.c1, managerId: [m2.id] }))
+      expect(await scheduleOf(chat.c1)).toBeNull()
+      // the superadmin's schedule stays when managers change
+      await assignManagers(form({ id: chat.c2, managerId: [] }))
+      expect(await scheduleOf(chat.c2)).toBe(sch.super)
+    })
+
+    it("a manager with templates or schedules cannot be deleted, so their rows never turn into the superadmin's", async () => {
+      await expect(
+        db.manager.delete({ where: { id: m2.id } })
+      ).rejects.toThrow()
+      expect(
+        (await db.template.findUniqueOrThrow({ where: { id: tpl.other } }))
+          .authorId
+      ).toBe(m2.id)
+    })
+  })
+
+  describe("a repeated id field is refused, not split between check and write", () => {
+    it("saveTemplate: an own id first cannot carry the write to another template", async () => {
+      for (const ids of [
+        [tpl.own, tpl.super],
+        [tpl.own, tpl.other],
+        [tpl.super, tpl.own],
+      ]) {
+        const r = await saveTemplate(
+          null,
+          form({ id: ids, name: "Взлом", kind: "text", text: "x" })
+        )
+        expect(r.error).toBeTruthy()
+      }
+      expect(await db.template.count({ where: { name: "Взлом" } })).toBe(0)
+    })
+
+    it.each([
+      [
+        "deleteTemplate",
+        () => deleteTemplate(null, form({ id: [tpl.own, tpl.super] })),
+      ],
+      [
+        "deleteSchedule",
+        () => deleteSchedule(form({ id: [sch.own, sch.super] })),
+      ],
+      [
+        "bindChats",
+        () => bindChats(form({ id: [sch.own, sch.other], chatId: [chat.c1] })),
+      ],
+      [
+        "bindChat",
+        () =>
+          bindChat(form({ chatId: [chat.c1, chat.c2], scheduleId: sch.own })),
+      ],
+      [
+        "bindChat schedule",
+        () =>
+          bindChat(form({ chatId: chat.c1, scheduleId: [sch.own, sch.other] })),
+      ],
+      [
+        "saveSchedule",
+        () =>
+          saveSchedule(
+            null,
+            form({
+              id: [sch.own, sch.super],
+              name: "x",
+              templateId: tpl.own,
+              time: "09:00",
+              startDate: "2030-01-01",
+              period: "day",
+            })
+          ),
+      ],
+      [
+        "saveSchedule chat",
+        () =>
+          saveSchedule(
+            null,
+            form({
+              id: sch.super,
+              chatId: [chat.c1, chat.c2],
+              scope: "this",
+              name: "x",
+              templateId: tpl.own,
+              time: "09:00",
+              startDate: "2030-01-01",
+              period: "day",
+            })
+          ),
+      ],
+      [
+        "renameChat",
+        () => renameChat(form({ id: [chat.c1, chat.c2], title: "Взлом" })),
+      ],
+      [
+        "sendNow",
+        () =>
+          sendNow(
+            null,
+            form({ chatIds: chat.c1, templateId: [tpl.super, tpl.other] })
+          ),
+      ],
+    ])("%s", async (_, call) => {
+      expect((await call()).error).toBeTruthy()
+      expect(await db.template.count()).toBe(4)
+      expect(await db.schedule.count()).toBe(4)
+      expect(await db.outbox.count()).toBe(0)
+      expect(await db.chat.count({ where: { title: "Взлом" } })).toBe(0)
+      expect(
+        await db.chat.count({ where: { scheduleId: { not: null } } })
+      ).toBe(0)
+    })
+
+    it("superadmin actions too", async () => {
+      as("acc-root")
+      expect(
+        (await deleteChat(form({ id: [chat.c1, chat.c2] }))).error
+      ).toBeTruthy()
+      expect(
+        (
+          await assignManagers(
+            form({ id: [chat.c3, chat.c1], managerId: m1.id })
+          )
+        ).error
+      ).toBeTruthy()
+      expect(await db.chat.count({ where: { deleting: true } })).toBe(0)
+      expect(await db.chat.count({ where: visibleChats(m1) })).toBe(1)
+    })
   })
 
   describe("send now", () => {

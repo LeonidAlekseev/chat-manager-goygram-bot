@@ -5,7 +5,7 @@ import { redirect } from "next/navigation"
 import { Prisma } from "@prisma/client"
 import { z } from "zod"
 
-import { getViewer, isSuper, visibleChats } from "@/lib/access"
+import { duplicated, getViewer, isSuper, visibleChats } from "@/lib/access"
 import { db } from "@/lib/db"
 
 // Postgres INT: a larger id can never exist
@@ -28,6 +28,7 @@ export async function renameChat(
 ): Promise<{ error?: string }> {
   const v = await getViewer()
   if (!v) return EXPIRED
+  if (duplicated(formData, "id")) return NOT_FOUND
   const parsed = RenameSchema.safeParse(Object.fromEntries(formData))
   if (!parsed.success)
     return {
@@ -53,6 +54,7 @@ export async function deleteChat(
   const v = await getViewer()
   if (!v) return EXPIRED
   if (!isSuper(v)) return { error: "Удалять чаты может только суперадмин" }
+  if (duplicated(formData, "id")) return NOT_FOUND
   const id = Id.safeParse(formData.get("id"))
   const { count } = id.success
     ? await db.chat.updateMany({
@@ -73,15 +75,25 @@ export async function assignManagers(
   if (!v) return EXPIRED
   if (!isSuper(v))
     return { error: "Назначать менеджеров может только суперадмин" }
+  if (duplicated(formData, "id")) return NOT_FOUND
   const id = Id.safeParse(formData.get("id"))
   const managerIds = formData.getAll("managerId").map((m) => Id.safeParse(m))
   if (!id.success || managerIds.some((m) => !m.success)) return NOT_FOUND
+  const ids = managerIds.map((m) => m.data!)
   try {
     await db.$transaction([
       db.chatManager.deleteMany({ where: { chatId: id.data } }),
       db.chatManager.createMany({
-        data: managerIds.map((m) => ({ chatId: id.data, managerId: m.data! })),
+        data: ids.map((managerId) => ({ chatId: id.data, managerId })),
         skipDuplicates: true,
+      }),
+      // a manager taken off the chat takes their schedule with them; the superadmin's stays
+      db.chat.updateMany({
+        where: {
+          id: id.data,
+          schedule: { author: { role: "manager", id: { notIn: ids } } },
+        },
+        data: { scheduleId: null },
       }),
     ])
   } catch (e) {

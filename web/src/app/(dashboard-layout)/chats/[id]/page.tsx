@@ -56,7 +56,11 @@ export default async function ChatPage({
     }),
     chat.scheduleId
       ? db.chat.count({
-          where: { scheduleId: chat.scheduleId, id: { not: chat.id } },
+          where: {
+            scheduleId: chat.scheduleId,
+            id: { not: chat.id },
+            ...visibleChats(v),
+          },
         })
       : 0,
     isSuper(v)

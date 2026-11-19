@@ -7,6 +7,7 @@ import { z } from "zod"
 import {
   NOT_FOUND as BAD_ID,
   canEdit,
+  duplicated,
   editError,
   getViewer,
   visibleChats,
@@ -91,6 +92,7 @@ export async function saveSchedule(
 ): Promise<{ error?: string }> {
   const v = await getViewer()
   if (!v) return EXPIRED
+  if (duplicated(formData, "id", "chatId", "scope")) return NOT_FOUND
   const col = (k: string) => formData.getAll(k).map(String)
   const times = col("time")
   const itemIds = col("itemId")
@@ -253,6 +255,7 @@ export async function bindChats(
 ): Promise<{ error?: string }> {
   const v = await getViewer()
   if (!v) return EXPIRED
+  if (duplicated(formData, "id")) return NOT_FOUND
   const id = Id.safeParse(formData.get("id"))
   const chatIds = formData.getAll("chatId").map((c) => Id.safeParse(c))
   if (!id.success || chatIds.some((c) => !c.success)) return NOT_FOUND
@@ -290,6 +293,7 @@ export async function bindChat(
 ): Promise<{ error?: string }> {
   const v = await getViewer()
   if (!v) return EXPIRED
+  if (duplicated(formData, "chatId", "scheduleId")) return NOT_FOUND
   const chatId = Id.safeParse(formData.get("chatId"))
   const raw = formData.get("scheduleId")
   const scheduleId = raw ? Id.safeParse(raw) : null
@@ -324,6 +328,7 @@ export async function deleteSchedule(
 ): Promise<{ error?: string }> {
   const v = await getViewer()
   if (!v) return EXPIRED
+  if (duplicated(formData, "id")) return NOT_FOUND
   const id = Id.safeParse(formData.get("id"))
   if (!id.success) return NOT_FOUND
   const error = editError(

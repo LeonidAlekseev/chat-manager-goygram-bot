@@ -57,6 +57,11 @@ export const canEdit = (v: Viewer, row: { authorId: number | null }) =>
 
 export const NOT_FOUND = "Не найдено — обновите страницу"
 
+// A repeated id field (id=1&id=2) is refused: get() reads the first value, Object.fromEntries the last,
+// so a check and a write could look at different rows.
+export const duplicated = (formData: FormData, ...keys: string[]) =>
+  keys.some((k) => formData.getAll(k).length > 1)
+
 // `row` comes from a visible* query: missing = not found, visible but not own = the superadmin's.
 export function editError(
   v: Viewer,
