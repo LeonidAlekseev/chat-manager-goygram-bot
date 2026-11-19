@@ -39,15 +39,18 @@ const Schema = z.discriminatedUnion(
   { error: "Неизвестный тип шаблона" }
 )
 
+// The session carries the login only; the author is the manager's own account, never an id from the form.
 async function requireAuth() {
-  if (!(await auth())?.user) throw new Error("Unauthorized")
+  const login = (await auth())?.user?.name
+  if (!login) throw new Error("Unauthorized")
+  return login
 }
 
 export async function saveTemplate(
   _prev: ActionState,
   formData: FormData
 ): Promise<{ error?: string }> {
-  await requireAuth()
+  const login = await requireAuth()
   const raw = {
     ...Object.fromEntries(formData),
     // one option per line; blank lines ignored
@@ -84,7 +87,10 @@ export async function saveTemplate(
     }
   const data = { ...rest, options: rest.kind === "poll" ? rest.options : [] }
   if (id) await db.template.update({ where: { id }, data })
-  else await db.template.create({ data })
+  else
+    await db.template.create({
+      data: { ...data, author: { connect: { login } } },
+    })
   revalidatePath("/templates")
   return {}
 }
