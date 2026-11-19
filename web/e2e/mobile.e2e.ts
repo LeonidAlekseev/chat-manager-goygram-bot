@@ -319,6 +319,28 @@ test("mobile: long names, options and logins do not overflow any page", async ({
       options: tpl.options,
     },
   })
+  // a voter and a silent member with long names and usernames on the answers page
+  const voter = {
+    firstName: long,
+    lastName: unbroken,
+    username: `u${"x".repeat(31)}`,
+  }
+  await db.pollAnswer.create({
+    data: {
+      pollId: `p${stamp}`,
+      userId: BigInt(stamp),
+      name: long,
+      optionIds: [0],
+      ...voter,
+    },
+  })
+  await db.pollMember.createMany({
+    data: [stamp, stamp + 1].map((id) => ({
+      pollId: `p${stamp}`,
+      userId: BigInt(id),
+      ...voter,
+    })),
+  })
   try {
     await page.goto("/login")
     await page.getByLabel("Логин").fill(LOGIN)
@@ -364,6 +386,8 @@ test("mobile: long names, options and logins do not overflow any page", async ({
     }
   } finally {
     await db.sendLog.deleteMany({ where: { id: log.id } })
+    await db.pollAnswer.deleteMany({ where: { pollId: `p${stamp}` } })
+    await db.pollMember.deleteMany({ where: { pollId: `p${stamp}` } })
     await db.schedule.deleteMany({ where: { id: sch.id } })
     await db.template.deleteMany({ where: { id: tpl.id } })
     await db.chat.deleteMany({ where: { id: chat.id } })

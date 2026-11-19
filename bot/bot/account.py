@@ -165,7 +165,7 @@ class Account:
             raise MentionError(NO_SESSION)
         session = self._session
         try:
-            async for p in self.client.iter_participants(chat_id):
+            async for p in self.client.members(chat_id):
                 yield p
         except RPCError as e:
             if not _ended(e):
@@ -538,9 +538,13 @@ async def connect(api_id: int, api_hash: str) -> GoyGramLogin:
     )
 
 
+PAGE = 200  # channels.getParticipants page, as in goygram
+
+
 class MembersClient(GoyGram):
     vault: Path
     mt: Any  # GoyGram's stub leaves its transport out
+    _typed_peer: Callable[[Any, str], Awaitable[dict[str, Any]]]  # private, so the stub leaves it out too
     home: tuple[Any, bytes | None]  # the stored session's DC and auth key
 
     def at_home(self) -> bool:
@@ -559,6 +563,26 @@ class MembersClient(GoyGram):
         if self.mt.reader_task is None:
             raise TimeoutError("the session is not restored yet")
         await self.mt.call("updates.getState", retry=0)
+
+    async def members(self, chat_id: int) -> AsyncIterator[dict[str, Any]]:
+        """GoyGram's iter_participants, plus each member's names and username: it drops the response's users."""
+        # shortcut: participants[].user_id / users[].id shape is unverified against a live account
+        peer = await self._typed_peer(self.raw_chat(chat_id), "channel")  # ValueError for a basic group
+        offset = 0
+        while True:
+            res = await self.mt_req(
+                "channels.getParticipants", channel=peer,
+                filter={"_": "channelParticipantsSearch", "q": ""}, offset=offset, limit=PAGE, hash=0,
+            )
+            res = res["result"] if isinstance(res.get("result"), dict) else res
+            page = res.get("participants") or []
+            users = {u["id"]: u for u in res.get("users") or [] if u.get("id") is not None}
+            for p in page:
+                u = users.get(p["user_id"], {})
+                yield {"user_id": p["user_id"], **{k: u.get(k) for k in ("first_name", "last_name", "username")}}
+            if len(page) < PAGE:
+                return
+            offset += len(page)
 
     async def end_session(self) -> None:
         if err := _extract_error(await self.mt_req("auth.logOut")):

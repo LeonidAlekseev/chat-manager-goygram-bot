@@ -120,17 +120,18 @@ async def deliver(
         )
     finally:
         _sending.discard(log_id)
-    if poll_id and msg.get("member_ids"):
-        await _save_members(db, poll_id, msg["member_ids"])
+    if poll_id and msg.get("members"):
+        await _save_members(db, poll_id, msg["members"])
         return None
     return (poll_id, telegram_id) if poll_id and user is not None else None
 
 
-async def _save_members(db: asyncpg.Pool, poll_id: str, ids: list[int]) -> None:
+async def _save_members(db: asyncpg.Pool, poll_id: str, members: list[dict[str, Any]]) -> None:
     await _write(
         db,
-        "INSERT INTO poll_members (poll_id, user_id) SELECT $1, unnest($2::bigint[]) ON CONFLICT DO NOTHING",
-        poll_id, ids,
+        "INSERT INTO poll_members (poll_id, user_id, first_name, last_name, username) "
+        "SELECT $1, * FROM unnest($2::bigint[], $3::text[], $4::text[], $5::text[]) ON CONFLICT DO NOTHING",
+        poll_id, *([m.get(k) for m in members] for k in ("user_id", "first_name", "last_name", "username")),
     )
 
 
@@ -144,12 +145,12 @@ async def snapshot_members(db: asyncpg.Pool, user: Any, polls: list[tuple[str, i
         async with asyncio.timeout(FETCH_TIMEOUT):
             for poll_id, telegram_id in polls:
                 try:
-                    ids = await fetch_members(user, telegram_id)
+                    members = await fetch_members(user, telegram_id)
                 except Exception as e:  # noqa: BLE001  no list just means the answers page shows none
                     log.warning("members of %s unavailable: %s", telegram_id, str(e) or type(e).__name__)
                     continue
-                if ids:
-                    await _save_members(db, poll_id, ids)
+                if members:
+                    await _save_members(db, poll_id, members)
     except TimeoutError:
         log.warning("member snapshot ran out of time")
 
