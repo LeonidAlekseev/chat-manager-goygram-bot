@@ -114,15 +114,18 @@ async def test_mention_failure_keeps_status_sent_and_records_error(world):
 
 class FakeUser:
     async def iter_participants(self, chat_id):
-        yield {"user_id": 5}
+        yield {"user_id": 5, "first_name": "Анна", "last_name": "К", "username": "anna"}
         yield {"user_id": 6}
 
 
 async def test_poll_send_snapshots_chat_members_for_the_answers_page(world):
     await world.execute("TRUNCATE poll_members")
     await run_due(world, FakeTelegram(), NOW, FakeUser())
-    rows = await world.fetch("SELECT poll_id, user_id FROM poll_members ORDER BY poll_id, user_id")
-    assert [tuple(r) for r in rows] == [("poll-1", 5), ("poll-1", 6), ("poll-2", 5), ("poll-2", 6)]
+    rows = await world.fetch(
+        "SELECT poll_id, user_id, first_name, last_name, username FROM poll_members ORDER BY poll_id, user_id")
+    anna, bare = ("Анна", "К", "anna"), (None, None, None)
+    assert [tuple(r) for r in rows] == [
+        ("poll-1", 5, *anna), ("poll-1", 6, *bare), ("poll-2", 5, *anna), ("poll-2", 6, *bare)]
 
 
 class FlakyDb:

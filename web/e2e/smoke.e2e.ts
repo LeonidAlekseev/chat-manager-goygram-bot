@@ -234,7 +234,18 @@ test("poll answers: named votes, or counts for an anonymous poll", async ({
   const named = await sent(`${tag}-n`)
   const anon = await sent(`${tag}-a`)
   await db.pollAnswer.create({
-    data: { pollId: `${tag}-n`, userId: 5, name: "Анна К", optionIds: [1] },
+    data: {
+      pollId: `${tag}-n`,
+      userId: 5,
+      name: "Анна К",
+      firstName: "Анна",
+      lastName: "К",
+      username: "anna_k",
+      optionIds: [1],
+    },
+  })
+  await db.pollMember.createMany({
+    data: [5, 6].map((userId) => ({ pollId: `${tag}-n`, userId })),
   })
   await db.pollResult.create({
     data: { pollId: `${tag}-a`, anonymous: true, counts: [3, 1] },
@@ -246,7 +257,14 @@ test("poll answers: named votes, or counts for an anonymous poll", async ({
   await page.waitForURL("**/chats")
 
   await page.goto(`/logs/${named.id}`)
-  await expect(page.getByText("Анна К: Нет")).toBeVisible()
+  const anna = page.getByRole("listitem").filter({ hasText: "ID 5" })
+  await expect(anna).toHaveText("Анна К ID 5 @anna_k: Нет")
+  await expect(anna.getByRole("link", { name: "@anna_k" })).toHaveAttribute(
+    "href",
+    "https://t.me/anna_k"
+  )
+  await expect(page.getByText("Не ответили (1)")).toBeVisible()
+  await expect(page.getByText("ID 6", { exact: true })).toBeVisible()
 
   await page.goto(`/logs/${anon.id}`)
   await expect(

@@ -91,14 +91,14 @@ class CountingUser(User):
 async def test_poll_without_mention_all_is_sent_without_fetching_members():
     user = CountingUser()
     msg = await send_template(Tg(), -1, {**POLL, "mention_all": False}, user)
-    assert user.fetches == 0 and "member_ids" not in msg and "mention_error" not in msg
+    assert user.fetches == 0 and "members" not in msg and "mention_error" not in msg
 
 
 async def test_mention_poll_returns_the_members_it_fetched():
     msg = await send_template(Tg(), -1, POLL, User())
-    assert msg["member_ids"] == [5]
+    assert msg["members"] == [{"user_id": 5}]
 
 
-async def test_poll_without_session_has_no_member_ids_and_no_error():
+async def test_poll_without_session_has_no_members_and_no_error():
     msg = await send_template(Tg(), -1, {**POLL, "mention_all": False})
-    assert "member_ids" not in msg and "mention_error" not in msg
+    assert "members" not in msg and "mention_error" not in msg

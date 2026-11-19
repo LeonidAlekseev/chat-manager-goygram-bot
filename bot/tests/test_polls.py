@@ -24,6 +24,23 @@ async def answers(db):
     return [tuple(r) for r in await db.fetch("SELECT poll_id, user_id, name, option_ids FROM poll_answers ORDER BY user_id")]
 
 
+async def names(db):
+    rows = await db.fetch("SELECT user_id, first_name, last_name, username FROM poll_answers ORDER BY user_id")
+    return [tuple(r) for r in rows]
+
+
+async def test_answer_keeps_first_name_last_name_and_username_apart(db):
+    await handle_poll_answer(db, poll_answer("p1", 5, [0], username="anna"))
+    await handle_poll_answer(db, poll_answer("p1", 6, [0], first_name="Борис", last_name=None))
+    assert await names(db) == [(5, "Анна", "К", "anna"), (6, "Борис", None, None)]
+
+
+async def test_repeated_answer_updates_the_name_and_username(db):
+    await handle_poll_answer(db, poll_answer("p1", 5, [0], username="anna"))
+    await handle_poll_answer(db, poll_answer("p1", 5, [1], first_name="Аня", last_name=None))  # username dropped
+    assert await names(db) == [(5, "Аня", None, None)]
+
+
 async def test_answer_is_saved_with_the_user_name(db):
     await handle_poll_answer(db, poll_answer("p1", 5, [0, 2]))
     assert await answers(db) == [("p1", 5, "Анна К", [0, 2])]

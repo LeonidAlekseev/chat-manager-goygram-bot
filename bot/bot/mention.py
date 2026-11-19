@@ -32,12 +32,12 @@ def build_mention_messages(text: str, user_ids: list[int]) -> list[str]:
     ]
 
 
-async def fetch_user_ids(user: Any, chat_id: int) -> list[int]:
+async def fetch_users(user: Any, chat_id: int) -> list[dict[str, Any]]:
+    """The chat's members: user_id, and first_name, last_name, username (see MembersClient.members)."""
     if user is None:
         raise MentionError(NO_SESSION)
     try:
-        # shortcut: participant shape (dict with user_id) is unverified against a live account
-        return [p["user_id"] async for p in user.iter_participants(chat_id)]
+        return [p async for p in user.iter_participants(chat_id)]
     except ValueError as e:  # goygram raises ValueError for non-channel chats
         raise MentionError(BASIC_GROUP) from e
 
@@ -45,7 +45,7 @@ async def fetch_user_ids(user: Any, chat_id: int) -> list[int]:
 async def mention_all(bot: Any, user: Any, chat_id: int, text: str | None, reply_to: int | None = None) -> None:
     from bot.sender import fetch_members  # bot.sender imports this module
 
-    ids = await fetch_members(user, chat_id)
+    ids = [m["user_id"] for m in await fetch_members(user, chat_id)]
     extra = {"reply_parameters": {"message_id": reply_to}} if reply_to else {}
     for part in build_mention_messages(text or DEFAULT_TEXT, ids):
         await bot.bot_req("sendMessage", chat_id=chat_id, text=part, parse_mode="HTML", **extra)

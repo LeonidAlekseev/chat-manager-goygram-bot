@@ -15,9 +15,11 @@ async def handle_poll_answer(db: asyncpg.Pool, update: dict[str, Any]) -> None:
     u = a["user"]
     name = " ".join(filter(None, (u.get("first_name"), u.get("last_name")))) or u.get("username") or str(u["id"])
     await db.execute(
-        "INSERT INTO poll_answers (poll_id, user_id, name, option_ids) VALUES ($1, $2, $3, $4) "
-        "ON CONFLICT (poll_id, user_id) DO UPDATE SET name = EXCLUDED.name, option_ids = EXCLUDED.option_ids, updated_at = now()",
-        a["poll_id"], u["id"], name, a["option_ids"],
+        "INSERT INTO poll_answers (poll_id, user_id, name, option_ids, first_name, last_name, username) "
+        "VALUES ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT (poll_id, user_id) DO UPDATE SET name = EXCLUDED.name, "
+        "option_ids = EXCLUDED.option_ids, first_name = EXCLUDED.first_name, last_name = EXCLUDED.last_name, "
+        "username = EXCLUDED.username, updated_at = now()",
+        a["poll_id"], u["id"], name, a["option_ids"], u.get("first_name"), u.get("last_name"), u.get("username"),
     )
 
 

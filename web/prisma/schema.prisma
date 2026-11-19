@@ -141,7 +141,10 @@ model SendLog {
 model PollAnswer {
   pollId    String   @map("poll_id")
   userId    BigInt   @map("user_id")
-  name      String
+  name      String // first + last name, or username, or the id: all that rows from before first_name had
+  firstName String?  @map("first_name")
+  lastName  String?  @map("last_name")
+  username  String?
   optionIds Int[]    @map("option_ids")
   updatedAt DateTime @default(now()) @map("updated_at")
 
@@ -165,6 +168,9 @@ model PollResult {
 model PollMember {
   pollId    String   @map("poll_id")
   userId    BigInt   @map("user_id")
+  firstName String?  @map("first_name")
+  lastName  String?  @map("last_name")
+  username  String?
   createdAt DateTime @default(now()) @map("created_at")
 
   @@id([pollId, userId])

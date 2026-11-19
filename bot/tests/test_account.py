@@ -10,7 +10,7 @@ from goygram.errors import RPCError, rpc_error
 
 import bot.account
 from bot.account import Account, GoyGramLogin, MembersClient, open_client
-from bot.mention import NO_SESSION, MentionError, fetch_user_ids
+from bot.mention import NO_SESSION, MentionError, fetch_users
 from bot.settings import decrypt, encrypt
 
 SECRET = "bot-test-secret"
@@ -112,7 +112,7 @@ class FakeClient:
         finally:
             self.running = False
 
-    async def iter_participants(self, chat_id):
+    async def members(self, chat_id):
         if self.members_error:
             raise self.members_error
         for uid in (1, 2):
@@ -274,7 +274,7 @@ async def test_a_network_failure_is_reported_and_starts_over(adb, account):
 async def test_without_a_session_member_lists_explain_how_to_log_in(adb, account):
     await account.tick()
     with pytest.raises(MentionError, match=re.escape(NO_SESSION)):
-        await fetch_user_ids(account, -100)
+        await fetch_users(account, -100)
     assert "войдите" in NO_SESSION
 
 
@@ -284,7 +284,7 @@ async def test_login_starts_the_user_client_without_a_restart(adb, account, clie
     await account.tick()
     await asyncio.sleep(0)
     assert clients[0].args == (2040, "hash", PAYLOAD) and clients[0].running
-    assert await fetch_user_ids(account, -100) == [1, 2]
+    assert await fetch_users(account, -100) == [{"user_id": 1}, {"user_id": 2}]
     await account.tick()
     assert len(clients) == 1  # same session: keeps the running client
 
@@ -305,7 +305,7 @@ async def test_stored_session_starts_the_client_and_logout_stops_it(adb, account
     assert tuple(await adb.fetchrow("SELECT api_session, api_account FROM settings")) == (None, None)
     assert await login_row(adb) == {"step": None, "input": None, "state": None, "error": None}
     with pytest.raises(MentionError):
-        await fetch_user_ids(account, -100)
+        await fetch_users(account, -100)
 
 
 async def test_a_failed_telegram_logout_still_wipes_the_session_and_says_so(adb, account, clients):
@@ -753,7 +753,7 @@ async def test_a_second_401_a_while_later_forgets_the_session_and_explains(adb, 
     await logged_in(adb, account)
     clients[0].members_error = rpc_error(401, rpc)
     with pytest.raises(RPCError):  # the first one only restarts the client
-        await fetch_user_ids(account, -100)
+        await fetch_users(account, -100)
     assert await adb.fetchval("SELECT api_account FROM settings") == "Анна (@anna)" and not clients[0].running
     await account.tick()
     assert len(clients) == 1  # no restart before DENY_GAP
@@ -761,7 +761,7 @@ async def test_a_second_401_a_while_later_forgets_the_session_and_explains(adb, 
     assert clients[1].running
     clients[1].members_error = rpc_error(401, rpc)
     with pytest.raises(MentionError, match=re.escape(NO_SESSION)):
-        await fetch_user_ids(account, -100)
+        await fetch_users(account, -100)
     assert await account_state(adb) == (None, None, ENDED)
     assert account.client is None and not clients[1].running
     await reopened(account)
@@ -772,13 +772,13 @@ async def test_two_401s_too_close_together_keep_the_session(adb, account, client
     await logged_in(adb, account)
     clients[0].members_error = rpc_error(401, "AUTH_KEY_UNREGISTERED")
     with pytest.raises(RPCError):
-        await fetch_user_ids(account, -100)
+        await fetch_users(account, -100)
     account.hold = (account.hold[0], 0.0)  # the client is back, but the first 401 is fresh
     await account.tick()
     await asyncio.sleep(0)
     clients[1].members_error = rpc_error(401, "AUTH_KEY_UNREGISTERED")
     with pytest.raises(RPCError):
-        await fetch_user_ids(account, -100)
+        await fetch_users(account, -100)
     assert await adb.fetchval("SELECT api_account FROM settings") == "Анна (@anna)"
 
 
@@ -788,7 +788,7 @@ async def test_a_401_away_from_the_home_dc_or_key_keeps_the_session(adb, account
         clients[i].home = False
         clients[i].members_error = rpc_error(401, "AUTH_KEY_UNREGISTERED")
         with pytest.raises(RPCError):
-            await fetch_user_ids(account, -100)
+            await fetch_users(account, -100)
         assert account.denied is None and not clients[i].running
         await reopened(account)
     assert await adb.fetchval("SELECT api_account FROM settings") == "Анна (@anna)" and account.denied is None
@@ -799,14 +799,14 @@ async def test_an_answer_between_two_401s_keeps_the_session(adb, account, client
     await logged_in(adb, account)
     clients[0].members_error = rpc_error(401, "AUTH_KEY_UNREGISTERED")
     with pytest.raises(RPCError):
-        await fetch_user_ids(account, -100)
+        await fetch_users(account, -100)
     await reopened(account)
     await check(account)  # answered
     assert account.denied is None
     clients[1].members_error = rpc_error(401, "AUTH_KEY_UNREGISTERED")
     later(account)
     with pytest.raises(RPCError):
-        await fetch_user_ids(account, -100)
+        await fetch_users(account, -100)
     assert await adb.fetchval("SELECT api_account FROM settings") == "Анна (@anna)"
 
 
@@ -826,14 +826,14 @@ async def test_a_user_client_stopped_by_an_ended_session_is_restarted_then_forgo
     await account.tick()
     assert len(clients) == 2 and await account_state(adb) == (None, None, ENDED)
     with pytest.raises(MentionError):
-        await fetch_user_ids(account, -100)
+        await fetch_users(account, -100)
 
 
 async def test_other_member_list_errors_keep_the_session(adb, account, clients):
     await logged_in(adb, account)
     clients[0].members_error = rpc_error(400, "CHANNEL_INVALID")
     with pytest.raises(Exception, match="CHANNEL_INVALID"):
-        await fetch_user_ids(account, -100)
+        await fetch_users(account, -100)
     assert await adb.fetchval("SELECT api_account FROM settings") == "Анна (@anna)"
     assert account.client is clients[0]
 
@@ -965,3 +965,36 @@ def test_members_client_is_at_home_only_on_the_stored_dc_with_the_stored_key():
     assert not members.at_home()
     members.mt.host, members.mt.auth_key = "149.154.167.50", b"new"  # *_MIGRATE: a fresh, unauthorised key
     assert not members.at_home()
+
+
+async def test_members_carry_the_names_and_usernames_from_every_page(monkeypatch):
+    monkeypatch.setattr(bot.account, "PAGE", 2)
+    members = MembersClient.__new__(MembersClient)
+    pages = [
+        [{"_": "channelParticipantCreator", "user_id": 1}, {"_": "channelParticipant", "user_id": 2}],
+        [{"_": "channelParticipant", "user_id": 3}],
+    ]
+    users = [
+        {"_": "user", "id": 1, "access_hash": 9, "first_name": "Анна", "last_name": "К", "username": "anna"},
+        {"_": "user", "id": 2, "first_name": "Борис"},
+        {"_": "user", "id": 3, "first_name": "Вера", "username": "vera"},
+    ]
+    calls = []
+
+    async def typed_peer(target, kind):
+        return {"_": "inputChannel", "target": target, "kind": kind}
+
+    async def mt_req(act, **kw):
+        calls.append((act, kw["channel"]["target"], kw["offset"], kw["limit"]))
+        page = pages[kw["offset"] // 2]
+        return {"result": {"participants": page, "users": [u for u in users if any(p["user_id"] == u["id"] for p in page)]}}
+
+    members.raw_chat = lambda chat_id: chat_id
+    members._typed_peer = typed_peer
+    members.mt_req = mt_req
+    assert [m async for m in members.members(-100)] == [
+        {"user_id": 1, "first_name": "Анна", "last_name": "К", "username": "anna"},
+        {"user_id": 2, "first_name": "Борис", "last_name": None, "username": None},
+        {"user_id": 3, "first_name": "Вера", "last_name": None, "username": "vera"},
+    ]
+    assert calls == [("channels.getParticipants", -100, 0, 2), ("channels.getParticipants", -100, 2, 2)]

@@ -1,7 +1,7 @@
 import asyncio
 from typing import Any, Protocol
 
-from bot.mention import DEFAULT_TEXT, build_mention_messages, fetch_user_ids
+from bot.mention import DEFAULT_TEXT, build_mention_messages, fetch_users
 
 FETCH_TIMEOUT = 30  # a hung MTProto call must not stall the sequential scheduler
 SEND_TIMEOUT = 60  # per Bot API call: GoyGram sleeps through 429s for up to 5×300 s
@@ -29,18 +29,19 @@ async def send_template(tg: Telegram, chat_id: int, t: Any, user: Any = None) ->
     With mention_all, a poll or copy is followed by a separate mention message; a text carries the mentions itself.
     A mention failure, or an album some of whose sources were deleted, never fails the send: it is
     returned as `mention_error` in the message (logged as the send's error text).
-    A mention poll also returns the members it fetched as `member_ids`; other polls fetch none here,
+    A mention poll also returns the members it fetched as `members`; other polls fetch none here,
     so the send is not held up (the caller snapshots their members after all sends).
     """
     mentions: list[str] = []
     error = None
     partial = None
-    ids: list[int] = []
+    members: list[dict[str, Any]] = []
     poll = t["kind"] == "poll"
     copy = t["kind"] == "copy"
     if t["mention_all"]:
         try:
-            ids = await fetch_members(user, chat_id)
+            members = await fetch_members(user, chat_id)
+            ids = [m["user_id"] for m in members]
             # a copy's text is only a preview, so its mentions go out under the default text
             mentions = build_mention_messages(DEFAULT_TEXT if copy else t["text"], ids)
         except Exception as e:  # noqa: BLE001  MentionError or a Telegram/MTProto failure
@@ -76,9 +77,9 @@ async def send_template(tg: Telegram, chat_id: int, t: Any, user: Any = None) ->
             error = str(e)
             break
     error = "; ".join(e for e in (partial, error) if e) or None
-    extra = {**({"mention_error": error} if error else {}), **({"member_ids": ids} if poll and ids else {})}
+    extra = {**({"mention_error": error} if error else {}), **({"members": members} if poll and members else {})}
     return {**msg, **extra}
 
 
-async def fetch_members(user: Any, chat_id: int) -> list[int]:
-    return await asyncio.wait_for(fetch_user_ids(user, chat_id), FETCH_TIMEOUT)
+async def fetch_members(user: Any, chat_id: int) -> list[dict[str, Any]]:
+    return await asyncio.wait_for(fetch_users(user, chat_id), FETCH_TIMEOUT)

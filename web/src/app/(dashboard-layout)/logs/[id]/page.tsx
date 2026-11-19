@@ -7,6 +7,7 @@ import type { Metadata } from "next"
 import { db } from "@/lib/db"
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Voter } from "./voter"
 
 export const metadata: Metadata = { title: "Ответы на опрос" }
 
@@ -41,7 +42,8 @@ export default async function PollAnswersPage({
   // Retracted votes are kept as rows with no options; they count as "no answer".
   const voted = answers.filter((a) => a.optionIds.length > 0)
   const answeredIds = new Set(voted.map((a) => a.userId))
-  const names = new Map(answers.map((a) => [a.userId, a.name]))
+  // a member who retracted a vote has an answer row with a fresher name than the snapshot's
+  const byUser = new Map(answers.map((a) => [a.userId, a]))
   const missing = members.filter((m) => !answeredIds.has(m.userId))
 
   return (
@@ -75,10 +77,10 @@ export default async function PollAnswersPage({
           ) : voted.length === 0 ? (
             <p className="text-muted-foreground">Ответов пока нет.</p>
           ) : (
-            <ul className="grid gap-1 text-sm">
+            <ul className="grid gap-2 text-sm">
               {voted.map((a) => (
-                <li key={String(a.userId)}>
-                  <b>{a.name}</b>:{" "}
+                <li key={String(a.userId)} className="min-w-0 break-words">
+                  <Voter v={a} />:{" "}
                   {a.optionIds.map((o) => options[o] ?? `#${o + 1}`).join(", ")}
                 </li>
               ))}
@@ -93,11 +95,17 @@ export default async function PollAnswersPage({
               <h3 className="mt-2 font-medium">
                 Не ответили ({missing.length})
               </h3>
-              <p className="text-sm break-words">
-                {missing
-                  .map((m) => names.get(m.userId) ?? String(m.userId))
-                  .join(", ") || "—"}
-              </p>
+              {missing.length === 0 ? (
+                <p className="text-sm">—</p>
+              ) : (
+                <ul className="grid gap-2 text-sm">
+                  {missing.map((m) => (
+                    <li key={String(m.userId)} className="min-w-0 break-words">
+                      <Voter v={byUser.get(m.userId) ?? m} />
+                    </li>
+                  ))}
+                </ul>
+              )}
             </>
           )}
         </CardContent>
