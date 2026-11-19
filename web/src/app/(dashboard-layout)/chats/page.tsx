@@ -48,7 +48,7 @@ export default async function ChatsPage() {
               {chats.map((chat) => (
                 <div
                   key={chat.id}
-                  className="grid gap-2 border-t py-3 md:grid-cols-[minmax(0,2fr)_auto_auto_minmax(0,1fr)_auto] md:items-center md:gap-4 md:py-2"
+                  className="relative grid gap-2 border-t py-3 pr-12 md:pr-0 md:grid-cols-[minmax(0,2fr)_auto_auto_minmax(0,1fr)_auto] md:items-center md:gap-4 md:py-2"
                 >
                   <ActionForm action={renameChat} className="flex gap-2">
                     <input type="hidden" name="id" value={chat.id} />
@@ -86,7 +86,12 @@ export default async function ChatsPage() {
                       </Link>
                     )}
                   </span>
-                  {!chat.deleting && <DeleteChatForm chat={chat} />}
+                  {!chat.deleting && (
+                    <DeleteChatForm
+                      chat={chat}
+                      className="absolute right-0 top-3 md:static"
+                    />
+                  )}
                 </div>
               ))}
             </div>

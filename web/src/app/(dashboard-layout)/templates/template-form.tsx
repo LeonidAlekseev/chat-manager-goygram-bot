@@ -7,6 +7,7 @@ import type { ActionState } from "./actions"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Select } from "@/components/ui/select"
+import { DeleteForm } from "@/components/delete-form"
 import { deleteTemplate, saveTemplate } from "./actions"
 
 export type TemplateView = {
@@ -130,25 +131,13 @@ export function TemplateForm({ t = empty }: { t?: TemplateView }) {
 }
 
 export function DeleteTemplate({ id, name }: { id: number; name: string }) {
-  const [state, action, pending] = useActionState<ActionState, FormData>(
-    deleteTemplate,
-    null
-  )
   return (
-    <form
-      action={action}
-      onSubmit={(e) => {
-        if (!confirm(`Удалить шаблон «${name}»?`)) e.preventDefault()
-      }}
-      className="grid gap-1"
-    >
-      <input type="hidden" name="id" value={id} />
-      <Button type="submit" variant="outline" disabled={pending}>
-        Удалить
-      </Button>
-      {state?.error && (
-        <span className="text-sm text-destructive">{state.error}</span>
-      )}
-    </form>
+    <DeleteForm
+      action={(fd) => deleteTemplate(null, fd)}
+      id={id}
+      label={`Удалить шаблон «${name}»`}
+      confirmText={`Удалить шаблон «${name}»?`}
+      className="absolute right-2 top-2"
+    />
   )
 }

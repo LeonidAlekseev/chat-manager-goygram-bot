@@ -279,3 +279,95 @@ test("mobile: send now — template or own text, own text can mention everyone",
     await db.$disconnect()
   }
 })
+
+test("mobile: long names, options and logins do not overflow any page", async ({
+  page,
+}) => {
+  const db = new PrismaClient()
+  const long =
+    `E2E long ${Date.now()} ` + "Очень длинное название без пробелов ".repeat(4)
+  const unbroken = "Z".repeat(120)
+  const stamp = Date.now()
+  const mgr = await db.manager.create({
+    data: {
+      login: `e2e-${unbroken}`.slice(0, 120),
+      name: long,
+      passwordHash: "x",
+    },
+  })
+  const chat = await db.chat.create({
+    data: { telegramId: BigInt(-stamp), title: long },
+  })
+  const tpl = await db.template.create({
+    data: {
+      name: long,
+      kind: "poll",
+      text: long,
+      options: Array.from({ length: 10 }, (_, i) => `${i} ${long}`),
+      authorId: mgr.id,
+    },
+  })
+  const sch = await db.schedule.create({ data: { name: `${stamp} ${long}` } })
+  const log = await db.sendLog.create({
+    data: {
+      chatId: chat.id,
+      templateId: tpl.id,
+      slot: new Date(),
+      status: "sent",
+      pollId: `p${stamp}`,
+      text: long,
+      options: tpl.options,
+    },
+  })
+  try {
+    await page.goto("/login")
+    await page.getByLabel("Логин").fill(LOGIN)
+    await page.getByLabel("Пароль").fill(PASSWORD)
+    await page.getByRole("button", { name: "Войти" }).click()
+    await page.waitForURL("**/chats")
+    for (const path of [
+      "/login",
+      "/chats",
+      `/chats/${chat.id}`,
+      "/templates",
+      "/schedules",
+      "/logs",
+      `/logs/${log.id}`,
+      "/send",
+      "/managers",
+      "/profile",
+      "/settings",
+      "/system-logs",
+    ]) {
+      await page.goto(path)
+      await page.addStyleTag({ content: "body{overflow-x:visible!important}" })
+      await page.evaluate(() =>
+        document.querySelectorAll("details").forEach((d) => (d.open = true))
+      )
+      await page.screenshot({
+        path: `/tmp/shots-mobile2/${process.env.SHOT_DIR ?? "after"}-${path.replace(/\W+/g, "_")}.png`,
+        fullPage: true,
+      })
+      const [scroll, inner] = await page.evaluate(() => [
+        document.documentElement.scrollWidth,
+        window.innerWidth,
+      ])
+      const wide = await page.evaluate(() =>
+        [...document.querySelectorAll("body *")]
+          .filter((e) => e.getBoundingClientRect().right > window.innerWidth)
+          .slice(-4)
+          .map((e) => e.tagName + "." + e.className)
+      )
+      expect
+        .soft(scroll, `${path} overflows: ${wide.join(" | ")}`)
+        .toBeLessThanOrEqual(inner)
+    }
+  } finally {
+    await db.sendLog.deleteMany({ where: { id: log.id } })
+    await db.schedule.deleteMany({ where: { id: sch.id } })
+    await db.template.deleteMany({ where: { id: tpl.id } })
+    await db.chat.deleteMany({ where: { id: chat.id } })
+    await db.manager.deleteMany({ where: { id: mgr.id } })
+    await db.$disconnect()
+  }
+})

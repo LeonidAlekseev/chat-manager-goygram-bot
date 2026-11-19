@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation"
 import { auth } from "@/auth"
+import { ChevronRight } from "lucide-react"
 
 import type { Metadata } from "next"
 
@@ -55,21 +56,23 @@ export default async function SchedulesPage() {
           {schedules.map((s) => {
             const items = s.items.map(toItemView)
             return (
-              // the delete form sits beside <details>, not in <summary>: iOS Safari may toggle instead of submit
-              <div
-                key={s.id}
-                className="flex flex-col items-start gap-2 sm:flex-row"
-              >
-                <details className="w-full min-w-0 rounded-md sm:flex-1 border p-3">
-                  <summary className="flex cursor-pointer flex-wrap items-center gap-x-2">
-                    {s.name}
-                    <span className="text-sm text-muted-foreground">
-                      ·{" "}
-                      {s.items.length
-                        ? `шаблонов: ${s.items.length}`
-                        : "нет шаблонов"}{" "}
-                      · чатов:{" "}
-                      {chats.filter((c) => c.scheduleId === s.id).length}
+              // the delete form sits over the card, not in <summary>: iOS Safari may toggle instead of submit
+              <div key={s.id} className="relative">
+                <details className="group w-full min-w-0 rounded-md border p-3">
+                  <summary className="flex cursor-pointer list-none items-start gap-2 pr-10 [&::-webkit-details-marker]:hidden">
+                    <ChevronRight
+                      className="mt-0.5 size-4 shrink-0 transition-transform group-open:rotate-90"
+                      aria-hidden
+                    />
+                    <span className="min-w-0">
+                      <span className="break-words">{s.name}</span>
+                      <span className="mt-1 block text-sm text-muted-foreground">
+                        {s.items.length
+                          ? `шаблонов: ${s.items.length}`
+                          : "нет шаблонов"}{" "}
+                        · чатов:{" "}
+                        {chats.filter((c) => c.scheduleId === s.id).length}
+                      </span>
                     </span>
                   </summary>
                   <div className="mt-3 grid gap-4">
@@ -119,6 +122,7 @@ export default async function SchedulesPage() {
                 </details>
                 <DeleteScheduleForm
                   id={s.id}
+                  name={s.name}
                   chats={chats.filter((c) => c.scheduleId === s.id).length}
                 />
               </div>

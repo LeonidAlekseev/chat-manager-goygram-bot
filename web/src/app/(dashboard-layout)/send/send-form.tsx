@@ -60,7 +60,7 @@ export function SendForm({
             placeholder="Текст сообщения (до 4096)"
             required
             maxLength={4096}
-            className="min-h-20 rounded-md border bg-background p-2 text-sm"
+            className="min-h-20 w-full rounded-md border bg-background p-2 text-sm"
           />
           <label className="flex items-center gap-2 text-sm">
             <input type="checkbox" name="mentionAll" /> Отметить всех
