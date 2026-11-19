@@ -1,9 +1,9 @@
 import { redirect } from "next/navigation"
-import { auth } from "@/auth"
 import { ChevronRight } from "lucide-react"
 
 import type { Metadata } from "next"
 
+import { canEdit, getViewer, visibleTemplates } from "@/lib/access"
 import { db } from "@/lib/db"
 
 import { Badge } from "@/components/ui/badge"
@@ -18,9 +18,11 @@ export default async function TemplatesPage({
 }: {
   searchParams: Promise<{ id?: string }>
 }) {
-  if (!(await auth())?.user) redirect("/login")
+  const v = await getViewer()
+  if (!v) redirect("/login")
   const opened = Number((await searchParams).id)
   const templates = await db.template.findMany({
+    where: visibleTemplates(v),
     orderBy: { id: "asc" },
     include: { author: { select: { name: true, login: true } } },
   })
@@ -79,10 +81,10 @@ export default async function TemplatesPage({
                   </span>
                 </summary>
                 <div className="mt-3 grid gap-3">
-                  <TemplateForm t={t} />
+                  <TemplateForm t={t} readOnly={!canEdit(v, t)} />
                 </div>
               </details>
-              <DeleteTemplate id={t.id} name={t.name} />
+              {canEdit(v, t) && <DeleteTemplate id={t.id} name={t.name} />}
             </div>
           ))}
         </CardContent>

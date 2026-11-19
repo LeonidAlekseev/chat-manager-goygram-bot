@@ -1,9 +1,9 @@
 "use server"
 
 import { revalidatePath } from "next/cache"
-import { auth } from "@/auth"
 import { z } from "zod"
 
+import { getViewer, visibleChats, visibleTemplates } from "@/lib/access"
 import { db } from "@/lib/db"
 
 export type ActionState = { error?: string } | null
@@ -30,7 +30,8 @@ export async function sendNow(
   _prev: ActionState,
   formData: FormData
 ): Promise<{ error?: string }> {
-  if (!(await auth())?.user) throw new Error("Unauthorized")
+  const v = await getViewer()
+  if (!v) throw new Error("Unauthorized")
   const parsed = Schema.safeParse({
     templateId: formData.get("templateId") || undefined,
     text: formData.get("text") || undefined,
@@ -42,9 +43,16 @@ export async function sendNow(
   // unknown or deactivated chats / a missing template would otherwise fail on the FK or send to a dead chat
   const [live, tpl] = await Promise.all([
     db.chat.count({
-      where: { id: { in: chatIds }, active: true, deleting: false },
+      where: {
+        id: { in: chatIds },
+        active: true,
+        deleting: false,
+        ...visibleChats(v),
+      },
     }),
-    templateId ? db.template.count({ where: { id: templateId } }) : 1,
+    templateId
+      ? db.template.count({ where: { id: templateId, ...visibleTemplates(v) } })
+      : 1,
   ])
   if (live !== new Set(chatIds).size || !tpl)
     return { error: "Чат или шаблон не найден — обновите страницу" }

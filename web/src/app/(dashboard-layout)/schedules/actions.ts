@@ -1,10 +1,18 @@
 "use server"
 
 import { revalidatePath } from "next/cache"
-import { auth } from "@/auth"
 import { Prisma } from "@prisma/client"
 import { z } from "zod"
 
+import {
+  NOT_FOUND as BAD_ID,
+  canEdit,
+  editError,
+  getViewer,
+  visibleChats,
+  visibleSchedules,
+  visibleTemplates,
+} from "@/lib/access"
 import { db } from "@/lib/db"
 import { TIMEZONE, nowInZone } from "@/lib/timezone"
 
@@ -13,7 +21,6 @@ export type ActionState = { error?: string } | null
 const PERIODS = ["none", "day", "week", "twoweek", "month"] as const
 
 // Postgres INT: a larger id can never exist, and Prisma would throw on it
-const BAD_ID = "Не найдено — обновите страницу"
 const Id = z
   .string()
   .regex(/^\d+$/, BAD_ID)
@@ -82,7 +89,8 @@ export async function saveSchedule(
   _prev: ActionState,
   formData: FormData
 ): Promise<{ error?: string }> {
-  if (!(await auth())?.user) return EXPIRED
+  const v = await getViewer()
+  if (!v) return EXPIRED
   const col = (k: string) => formData.getAll(k).map(String)
   const times = col("time")
   const itemIds = col("itemId")
@@ -102,6 +110,26 @@ export async function saveSchedule(
   })
   if (!parsed.success) return { error: parsed.error.issues[0].message }
   const { id, name, chatId, scope, items } = parsed.data
+
+  // a manager's items use only templates they see; edits need the schedule visible, the chat assigned
+  const templateIds = new Set(items.map((i) => i.templateId))
+  const [templates, current, chat] = await Promise.all([
+    db.template.count({
+      where: { id: { in: [...templateIds] }, ...visibleTemplates(v) },
+    }),
+    id &&
+      db.schedule.findFirst({
+        where: { id, ...visibleSchedules(v) },
+        select: { authorId: true },
+      }),
+    chatId && db.chat.count({ where: { id: chatId, ...visibleChats(v) } }),
+  ])
+  if (templates !== templateIds.size || current === null || chat === 0)
+    return NOT_FOUND
+  const own = !current || canEdit(v, current)
+  // the superadmin's schedule: a manager may only fork it for an assigned chat («только в этом чате»)
+  if (!own && !(chatId && scope === "this"))
+    return { error: editError(v, current || null, "расписание")! }
 
   // a one-time item in the past is refused, unless it is saved unchanged (it may have fired already)
   const saved = id
@@ -137,6 +165,7 @@ export async function saveSchedule(
         await tx.schedule.create({
           data: {
             name,
+            authorId: v.id,
             items: { create: items.map((i) => ({ ...i, id: undefined })) },
           },
         })
@@ -147,7 +176,7 @@ export async function saveSchedule(
             where: { scheduleId: id, id: { not: chatId } },
           })
         : 0
-      if (scope === "this" && others > 0) {
+      if (scope === "this" && (others > 0 || !own)) {
         // copy-on-write: this chat gets its own edited copy, the others keep the original
         const [orig, chat] = await Promise.all([
           tx.schedule.findUniqueOrThrow({
@@ -167,7 +196,9 @@ export async function saveSchedule(
           )
             copyName = `${name} (${chat.title}) ${n}`
         }
-        const copy = await tx.schedule.create({ data: { name: copyName } })
+        const copy = await tx.schedule.create({
+          data: { name: copyName, authorId: v.id },
+        })
         const origIds = new Set(orig.items.map((i) => i.id))
         for (const { id: oldId, ...data } of items) {
           const { id: newId } = await tx.scheduleItem.create({
@@ -220,19 +251,30 @@ export async function saveSchedule(
 export async function bindChats(
   formData: FormData
 ): Promise<{ error?: string }> {
-  if (!(await auth())?.user) return EXPIRED
+  const v = await getViewer()
+  if (!v) return EXPIRED
   const id = Id.safeParse(formData.get("id"))
   const chatIds = formData.getAll("chatId").map((c) => Id.safeParse(c))
   if (!id.success || chatIds.some((c) => !c.success)) return NOT_FOUND
   const ids = chatIds.map((c) => c.data!)
+  const [schedule, chats] = await Promise.all([
+    db.schedule.count({ where: { id: id.data, ...visibleSchedules(v) } }),
+    db.chat.count({ where: { id: { in: ids }, ...visibleChats(v) } }),
+  ])
+  if (!schedule || chats !== new Set(ids).size) return NOT_FOUND
   try {
     await db.$transaction([
+      // the form lists only the viewer's chats: the others keep their binding
       db.chat.updateMany({
-        where: { scheduleId: id.data, id: { notIn: ids } },
+        where: {
+          scheduleId: id.data,
+          id: { notIn: ids },
+          ...visibleChats(v),
+        },
         data: { scheduleId: null },
       }),
       db.chat.updateMany({
-        where: { id: { in: ids }, deleting: false },
+        where: { id: { in: ids }, deleting: false, ...visibleChats(v) },
         data: { scheduleId: id.data },
       }),
     ])
@@ -246,18 +288,28 @@ export async function bindChats(
 export async function bindChat(
   formData: FormData
 ): Promise<{ error?: string }> {
-  if (!(await auth())?.user) return EXPIRED
+  const v = await getViewer()
+  if (!v) return EXPIRED
   const chatId = Id.safeParse(formData.get("chatId"))
   const raw = formData.get("scheduleId")
   const scheduleId = raw ? Id.safeParse(raw) : null
   if (!chatId.success || (scheduleId && !scheduleId.success)) return NOT_FOUND
+  if (
+    scheduleId &&
+    !(await db.schedule.count({
+      where: { id: scheduleId.data, ...visibleSchedules(v) },
+    }))
+  )
+    return NOT_FOUND
   try {
     const { count } = await db.chat.updateMany({
-      where: { id: chatId.data, deleting: false },
+      where: { id: chatId.data, deleting: false, ...visibleChats(v) },
       data: { scheduleId: scheduleId?.data ?? null },
     })
     if (!count)
-      return (await db.chat.count({ where: { id: chatId.data } }))
+      return (await db.chat.count({
+        where: { id: chatId.data, ...visibleChats(v) },
+      }))
         ? DELETING
         : NOT_FOUND
   } catch (e) {
@@ -270,9 +322,19 @@ export async function bindChat(
 export async function deleteSchedule(
   formData: FormData
 ): Promise<{ error?: string }> {
-  if (!(await auth())?.user) return EXPIRED
+  const v = await getViewer()
+  if (!v) return EXPIRED
   const id = Id.safeParse(formData.get("id"))
   if (!id.success) return NOT_FOUND
+  const error = editError(
+    v,
+    await db.schedule.findFirst({
+      where: { id: id.data, ...visibleSchedules(v) },
+      select: { authorId: true },
+    }),
+    "расписание"
+  )
+  if (error) return { error }
   try {
     await db.schedule.delete({ where: { id: id.data } })
   } catch (e) {

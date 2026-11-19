@@ -1,9 +1,9 @@
 import Link from "next/link"
 import { notFound, redirect } from "next/navigation"
-import { auth } from "@/auth"
 
 import type { Metadata } from "next"
 
+import { getViewer, visibleSends } from "@/lib/access"
 import { db } from "@/lib/db"
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -16,11 +16,12 @@ export default async function PollAnswersPage({
 }: {
   params: Promise<{ id: string }>
 }) {
-  if (!(await auth())?.user) redirect("/login")
+  const v = await getViewer()
+  if (!v) redirect("/login")
   const id = Number((await params).id)
-  if (!Number.isInteger(id)) notFound()
-  const log = await db.sendLog.findUnique({
-    where: { id },
+  if (!Number.isInteger(id) || id < 1 || id > 2147483647) notFound()
+  const log = await db.sendLog.findFirst({
+    where: { id, ...visibleSends(v) },
     include: { chat: true, template: true },
   })
   if (!log?.pollId) notFound()

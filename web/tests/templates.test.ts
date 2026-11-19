@@ -29,11 +29,14 @@ describe("templates", () => {
     await db.scheduleItem.deleteMany()
     await db.schedule.deleteMany()
     await db.template.deleteMany()
-    for (const login of ["boss", "other"])
+    for (const [login, role] of [
+      ["boss", "superadmin"],
+      ["other", "manager"],
+    ] as const)
       await db.manager.upsert({
         where: { login },
-        create: { login, passwordHash: "x" },
-        update: {},
+        create: { login, passwordHash: "x", role },
+        update: { role, active: true },
       })
     session.current = { user: { name: "boss" } }
   })
@@ -48,17 +51,18 @@ describe("templates", () => {
     })
   })
 
-  it("keeps the author when another manager edits the template", async () => {
+  it("keeps the author when the superadmin edits a manager's template", async () => {
+    session.current = { user: { name: "other" } }
     await saveTemplate(null, form(poll))
     const t = await db.template.findFirstOrThrow()
-    const boss = await db.manager.findUniqueOrThrow({
-      where: { login: "boss" },
+    const other = await db.manager.findUniqueOrThrow({
+      where: { login: "other" },
     })
-    session.current = { user: { name: "other" } }
+    session.current = { user: { name: "boss" } }
     await saveTemplate(null, form({ ...poll, id: String(t.id), name: "Новое" }))
     expect(
       await db.template.findUniqueOrThrow({ where: { id: t.id } })
-    ).toMatchObject({ name: "Новое", authorId: boss.id })
+    ).toMatchObject({ name: "Новое", authorId: other.id })
   })
 
   it("creates a non-anonymous poll by default-off flags", async () => {

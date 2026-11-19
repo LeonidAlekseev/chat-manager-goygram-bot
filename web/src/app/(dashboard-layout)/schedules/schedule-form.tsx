@@ -36,12 +36,15 @@ export function ScheduleForm({
   timezone,
   chatId,
   sharedWith = 0,
+  own = true,
 }: {
   schedule?: { id: number; name: string; items: ItemView[] }
   templates: { id: number; name: string }[]
   timezone: string // the zone item times are read in
   chatId?: number
   sharedWith?: number // other chats bound to this schedule
+  // false: the superadmin's schedule seen by a manager — read-only, or a copy for the chat on its page
+  own?: boolean
 }) {
   const formRef = useRef<HTMLFormElement>(null)
   const scopeRef = useRef<HTMLInputElement>(null)
@@ -109,7 +112,12 @@ export function ScheduleForm({
     <form ref={formRef} action={action} className="grid gap-2">
       {schedule && <input type="hidden" name="id" value={schedule.id} />}
       {chatId && <input type="hidden" name="chatId" value={chatId} />}
-      <input ref={scopeRef} type="hidden" name="scope" />
+      <input
+        ref={scopeRef}
+        type="hidden"
+        name="scope"
+        defaultValue={own ? undefined : "this"}
+      />
       <Input
         name="name"
         value={name}
@@ -193,7 +201,7 @@ export function ScheduleForm({
         >
           Добавить шаблон
         </Button>
-        {chatId && sharedWith > 0 ? (
+        {!own && !chatId ? null : own && chatId && sharedWith > 0 ? (
           <Dialog open={open} onOpenChange={setOpen}>
             <DialogTrigger asChild>
               <Button type="button" disabled={pending}>
@@ -238,6 +246,13 @@ export function ScheduleForm({
           </Button>
         )}
       </div>
+      {!own && (
+        <p className="text-sm text-muted-foreground">
+          {chatId
+            ? "Расписание суперадмина: сохранение создаст копию только для этого чата."
+            : "Расписание суперадмина — только просмотр."}
+        </p>
+      )}
       <p className="text-sm text-muted-foreground">
         Шаблон в расписании — что отправить, во сколько и как часто.
       </p>

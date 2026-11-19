@@ -23,6 +23,11 @@ describe("sendNow", () => {
     await db.sendLog.deleteMany()
     await db.template.deleteMany()
     await db.chat.deleteMany()
+    await db.manager.upsert({
+      where: { login: "boss" },
+      create: { login: "boss", passwordHash: "x", role: "superadmin" },
+      update: { role: "superadmin", active: true },
+    })
     session.current = { user: { name: "boss" } }
     chats = (
       await Promise.all(

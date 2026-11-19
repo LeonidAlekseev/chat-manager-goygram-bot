@@ -22,6 +22,11 @@ function form(id: number, title: string) {
 describe("renameChat", () => {
   beforeEach(async () => {
     await db.chat.deleteMany()
+    await db.manager.upsert({
+      where: { login: "boss" },
+      create: { login: "boss", passwordHash: "x", role: "superadmin" },
+      update: { role: "superadmin", active: true },
+    })
     session.current = { user: { name: "boss" } }
   })
 
@@ -76,6 +81,11 @@ describe("deleteChat", () => {
   beforeEach(async () => {
     await db.chat.deleteMany()
     await db.schedule.deleteMany()
+    await db.manager.upsert({
+      where: { login: "boss" },
+      create: { login: "boss", passwordHash: "x", role: "superadmin" },
+      update: { role: "superadmin", active: true },
+    })
     session.current = { user: { name: "boss" } }
   })
 

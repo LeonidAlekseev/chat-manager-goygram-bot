@@ -47,7 +47,13 @@ function Check({
   )
 }
 
-export function TemplateForm({ t = empty }: { t?: TemplateView }) {
+export function TemplateForm({
+  t = empty,
+  readOnly = false, // the superadmin's template seen by a manager
+}: {
+  t?: TemplateView
+  readOnly?: boolean
+}) {
   const [state, action, pending] = useActionState<ActionState, FormData>(
     saveTemplate,
     null
@@ -123,9 +129,15 @@ export function TemplateForm({ t = empty }: { t?: TemplateView }) {
       {state?.error && (
         <p className="text-sm text-destructive">{state.error}</p>
       )}
-      <Button type="submit" disabled={pending} className="w-fit">
-        {t.id ? "Сохранить" : "Создать"}
-      </Button>
+      {readOnly ? (
+        <p className="text-sm text-muted-foreground">
+          Шаблон суперадмина — только просмотр.
+        </p>
+      ) : (
+        <Button type="submit" disabled={pending} className="w-fit">
+          {t.id ? "Сохранить" : "Создать"}
+        </Button>
+      )}
     </form>
   )
 }

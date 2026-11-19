@@ -1,9 +1,14 @@
 import Link from "next/link"
 import { redirect } from "next/navigation"
-import { auth } from "@/auth"
 
 import type { Metadata } from "next"
 
+import {
+  getViewer,
+  isSuper,
+  visibleChats,
+  visibleSchedules,
+} from "@/lib/access"
 import { db } from "@/lib/db"
 
 import { Badge } from "@/components/ui/badge"
@@ -18,11 +23,21 @@ export const metadata: Metadata = { title: "Чаты" }
 
 export default async function ChatsPage() {
   // Layouts are not re-rendered on client navigation, so data pages check the session themselves.
-  if (!(await auth())?.user) redirect("/login")
-  const chats = await db.chat.findMany({
-    orderBy: [{ active: "desc" }, { title: "asc" }],
-    include: { schedule: { select: { name: true } } },
-  })
+  const v = await getViewer()
+  if (!v) redirect("/login")
+  const [chats, schedules] = await Promise.all([
+    db.chat.findMany({
+      where: visibleChats(v),
+      orderBy: [{ active: "desc" }, { title: "asc" }],
+    }),
+    db.schedule.findMany({
+      where: visibleSchedules(v),
+      select: { id: true, name: true },
+    }),
+  ])
+  const scheduleName = (id: number | null) =>
+    id &&
+    (schedules.find((s) => s.id === id)?.name ?? "Расписание другого менеджера")
 
   return (
     <section className="container p-4">
@@ -82,11 +97,12 @@ export default async function ChatsPage() {
                         href={`/chats/${chat.id}`}
                         className="underline underline-offset-4"
                       >
-                        {chat.schedule?.name ?? "Настроить расписание"}
+                        {scheduleName(chat.scheduleId) ||
+                          "Настроить расписание"}
                       </Link>
                     )}
                   </span>
-                  {!chat.deleting && (
+                  {!chat.deleting && isSuper(v) && (
                     <DeleteChatForm
                       chat={chat}
                       className="absolute right-0 top-3 md:static"

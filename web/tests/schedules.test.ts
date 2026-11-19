@@ -61,6 +61,11 @@ describe("schedules", () => {
     await db.scheduleItem.deleteMany()
     await db.schedule.deleteMany()
     await db.template.deleteMany()
+    await db.manager.upsert({
+      where: { login: "boss" },
+      create: { login: "boss", passwordHash: "x", role: "superadmin" },
+      update: { role: "superadmin", active: true },
+    })
     session.current = { user: { name: "boss" } }
     tpl = (
       await db.template.create({

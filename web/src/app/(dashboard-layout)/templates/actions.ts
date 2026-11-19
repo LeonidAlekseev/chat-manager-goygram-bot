@@ -1,10 +1,10 @@
 "use server"
 
 import { revalidatePath } from "next/cache"
-import { auth } from "@/auth"
 import { Prisma } from "@prisma/client"
 import { z } from "zod"
 
+import { editError, getViewer, visibleTemplates } from "@/lib/access"
 import { db } from "@/lib/db"
 
 export type ActionState = { error?: string } | null
@@ -39,18 +39,18 @@ const Schema = z.discriminatedUnion(
   { error: "Неизвестный тип шаблона" }
 )
 
-// The session carries the login only; the author is the manager's own account, never an id from the form.
-async function requireAuth() {
-  const login = (await auth())?.user?.name
-  if (!login) throw new Error("Unauthorized")
-  return login
+// The author is the signed-in manager's own account, never an id from the form.
+async function requireViewer() {
+  const v = await getViewer()
+  if (!v) throw new Error("Unauthorized")
+  return v
 }
 
 export async function saveTemplate(
   _prev: ActionState,
   formData: FormData
 ): Promise<{ error?: string }> {
-  const login = await requireAuth()
+  const v = await requireViewer()
   const raw = {
     ...Object.fromEntries(formData),
     // one option per line; blank lines ignored
@@ -59,10 +59,20 @@ export async function saveTemplate(
       .map((s) => s.trim())
       .filter(Boolean),
   }
-  const editing = z.coerce.number().int().safeParse(formData.get("id"))
+  const editing = z.coerce
+    .number()
+    .int()
+    .positive()
+    .safeParse(formData.get("id"))
   const current = editing.success
-    ? await db.template.findUnique({ where: { id: editing.data } })
+    ? await db.template.findFirst({
+        where: { id: editing.data, ...visibleTemplates(v) },
+      })
     : null
+  if (editing.success) {
+    const error = editError(v, current, "шаблон")
+    if (error) return { error }
+  }
   // a copy's content lives in Telegram: only its name and mention-all can change here
   if (editing.success && current?.kind === "copy") {
     const c = z.object({ name: base.name, mentionAll: flag }).safeParse(raw)
@@ -87,10 +97,7 @@ export async function saveTemplate(
     }
   const data = { ...rest, options: rest.kind === "poll" ? rest.options : [] }
   if (id) await db.template.update({ where: { id }, data })
-  else
-    await db.template.create({
-      data: { ...data, author: { connect: { login } } },
-    })
+  else await db.template.create({ data: { ...data, authorId: v.id } })
   revalidatePath("/templates")
   return {}
 }
@@ -99,8 +106,14 @@ export async function deleteTemplate(
   _prev: ActionState,
   formData: FormData
 ): Promise<{ error?: string }> {
-  await requireAuth()
+  const v = await requireViewer()
   const id = z.coerce.number().int().parse(formData.get("id"))
+  const error = editError(
+    v,
+    await db.template.findFirst({ where: { id, ...visibleTemplates(v) } }),
+    "шаблон"
+  )
+  if (error) return { error }
   try {
     // the FK (ON DELETE RESTRICT) is the check, so an item added meanwhile can't slip through
     await db.template.delete({ where: { id } })
