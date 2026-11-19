@@ -1,6 +1,6 @@
 import pytest
 
-from bot.polls import JOURNAL, handle_poll, handle_poll_answer, purge_journals
+from bot.polls import JOURNAL, handle_poll, handle_poll_answer, journal_sizes, purge_journals
 
 
 @pytest.fixture(autouse=True)
@@ -177,3 +177,17 @@ async def test_size_cap_keeps_pending_jobs_and_never_orphans_a_queued_job(db):
     # a job without a log row would be sent again by the outbox, so the queued one and the pending claim stay
     assert sorted(r[0] for r in await db.fetch("SELECT id FROM outbox")) == [queued, claimed]
     assert [r[0] for r in await db.fetch("SELECT status::text FROM send_logs")] == ["pending"]
+
+
+async def test_size_cap_on_real_sizes_trims_once_and_a_second_run_deletes_nothing(db):
+    # ~50k poll rows of the last days, well over a small cap; real on-disk sizes, nothing faked
+    await db.execute(
+        "INSERT INTO poll_members (poll_id, user_id, created_at) "
+        "SELECT 'p' || i, i, now() - i * interval '1 second' FROM generate_series(1, 50000) i")
+    cap = sum((await journal_sizes(db)).values()) // 2
+    await purge_journals(db, cap=cap)
+    left = await db.fetchval("SELECT count(*) FROM poll_members")
+    assert 0 < left < 50000
+    assert sum((await journal_sizes(db)).values()) <= cap
+    await purge_journals(db, cap=cap)
+    assert await db.fetchval("SELECT count(*) FROM poll_members") == left
