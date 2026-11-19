@@ -64,8 +64,8 @@ async def purge_journals(db: asyncpg.Pool, cap: int = CAP_BYTES, sizes: dict[str
     """Retention: journal rows are kept for a year, and while the journals take more than `cap` bytes on disk
     (tables, indexes, TOAST) the oldest go until they would take TARGET of it.
 
-    A row costs its table's size / row count, so the estimate includes indexes and free space. The space of
-    deleted rows is reused after VACUUM; the files do not shrink, so the size on disk stays near the cap.
+    A row costs its table's size / row count, so the estimate includes indexes and free space. VACUUM FULL then
+    shrinks the files, so the next run sees the real size and deletes nothing more without new rows.
     A job's outbox row goes before its log row: a job without a log row would be sent again.
     """
     sizes = sizes or await journal_sizes(db)
@@ -85,8 +85,16 @@ async def purge_journals(db: asyncpg.Pool, cap: int = CAP_BYTES, sizes: dict[str
             f"DELETE FROM send_logs WHERE status <> 'pending' AND outbox_id IS NULL AND created_at <= {before}", cut)
         for table, col in (("poll_answers", "updated_at"), ("poll_members", "created_at"), ("poll_results", "updated_at")):
             await c.execute(f"DELETE FROM {table} WHERE {col} <= {before}", cut)
-    if cut is not None:
-        await db.execute("VACUUM " + ", ".join(JOURNAL))  # cannot run in a transaction
+    if cut is None:
+        return
+    async with db.acquire() as c:  # the pool's RESET ALL on release drops lock_timeout
+        # VACUUM FULL locks the table while it runs; if the bot or panel holds it, skip till tomorrow
+        await c.execute("SET lock_timeout = '5s'")
+        for t in JOURNAL:
+            try:
+                await c.execute(f"VACUUM FULL {t}")  # cannot run in a transaction
+            except asyncpg.LockNotAvailableError:
+                log.warning("journal %s busy, VACUUM FULL skipped", t)
 
 
 async def purge_forever(db: asyncpg.Pool) -> None:
