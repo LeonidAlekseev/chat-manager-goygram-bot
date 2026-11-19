@@ -22,7 +22,8 @@ async def run_outbox(db: asyncpg.Pool, tg: Telegram, user: Any = None) -> None:
         "SELECT o.id, o.chat_id, c.telegram_id, c.active, o.template_id, "
         "CASE WHEN o.text IS NOT NULL THEN 'text' ELSE t.kind::text END AS kind, "
         "COALESCE(o.text, t.text) AS text, t.options, t.anonymous, t.multiple, "
-        "COALESCE(t.mention_all, false) AS mention_all, t.source_chat_id, t.source_message_ids, "
+        "CASE WHEN o.text IS NOT NULL THEN o.mention_all ELSE COALESCE(t.mention_all, false) END AS mention_all, "
+        "t.source_chat_id, t.source_message_ids, "
         "t.correct_option_id, t.explanation "
         "FROM outbox o JOIN chats c ON c.id = o.chat_id LEFT JOIN templates t ON t.id = o.template_id "
         # a deleting chat's jobs are never sent; they go with the chat (FK cascade)

@@ -17,11 +17,13 @@ const Schema = z
       .max(4096)
       .transform((v) => v || undefined) // spaces only = no text, so the template check applies
       .optional(),
+    mentionAll: z.preprocess((v) => v === "on", z.boolean()),
     chatIds: z.array(z.coerce.number().int()).min(1, "Выберите чаты"),
   })
+  .refine((v) => v.templateId || v.text, "Выберите шаблон или введите текст")
   .refine(
-    (v) => !!v.templateId !== !!v.text,
-    "Выберите шаблон или введите текст"
+    (v) => !(v.templateId && v.text),
+    "Выберите что-то одно: шаблон или свой текст"
   )
 
 export async function sendNow(
@@ -32,10 +34,11 @@ export async function sendNow(
   const parsed = Schema.safeParse({
     templateId: formData.get("templateId") || undefined,
     text: formData.get("text") || undefined,
+    mentionAll: formData.get("mentionAll"),
     chatIds: formData.getAll("chatIds"),
   })
   if (!parsed.success) return { error: parsed.error.issues[0].message }
-  const { templateId, text, chatIds } = parsed.data
+  const { templateId, text, mentionAll, chatIds } = parsed.data
   // unknown or deactivated chats / a missing template would otherwise fail on the FK or send to a dead chat
   const [live, tpl] = await Promise.all([
     db.chat.count({
@@ -46,7 +49,12 @@ export async function sendNow(
   if (live !== new Set(chatIds).size || !tpl)
     return { error: "Чат или шаблон не найден — обновите страницу" }
   await db.outbox.createMany({
-    data: chatIds.map((chatId) => ({ chatId, templateId, text })),
+    data: chatIds.map((chatId) => ({
+      chatId,
+      templateId,
+      text,
+      mentionAll: !!text && mentionAll, // a template's own setting applies
+    })),
   })
   revalidatePath("/send")
   return {}

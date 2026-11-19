@@ -249,3 +249,33 @@ test("mobile: menu and profile buttons float over content with the same style, n
   ])
   expect(scroll).toBeLessThanOrEqual(inner)
 })
+
+test("mobile: send now — template or own text, own text can mention everyone", async ({
+  page,
+}) => {
+  const db = new PrismaClient()
+  const text = `E2E send ${Date.now()}`
+  try {
+    await page.goto("/login")
+    await page.getByLabel("Логин").fill(LOGIN)
+    await page.getByLabel("Пароль").fill(PASSWORD)
+    await page.getByRole("button", { name: "Войти" }).click()
+    await page.waitForURL("**/chats")
+    await page.goto("/send")
+    await expect(page.getByRole("combobox", { name: "Шаблон" })).toBeVisible()
+    await expect(page.getByRole("textbox", { name: "Текст" })).toHaveCount(0)
+    await page.getByLabel("Свой текст").check()
+    await expect(page.getByRole("combobox", { name: "Шаблон" })).toHaveCount(0)
+    await page.getByRole("textbox", { name: "Текст" }).fill(text)
+    await page.getByLabel("Отметить всех").check()
+    await page.getByLabel(CHAT).check()
+    await page.screenshot({ path: "/tmp/shots80/send.png" })
+    await page.getByRole("button", { name: "Отправить" }).click()
+    await expect(page.getByText("Поставлено в очередь.")).toBeVisible()
+    const job = await db.outbox.findFirstOrThrow({ where: { text } })
+    expect([job.templateId, job.mentionAll]).toEqual([null, true])
+  } finally {
+    await db.outbox.deleteMany({ where: { text } })
+    await db.$disconnect()
+  }
+})

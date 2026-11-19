@@ -177,6 +177,7 @@ model Outbox {
   chatId     Int       @map("chat_id")
   templateId Int?      @map("template_id")
   text       String? // custom text; wins over the template
+  mentionAll Boolean   @default(false) @map("mention_all") // custom text only; a template has its own
   createdAt  DateTime  @default(now()) @map("created_at")
   chat       Chat      @relation(fields: [chatId], references: [id], onDelete: Cascade)
   template   Template? @relation(fields: [templateId], references: [id], onDelete: SetNull)
