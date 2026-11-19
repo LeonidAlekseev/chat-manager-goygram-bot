@@ -574,9 +574,9 @@ class MembersClient(GoyGram):
                 "channels.getParticipants", channel=peer,
                 filter={"_": "channelParticipantsSearch", "q": ""}, offset=offset, limit=PAGE, hash=0,
             )
-            res = res.get("result", res)
+            res = res["result"] if isinstance(res.get("result"), dict) else res
             page = res.get("participants") or []
-            users = {u["id"]: u for u in res.get("users") or []}
+            users = {u["id"]: u for u in res.get("users") or [] if u.get("id") is not None}
             for p in page:
                 u = users.get(p["user_id"], {})
                 yield {"user_id": p["user_id"], **{k: u.get(k) for k in ("first_name", "last_name", "username")}}

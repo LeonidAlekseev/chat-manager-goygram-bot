@@ -998,3 +998,26 @@ async def test_members_carry_the_names_and_usernames_from_every_page(monkeypatch
         {"user_id": 3, "first_name": "Вера", "last_name": None, "username": "vera"},
     ]
     assert calls == [("channels.getParticipants", -100, 0, 2), ("channels.getParticipants", -100, 2, 2)]
+
+
+@pytest.mark.parametrize(
+    "res",
+    [
+        {"result": None},  # no page at all: an empty list, as in goygram
+        {"participants": [{"user_id": 1}], "users": [{"_": "userEmpty"}, {"id": 2, "first_name": "Чужой"}]},
+    ],
+)
+async def test_members_survive_an_odd_response(res):
+    members = MembersClient.__new__(MembersClient)
+
+    async def typed_peer(target, kind):
+        return {}
+
+    async def mt_req(act, **kw):
+        return res
+
+    members.raw_chat = lambda chat_id: chat_id
+    members._typed_peer = typed_peer
+    members.mt_req = mt_req
+    got = [m async for m in members.members(-100)]
+    assert got == ([{"user_id": 1, "first_name": None, "last_name": None, "username": None}] if "users" in res else [])
