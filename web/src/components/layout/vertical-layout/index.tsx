@@ -9,9 +9,7 @@ export function VerticalLayout({ children }: { children: ReactNode }) {
       <Sidebar />
       <div className="w-full min-w-0">
         <VerticalLayoutHeader />
-        <main className="min-h-[calc(100svh-3.5rem)] bg-background">
-          {children}
-        </main>
+        <main className="min-h-svh bg-background pt-16">{children}</main>
       </div>
     </>
   )

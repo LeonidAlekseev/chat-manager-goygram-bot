@@ -202,3 +202,50 @@ test("mobile: a dropped connection shows a message and the button works again", 
     await db.$disconnect()
   }
 })
+
+test("mobile: menu and profile buttons float over content with the same style, no header bar", async ({
+  page,
+}) => {
+  await page.goto("/login")
+  await page.getByLabel("Логин").fill(LOGIN)
+  await page.getByLabel("Пароль").fill(PASSWORD)
+  await page.getByRole("button", { name: "Войти" }).click()
+  await page.waitForURL("**/chats")
+
+  const menu = page.getByRole("button", { name: "Toggle Sidebar" })
+  const profile = page.getByRole("button", { name: "Пользователь" })
+  const style = (l: Locator) =>
+    l.evaluate((el) => {
+      const s = getComputedStyle(el)
+      const r = el.getBoundingClientRect()
+      return {
+        border: s.border,
+        radius: s.borderRadius,
+        bg: s.backgroundColor,
+        shadow: s.boxShadow,
+        w: r.width,
+        h: r.height,
+      }
+    })
+
+  await page.evaluate(() => (document.body.style.minHeight = "3000px"))
+  await page.evaluate(() => window.scrollTo(0, 600))
+  await expect(menu).toBeInViewport()
+  await expect(profile).toBeInViewport()
+  const [m, p] = [await style(menu), await style(profile)]
+  expect(m).toEqual(p)
+  expect(m.bg).toBe("rgb(255, 255, 255)")
+  // no bar: the header strip has no height, border or background
+  expect(
+    await page.evaluate(() => {
+      const h = document.querySelector("header")!
+      const s = getComputedStyle(h)
+      return [h.offsetHeight, s.borderBottomWidth, s.backgroundColor]
+    })
+  ).toEqual([0, "0px", "rgba(0, 0, 0, 0)"])
+  const [scroll, inner] = await page.evaluate(() => [
+    document.documentElement.scrollWidth,
+    window.innerWidth,
+  ])
+  expect(scroll).toBeLessThanOrEqual(inner)
+})

@@ -23,7 +23,7 @@ export function UserDropdown() {
         <Button
           variant="outline"
           size="icon"
-          className="rounded-lg"
+          className="rounded-lg shadow-sm"
           aria-label="Пользователь"
         >
           <User className="size-5" />

@@ -1,20 +1,20 @@
 "use client"
 
 import { SidebarTrigger } from "@/components/ui/sidebar"
-import { FullscreenToggle } from "@/components/layout/full-screen-toggle"
 import { UserDropdown } from "@/components/layout/user-dropdown"
 import { ToggleMobileSidebar } from "../toggle-mobile-sidebar"
 
 export function VerticalLayoutHeader() {
   return (
-    <header className="sticky top-0 z-50 w-full bg-background border-b border-sidebar-border">
-      <div className="container flex h-14 justify-between items-center gap-4">
+    // Zero-height sticky strip: no bar, only the two buttons float over the content.
+    <header className="sticky top-0 z-50 h-0 w-full">
+      <div className="container flex justify-between items-center gap-4 pt-3">
         <ToggleMobileSidebar />
-        <div className="grow flex justify-end gap-2">
-          <SidebarTrigger className="hidden lg:flex lg:me-auto" />
-          <FullscreenToggle />
-          <UserDropdown />
-        </div>
+        <SidebarTrigger
+          variant="outline"
+          className="hidden lg:flex rounded-lg shadow-sm"
+        />
+        <UserDropdown />
       </div>
     </header>
   )
