@@ -3,6 +3,7 @@ import hashlib
 import logging
 import os
 import re
+import sys
 from collections.abc import Callable
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -66,7 +67,7 @@ def offset_path(token: str) -> str | None:
     One file per token, as GoyGram's default: a new bot must not start from the old bot's offset.
     """
     folder = os.environ.get("OFFSET_DIR")
-    return folder and f"{folder}/{hashlib.sha256(token.encode()).hexdigest()[:24]}.offset"
+    return f"{folder}/{hashlib.sha256(token.encode()).hexdigest()[:24]}.offset" if folder else None
 
 
 async def store_error(db: asyncpg.Pool, e: Exception) -> None:
@@ -164,5 +165,13 @@ async def _serve(db: asyncpg.Pool, secret: str, settings: Settings, app: Any) ->
         retention.cancel()
 
 
+def run() -> None:
+    try:
+        asyncio.run(main())
+    except Exception:
+        log.exception("bot stopped")  # through RedactTokens: the default excepthook would print the token
+        sys.exit(1)
+
+
 if __name__ == "__main__":
-    asyncio.run(main())
+    run()

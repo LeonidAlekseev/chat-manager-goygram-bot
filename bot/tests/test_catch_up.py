@@ -86,10 +86,8 @@ async def test_fail_stuck_spares_a_send_still_in_progress(pool):
 
 
 async def test_a_hung_send_is_cut_off_and_journaled_as_an_error(pool, monkeypatch):
-    from bot import scheduler
-
     await _bind(pool, "08:00")
-    monkeypatch.setattr(scheduler, "SEND_TIMEOUT", 0.05)
+    monkeypatch.setattr("bot.sender.SEND_TIMEOUT", 0.05)
 
     class Hung(FakeTelegram):
         async def bot_req(self, meth, **kw):
@@ -97,7 +95,25 @@ async def test_a_hung_send_is_cut_off_and_journaled_as_an_error(pool, monkeypatc
 
     await asyncio.wait_for(run_due(pool, Hung(), T0 + MIN), 1)
     [(_, status, _, _, error)] = await logs(pool)
-    assert status == "error" and "не завершилась за" in error
+    assert (status, error) == ("error", "Отправка не завершилась за 0.05 с (возможно, отправлено)")
+
+
+async def test_a_hung_mention_part_keeps_the_poll_sent(pool, monkeypatch):
+    from tests.test_sender_mentions import User
+
+    await _bind(pool, "08:00")
+    await pool.execute("UPDATE templates SET kind = 'poll', options = '{a,b}', mention_all = true")
+    monkeypatch.setattr("bot.sender.SEND_TIMEOUT", 0.05)
+
+    class MentionHangs(FakeTelegram):
+        async def bot_req(self, meth, **kw):
+            if meth == "sendMessage":
+                await asyncio.Event().wait()
+            return await super().bot_req(meth, **kw)
+
+    await asyncio.wait_for(run_due(pool, MentionHangs(), T0 + MIN, User()), 1)
+    [(_, status, message_id, poll_id, error)] = await logs(pool)
+    assert (status, message_id, poll_id) == ("sent", 101, "poll-1") and "не завершилась" in error
 
 
 async def test_minutes_dropped_by_the_catch_up_limit_are_logged(pool, caplog):

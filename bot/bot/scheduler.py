@@ -35,7 +35,6 @@ def is_due(time: str, start: date, period: str, now: datetime) -> bool:
 
 CATCH_UP = timedelta(minutes=15)  # how far back a late tick or a restart still sends
 MINUTE = timedelta(minutes=1)
-SEND_TIMEOUT = 60  # GoyGram sleeps through 429s for up to 5×300 s; one chat must not stall the tick
 
 CLAIM = (
     "INSERT INTO send_logs (chat_id, schedule_item_id, template_id, slot, outbox_id, text, options) "
@@ -107,13 +106,11 @@ async def deliver(
     _sending.add(log_id)
     try:
         try:
-            async with (limit := asyncio.timeout(SEND_TIMEOUT)):
-                msg, telegram_id = await _send(db, tg, telegram_id, t, user)
+            msg, telegram_id = await _send(db, tg, telegram_id, t, user)
         except Exception as e:
             log.exception("send to %s failed", telegram_id)
-            error = f"Отправка не завершилась за {SEND_TIMEOUT} с" if limit.expired() else str(e)
             await _record(db, log_id, ERROR_UNRECORDED,
-                          "UPDATE send_logs SET status = 'error', error = $2 WHERE id = $1", error)
+                          "UPDATE send_logs SET status = 'error', error = $2 WHERE id = $1", str(e))
             return None
         poll_id = (msg.get("poll") or {}).get("id")
         await _record(

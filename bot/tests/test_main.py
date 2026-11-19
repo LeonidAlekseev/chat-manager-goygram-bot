@@ -116,3 +116,25 @@ def test_bot_tokens_are_masked_in_every_log_line_and_traceback(caplog):
     except RuntimeError:
         logger.exception("send to %s failed via %s", 1, f"bot{GOOD}")
     assert GOOD not in caplog.text and "bot***/sendMessage" in caplog.text
+
+
+def test_offset_stays_goygrams_default_without_offset_dir(monkeypatch):
+    from bot.main import offset_path
+
+    monkeypatch.setenv("OFFSET_DIR", "")
+    assert offset_path(GOOD) is None
+    monkeypatch.setenv("OFFSET_DIR", "/offsets")
+    assert offset_path(GOOD).startswith("/offsets/") and GOOD not in offset_path(GOOD)
+
+
+def test_a_crash_is_logged_without_the_token_and_exits_nonzero(monkeypatch, caplog):
+    import bot.main
+
+    async def crash():
+        raise RuntimeError(f"botapi getMe https://api.telegram.org/bot{GOOD}/getMe")
+
+    monkeypatch.setattr(bot.main, "main", crash)
+    caplog.handler.addFilter(bot.main.RedactTokens())
+    with pytest.raises(SystemExit) as exit:
+        bot.main.run()
+    assert exit.value.code == 1 and "bot***/getMe" in caplog.text and GOOD not in caplog.text

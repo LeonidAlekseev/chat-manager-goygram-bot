@@ -4,12 +4,20 @@ from typing import Any, Protocol
 from bot.mention import DEFAULT_TEXT, build_mention_messages, fetch_user_ids
 
 FETCH_TIMEOUT = 30  # a hung MTProto call must not stall the sequential scheduler
+SEND_TIMEOUT = 60  # per Bot API call: GoyGram sleeps through 429s for up to 5×300 s
 
 
 class Telegram(Protocol):
     """The slice of GoyGram the sender needs; returns the Bot API result, raises on API errors."""
 
     async def bot_req(self, meth: str, /, **kw: Any) -> Any: ...
+
+
+async def _req(tg: Telegram, meth: str, **kw: Any) -> Any:
+    try:
+        return await asyncio.wait_for(tg.bot_req(meth, **kw), SEND_TIMEOUT)
+    except TimeoutError:
+        raise TimeoutError(f"Отправка не завершилась за {SEND_TIMEOUT} с (возможно, отправлено)") from None
 
 
 async def send_template(tg: Telegram, chat_id: int, t: Any, user: Any = None) -> dict[str, Any]:
@@ -38,7 +46,7 @@ async def send_template(tg: Telegram, chat_id: int, t: Any, user: Any = None) ->
         except Exception as e:  # noqa: BLE001  MentionError or a Telegram/MTProto failure
             error = str(e) or type(e).__name__
     if poll:
-        msg = await tg.bot_req(
+        msg = await _req(tg, 
             "sendPoll",
             chat_id=chat_id,
             question=t["text"],
@@ -49,21 +57,21 @@ async def send_template(tg: Telegram, chat_id: int, t: Any, user: Any = None) ->
                if t["correct_option_id"] is not None else {}),
         )
     elif copy and len(src := t["source_message_ids"]) > 1:
-        sent = await tg.bot_req("copyMessages", chat_id=chat_id, from_chat_id=t["source_chat_id"], message_ids=src)
+        sent = await _req(tg, "copyMessages", chat_id=chat_id, from_chat_id=t["source_chat_id"], message_ids=src)
         if not sent:
             raise RuntimeError("Сообщения альбома удалены")
         msg = sent[0]
         if len(sent) < len(src):
             partial = f"Отправлено {len(sent)} из {len(src)} сообщений альбома"
     elif copy:
-        msg = await tg.bot_req("copyMessage", chat_id=chat_id, from_chat_id=t["source_chat_id"], message_id=src[0])
+        msg = await _req(tg, "copyMessage", chat_id=chat_id, from_chat_id=t["source_chat_id"], message_id=src[0])
     elif mentions:
-        msg = await tg.bot_req("sendMessage", chat_id=chat_id, text=mentions.pop(0), parse_mode="HTML")
+        msg = await _req(tg, "sendMessage", chat_id=chat_id, text=mentions.pop(0), parse_mode="HTML")
     else:
-        msg = await tg.bot_req("sendMessage", chat_id=chat_id, text=t["text"])
+        msg = await _req(tg, "sendMessage", chat_id=chat_id, text=t["text"])
     for part in mentions:
         try:
-            await tg.bot_req("sendMessage", chat_id=chat_id, text=part, parse_mode="HTML")
+            await _req(tg, "sendMessage", chat_id=chat_id, text=part, parse_mode="HTML")
         except Exception as e:  # noqa: BLE001
             error = str(e)
             break
