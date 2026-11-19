@@ -51,14 +51,20 @@ async def handle_private(db: asyncpg.Pool, message: dict[str, Any], panel_url: s
                 return ""
             _refused_albums.append(key)
         return reply_for(message) or REFUSAL
+    source = message["chat"]["id"], message["message_id"]
+    if await db.fetchval(
+            "SELECT 1 FROM templates WHERE source_chat_id = $1 AND $2 = ANY(source_message_ids)", *source):
+        return ""  # delivered again (e.g. after a restart lost the polling offset): already saved
     if poll := message.get("poll"):
         name = text = poll["question"]
         tid = await db.fetchval(
             "INSERT INTO templates "
-            "(name, kind, text, options, anonymous, multiple, correct_option_id, explanation, author_id) "
-            "VALUES ($1, 'poll', $2, $3, $4, $5, $6, $7, $8) RETURNING id",
+            "(name, kind, text, options, anonymous, multiple, correct_option_id, explanation, author_id, "
+            "source_chat_id, source_message_ids) VALUES ($1, 'poll', $2, $3, $4, $5, $6, $7, $8, $9, ARRAY[$10::bigint]) "
+            "RETURNING id",
             name[:255], text, [o["text"] for o in poll["options"]], bool(poll.get("is_anonymous")),
-            bool(poll.get("allows_multiple_answers")), poll.get("correct_option_id"), poll.get("explanation"), author)
+            bool(poll.get("allows_multiple_answers")), poll.get("correct_option_id"), poll.get("explanation"), author,
+            *source)
     else:
         name, text, media = _copy_fields(message)
         # The first album item creates the template, the rest add their ids (copyMessages wants them sorted)

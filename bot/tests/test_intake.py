@@ -5,8 +5,8 @@ from bot.intake import REFUSAL, handle_edit, handle_private
 URL = "https://panel.example.com/"
 
 
-def msg(user_id: int = 42, chat_type: str = "private", **extra) -> dict:
-    return {"message_id": 7, "chat": {"id": user_id, "type": chat_type}, "from": {"id": user_id}, **extra}
+def msg(user_id: int = 42, chat_type: str = "private", message_id: int = 7, **extra) -> dict:
+    return {"message_id": message_id, "chat": {"id": user_id, "type": chat_type}, "from": {"id": user_id}, **extra}
 
 
 @pytest.fixture
@@ -27,7 +27,8 @@ async def test_poll_becomes_a_poll_template_as_it_was(db, manager):
     t = await only(db)
     assert (t["kind"], t["name"], t["text"], t["options"], t["anonymous"], t["multiple"], t["author_id"]) == (
         "poll", "Смена открыта?", "Смена открыта?", ["Да", "Нет"], False, True, manager)
-    assert (t["source_message_ids"], t["correct_option_id"], t["explanation"]) == ([], None, None)
+    assert (t["source_chat_id"], t["source_message_ids"], t["correct_option_id"], t["explanation"]) == (
+        42, [7], None, None)
     assert "Смена открыта?" in reply and "https://panel.example.com/templates" in reply
 
 
@@ -50,7 +51,7 @@ async def test_any_other_message_becomes_a_copy_template(db, manager):
 
 async def test_media_uses_the_caption_and_falls_back_to_the_media_type(db, manager):
     await handle_private(db, msg(photo=[{}], caption="График на неделю"), URL)
-    await handle_private(db, msg(voice={}), URL)
+    await handle_private(db, msg(message_id=8, voice={}), URL)
     rows = await db.fetch("SELECT name, text, media_type FROM templates ORDER BY id")
     assert [tuple(r) for r in rows] == [("График на неделю", "График на неделю", "photo"), ("Голосовое", "", "voice")]
 
@@ -113,3 +114,11 @@ async def test_album_from_a_stranger_is_refused_once(db, manager):
                for i in (1, 2, 3)]
     assert replies == [REFUSAL, "", ""]
     assert await db.fetchval("SELECT count(*) FROM templates") == 0
+
+
+async def test_a_message_delivered_again_after_a_restart_makes_no_second_template(db, manager):
+    poll = {"question": "Смена открыта?", "options": [{"text": "Да"}, {"text": "Нет"}]}
+    for m in (msg(text="Ключ от кассы"), msg(message_id=8, poll=poll)):
+        assert await handle_private(db, m, URL)
+        assert await handle_private(db, m, URL) == ""  # Telegram repeats updates whose offset was lost
+    assert await db.fetchval("SELECT count(*) FROM templates") == 2

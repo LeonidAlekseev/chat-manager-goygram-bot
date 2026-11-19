@@ -83,3 +83,27 @@ async def test_fail_stuck_spares_a_send_still_in_progress(pool):
     gate.set()
     await task
     assert [r[1:] for r in await logs(pool)] == [("sent", 101, None, None)]
+
+
+async def test_a_hung_send_is_cut_off_and_journaled_as_an_error(pool, monkeypatch):
+    from bot import scheduler
+
+    await _bind(pool, "08:00")
+    monkeypatch.setattr(scheduler, "SEND_TIMEOUT", 0.05)
+
+    class Hung(FakeTelegram):
+        async def bot_req(self, meth, **kw):
+            await asyncio.Event().wait()  # e.g. 429 retries that sleep for minutes
+
+    await asyncio.wait_for(run_due(pool, Hung(), T0 + MIN), 1)
+    [(_, status, _, _, error)] = await logs(pool)
+    assert status == "error" and "не завершилась за" in error
+
+
+async def test_minutes_dropped_by_the_catch_up_limit_are_logged(pool, caplog):
+    await _bind(pool, "08:00")
+    await run_pending(pool, FakeTelegram(), T0 - 20 * MIN, T0 + 17 * MIN)  # back at 08:16: only 08:01–08:16 run
+    assert "skipped 21 minute(s)" in caplog.text
+    caplog.clear()
+    await run_pending(pool, FakeTelegram(), T0, T0 + 2 * MIN)
+    assert "skipped" not in caplog.text
