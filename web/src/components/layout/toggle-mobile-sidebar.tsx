@@ -12,8 +12,9 @@ export function ToggleMobileSidebar() {
     return (
       <Button
         data-sidebar="trigger"
-        variant="ghost"
+        variant="outline"
         size="icon"
+        className="rounded-lg shadow-sm"
         onClick={() => setOpenMobile(!openMobile)}
         aria-label="Toggle Sidebar"
       >
