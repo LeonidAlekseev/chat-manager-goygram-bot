@@ -77,6 +77,39 @@ describe("sendNow", () => {
     ).toBeTruthy()
   })
 
+  it("queues custom text with mention all", async () => {
+    await sendNow(
+      null,
+      form({ text: "Все сюда", mentionAll: "on", chatIds: String(chats[0]) })
+    )
+    const [o] = await db.outbox.findMany()
+    expect([o.text, o.mentionAll]).toEqual(["Все сюда", true])
+  })
+
+  it("a template job takes mention all from the template, not the form", async () => {
+    await sendNow(
+      null,
+      form({
+        templateId: String(templateId),
+        mentionAll: "on",
+        chatIds: String(chats[0]),
+      })
+    )
+    expect((await db.outbox.findFirstOrThrow()).mentionAll).toBe(false)
+  })
+
+  it("explains that only one of template and text may be chosen", async () => {
+    const r = await sendNow(
+      null,
+      form({
+        text: "x",
+        templateId: String(templateId),
+        chatIds: String(chats[0]),
+      })
+    )
+    expect(r.error).toBe("Выберите что-то одно: шаблон или свой текст")
+  })
+
   it("needs exactly one of template and text, and at least one chat", async () => {
     expect(
       (await sendNow(null, form({ chatIds: String(chats[0]) }))).error

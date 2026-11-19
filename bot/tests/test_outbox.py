@@ -127,3 +127,23 @@ async def test_stuck_pending_rows_become_errors_and_are_never_resent(world):
     tg = FakeTelegram()
     await run_outbox(world, tg)
     assert tg.calls == []
+
+
+async def test_custom_text_with_mention_all_mentions_every_member(world):
+    from tests.test_sender import FakeUser
+
+    await world.execute("INSERT INTO outbox (chat_id, text, mention_all) VALUES (1, 'Все сюда', true)")
+    tg = FakeTelegram()
+    await run_outbox(world, tg, FakeUser())
+    texts = [k["text"] for m, k in tg.calls if m == "sendMessage"]
+    assert len(texts) == 1 and texts[0].startswith("Все сюда") and "tg://user?id=5" in texts[0]
+    assert (await jobs(world))[0][1:2] == ("sent",)
+
+
+async def test_custom_text_mention_failure_is_recorded_but_the_job_stays_sent(world):
+    await world.execute("INSERT INTO outbox (chat_id, text, mention_all) VALUES (1, 'Все сюда', true)")
+    tg = FakeTelegram()
+    await run_outbox(world, tg)  # no user client configured, so the mention step fails
+    [row] = await jobs(world)
+    assert row[1] == "sent" and row[4]
+    assert [k["text"] for _, k in tg.calls] == ["Все сюда"]

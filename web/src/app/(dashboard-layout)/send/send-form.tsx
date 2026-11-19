@@ -1,6 +1,6 @@
 "use client"
 
-import { useActionState } from "react"
+import { useActionState, useState } from "react"
 
 import type { ActionState } from "./actions"
 
@@ -19,22 +19,54 @@ export function SendForm({
     sendNow,
     null
   )
+  const [mode, setMode] = useState<"template" | "text">("template")
   return (
     <form action={action} className="grid gap-3">
-      <Select name="templateId" defaultValue="" aria-label="Шаблон">
-        <option value="">— без шаблона —</option>
-        {templates.map((t) => (
-          <option key={t.id} value={t.id}>
-            {t.name}
-          </option>
+      <fieldset className="flex gap-4 text-sm">
+        <legend className="sr-only">Что отправить</legend>
+        {(
+          [
+            ["template", "Шаблон"],
+            ["text", "Свой текст"],
+          ] as const
+        ).map(([value, label]) => (
+          <label key={value} className="flex items-center gap-2">
+            <input
+              type="radio"
+              checked={mode === value}
+              onChange={() => setMode(value)}
+            />
+            {label}
+          </label>
         ))}
-      </Select>
-      <textarea
-        name="text"
-        placeholder="…или произвольный текст (до 4096), если шаблон не выбран"
-        maxLength={4096}
-        className="min-h-20 rounded-md border bg-background p-2 text-sm"
-      />
+      </fieldset>
+      {/* only the chosen field is rendered, so only it is submitted */}
+      {mode === "template" ? (
+        <Select name="templateId" defaultValue="" aria-label="Шаблон" required>
+          <option value="" disabled>
+            — выберите шаблон —
+          </option>
+          {templates.map((t) => (
+            <option key={t.id} value={t.id}>
+              {t.name}
+            </option>
+          ))}
+        </Select>
+      ) : (
+        <>
+          <textarea
+            name="text"
+            aria-label="Текст"
+            placeholder="Текст сообщения (до 4096)"
+            required
+            maxLength={4096}
+            className="min-h-20 rounded-md border bg-background p-2 text-sm"
+          />
+          <label className="flex items-center gap-2 text-sm">
+            <input type="checkbox" name="mentionAll" /> Отметить всех
+          </label>
+        </>
+      )}
       <fieldset className="grid gap-1">
         <legend className="mb-1 text-sm text-muted-foreground">Чаты</legend>
         {chats.map((c) => (
