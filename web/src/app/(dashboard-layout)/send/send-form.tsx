@@ -8,6 +8,7 @@ import type { ActionState } from "./actions"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Select } from "@/components/ui/select"
+import { ChatAvatar } from "@/components/chat-avatar"
 import { chip } from "@/components/chip"
 import { Empty } from "@/components/empty"
 import { sendNow } from "./actions"
@@ -71,7 +72,7 @@ export function SendForm({
   timezone,
 }: {
   templates: { id: number; name: string }[]
-  chats: { id: number; title: string }[]
+  chats: { id: number; title: string; photo: { uniqueId: string } | null }[]
   timezone: string
 }) {
   const [state, action, pending] = useActionState<ActionState, FormData>(
@@ -151,6 +152,10 @@ export function SendForm({
           {chats.map((c) => (
             <label key={c.id} className={chip}>
               <input type="checkbox" name="chatIds" value={c.id} />
+              <ChatAvatar
+                chat={c}
+                className="size-6 rounded-md bg-primary-soft text-xs font-black text-primary"
+              />
               <span className="font-bold">{c.title}</span>
             </label>
           ))}

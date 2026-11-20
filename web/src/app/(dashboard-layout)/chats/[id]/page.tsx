@@ -4,7 +4,6 @@ import {
   ChevronRight,
   ExternalLink,
   Link2,
-  MessagesSquare,
   Save,
   Users,
 } from "lucide-react"
@@ -27,6 +26,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Select } from "@/components/ui/select"
 import { ActionForm } from "@/components/action-form"
+import { ChatAvatar } from "@/components/chat-avatar"
 import { chip } from "@/components/chip"
 import { Empty } from "@/components/empty"
 import { bindChat } from "../../schedules/actions"
@@ -50,6 +50,7 @@ export default async function ChatPage({
   const chat = await db.chat.findFirst({
     where: { id, ...visibleChats(v) },
     include: {
+      photo: { select: { uniqueId: true } },
       schedule: { include: { items: { orderBy: { time: "asc" } } } },
       // the superadmin sees every assigned manager's admin status (#99), a manager only their own
       managers: {
@@ -114,9 +115,11 @@ export default async function ChatPage({
       <Card>
         <CardHeader className="flex-row flex-wrap items-center justify-between gap-2 space-y-0">
           <div className="flex min-w-0 flex-wrap items-center gap-2">
-            <CardTitle icon={MessagesSquare} className="break-words">
-              {chat.title}
-            </CardTitle>
+            <ChatAvatar
+              chat={chat}
+              className="size-10 rounded-xl bg-primary-soft text-base font-black text-primary"
+            />
+            <CardTitle className="break-words">{chat.title}</CardTitle>
             {linked && <NotAdminBadge status={myStatus} />}
           </div>
           <span className="w-full font-mono text-xs text-muted-foreground tabular-nums">

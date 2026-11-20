@@ -30,6 +30,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { ActionForm } from "@/components/action-form"
+import { ChatAvatar } from "@/components/chat-avatar"
 import { Empty } from "@/components/empty"
 import { renameChat } from "./actions"
 import { DeleteChatForm } from "./delete-chat-form"
@@ -57,6 +58,7 @@ export default async function ChatsPage() {
       where: visibleChats(v),
       orderBy: [{ active: "desc" }, { title: "asc" }],
       include: {
+        photo: { select: { uniqueId: true } },
         managers: {
           // a manager gets only their own row: their admin status (#99)
           where: isSuper(v) ? {} : { managerId: v.id },
@@ -120,44 +122,41 @@ export default async function ChatsPage() {
                   off && "bg-background shadow-none"
                 )}
               >
-                <div className="flex items-start gap-3">
-                  <span
-                    aria-hidden
-                    className={cn(
-                      "grid size-11 shrink-0 place-items-center rounded-xl text-base font-black uppercase",
-                      off
-                        ? "bg-border text-muted-foreground"
-                        : "bg-primary-soft text-primary"
-                    )}
+                <div className="grid min-w-0 gap-1">
+                  <ActionForm
+                    action={renameChat}
+                    className="flex items-center gap-2"
                   >
-                    {chat.title.slice(0, 1)}
+                    <ChatAvatar
+                      chat={chat}
+                      className={cn(
+                        "size-11 rounded-xl bg-primary-soft text-base font-black text-primary",
+                        off && "bg-border text-muted-foreground grayscale"
+                      )}
+                    />
+                    <input type="hidden" name="id" value={chat.id} />
+                    <Input
+                      className="min-w-0 font-bold"
+                      name="title"
+                      defaultValue={chat.title}
+                      aria-label={`Название чата ${chat.telegramId}`}
+                      required
+                      maxLength={255}
+                    />
+                    <Button
+                      type="submit"
+                      variant="outline"
+                      size="icon"
+                      className="shrink-0"
+                      aria-label={`Сохранить название ${chat.telegramId}`}
+                      title="Сохранить"
+                    >
+                      <Save />
+                    </Button>
+                  </ActionForm>
+                  <span className="ps-13 font-mono text-xs text-muted-foreground tabular-nums">
+                    {chat.telegramId.toString()}
                   </span>
-                  <div className="grid min-w-0 flex-1 gap-1">
-                    <ActionForm action={renameChat} className="flex gap-2">
-                      <input type="hidden" name="id" value={chat.id} />
-                      <Input
-                        className="min-w-0 font-bold"
-                        name="title"
-                        defaultValue={chat.title}
-                        aria-label={`Название чата ${chat.telegramId}`}
-                        required
-                        maxLength={255}
-                      />
-                      <Button
-                        type="submit"
-                        variant="outline"
-                        size="icon"
-                        className="shrink-0"
-                        aria-label={`Сохранить название ${chat.telegramId}`}
-                        title="Сохранить"
-                      >
-                        <Save />
-                      </Button>
-                    </ActionForm>
-                    <span className="font-mono text-xs text-muted-foreground tabular-nums">
-                      {chat.telegramId.toString()}
-                    </span>
-                  </div>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
                   {chat.deleting ? (
