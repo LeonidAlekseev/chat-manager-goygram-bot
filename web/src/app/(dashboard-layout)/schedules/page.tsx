@@ -3,7 +3,6 @@ import {
   CalendarClock,
   ChevronRight,
   Clock,
-  Lock,
   Plus,
   Repeat,
   Save,
@@ -21,13 +20,14 @@ import {
 import { db } from "@/lib/db"
 import { TIMEZONE } from "@/lib/timezone"
 
-import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { ActionForm } from "@/components/action-form"
 import { chip } from "@/components/chip"
+import { DuplicateForm } from "@/components/duplicate-form"
 import { Empty } from "@/components/empty"
-import { bindChats } from "./actions"
+import { ReadOnlyBadge } from "@/components/readonly-badge"
+import { bindChats, duplicateSchedule } from "./actions"
 import { DeleteScheduleForm } from "./delete-schedule-form"
 import { PERIODS, byTime, toItemView } from "./item-view"
 import { ScheduleForm } from "./schedule-form"
@@ -92,15 +92,7 @@ export default async function SchedulesPage() {
                     <span className="grid min-w-0 flex-1 gap-1">
                       <span className="flex flex-wrap items-center gap-2">
                         <span className="font-bold break-words">{s.name}</span>
-                        {!canEdit(v, s) && (
-                          <Badge
-                            variant="secondary"
-                            title="Только суперадмин меняет"
-                          >
-                            <Lock aria-hidden />
-                            Неизменяемый
-                          </Badge>
-                        )}
+                        {!canEdit(v, s) && <ReadOnlyBadge />}
                       </span>
                       <span className="mt-1 block text-sm text-muted-foreground">
                         {s.items.length
@@ -158,6 +150,11 @@ export default async function SchedulesPage() {
                       templates={templates}
                       timezone={TIMEZONE}
                       own={canEdit(v, s)}
+                    />
+                    <DuplicateForm
+                      action={duplicateSchedule}
+                      id={s.id}
+                      name={s.name}
                     />
                     <ActionForm action={bindChats} className="grid gap-2">
                       <input type="hidden" name="id" value={s.id} />

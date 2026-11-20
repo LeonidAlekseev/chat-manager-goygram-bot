@@ -29,6 +29,7 @@ import { ActionForm } from "@/components/action-form"
 import { ChatAvatar } from "@/components/chat-avatar"
 import { chip } from "@/components/chip"
 import { Empty } from "@/components/empty"
+import { ReadOnlyBadge } from "@/components/readonly-badge"
 import { bindChat } from "../../schedules/actions"
 import { toItemView } from "../../schedules/item-view"
 import { ScheduleForm } from "../../schedules/schedule-form"
@@ -125,17 +126,19 @@ export default async function ChatPage({
           <span className="w-full font-mono text-xs text-muted-foreground tabular-nums">
             {chat.telegramId.toString()}
           </span>
-          <div className="flex flex-wrap items-center gap-2">
-            {link && (
-              <Button asChild variant="outline">
-                <a href={link} target="_blank" rel="noopener noreferrer">
-                  <ExternalLink />
-                  Открыть в Telegram
-                </a>
-              </Button>
-            )}
-            {isSuper(v) && <DeleteChatForm chat={chat} />}
-          </div>
+          {(link || isSuper(v)) && (
+            <div className="flex flex-wrap items-center gap-2">
+              {link && (
+                <Button asChild variant="outline">
+                  <a href={link} target="_blank" rel="noopener noreferrer">
+                    <ExternalLink />
+                    Открыть в Telegram
+                  </a>
+                </Button>
+              )}
+              {isSuper(v) && <DeleteChatForm chat={chat} />}
+            </div>
+          )}
         </CardHeader>
         <CardContent className="space-y-4">
           {!isSuper(v) &&
@@ -173,12 +176,13 @@ export default async function ChatPage({
         <Card>
           {/* collapsed by default, like the template cards */}
           <details id="schedule" className="group">
-            <summary className="flex min-h-11 cursor-pointer list-none items-center gap-2 p-4 sm:p-5 [&::-webkit-details-marker]:hidden">
+            <summary className="flex min-h-11 cursor-pointer list-none flex-wrap items-center gap-2 p-4 sm:p-5 [&::-webkit-details-marker]:hidden">
               <ChevronRight
                 className="size-4 shrink-0 transition-transform group-open:rotate-90"
                 aria-hidden
               />
               <CardTitle icon={CalendarClock}>Расписание чата</CardTitle>
+              {!canEdit(v, chat.schedule) && <ReadOnlyBadge />}
             </summary>
             <CardContent>
               <ScheduleForm

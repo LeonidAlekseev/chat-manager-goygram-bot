@@ -46,7 +46,7 @@ function gone(e: unknown) {
 const Item = z
   .object({
     id: Id.optional(), // absent for a new row
-    templateId: Id,
+    templateId: z.string().min(1, "Выберите шаблон").pipe(Id),
     time: z.string().max(100, "Cron — до 100 символов"),
     startDate: z
       .string()
@@ -358,6 +358,61 @@ export async function deleteSchedule(
     await db.schedule.delete({ where: { id: id.data } })
   } catch (e) {
     return gone(e)
+  }
+  revalidate()
+  return {}
+}
+
+// A copy owned by the viewer. Chat bindings stay with the original (a chat has one schedule);
+// items whose template the viewer cannot see are dropped, as the editor would not show them either.
+export async function duplicateSchedule(
+  formData: FormData
+): Promise<{ error?: string }> {
+  const v = await getViewer()
+  if (!v) return EXPIRED
+  if (duplicated(formData, "id")) return NOT_FOUND
+  const id = Id.safeParse(formData.get("id"))
+  if (!id.success) return NOT_FOUND
+  const orig = await db.schedule.findFirst({
+    where: { id: id.data, ...visibleSchedules(v) },
+    include: { items: true },
+  })
+  if (!orig) return NOT_FOUND
+  const seen = new Set(
+    (
+      await db.template.findMany({
+        where: {
+          id: { in: orig.items.map((i) => i.templateId) },
+          ...visibleTemplates(v),
+        },
+        select: { id: true },
+      })
+    ).map((t) => t.id)
+  )
+  try {
+    await db.$transaction(async (tx) => {
+      let name = `${orig.name} (копия)`
+      for (let n = 2; await tx.schedule.count({ where: { name } }); n++)
+        name = `${orig.name} (копия ${n})`
+      await tx.schedule.create({
+        data: {
+          name,
+          authorId: v.id,
+          items: {
+            create: orig.items
+              .filter((i) => seen.has(i.templateId))
+              .map(({ templateId, time, startDate, period }) => ({
+                templateId,
+                time,
+                startDate,
+                period,
+              })),
+          },
+        },
+      })
+    })
+  } catch (e) {
+    return friendly(e)
   }
   revalidate()
   return {}

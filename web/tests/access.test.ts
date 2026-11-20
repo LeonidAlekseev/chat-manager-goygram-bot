@@ -7,11 +7,13 @@ import {
   bindChat,
   bindChats,
   deleteSchedule,
+  duplicateSchedule,
   saveSchedule,
 } from "@/app/(dashboard-layout)/schedules/actions"
 import { sendNow } from "@/app/(dashboard-layout)/send/actions"
 import {
   deleteTemplate,
+  duplicateTemplate,
   saveTemplate,
 } from "@/app/(dashboard-layout)/templates/actions"
 import { beforeEach, describe, expect, it, vi } from "vitest"
@@ -309,6 +311,140 @@ describe("manager scopes (#92)", () => {
       expect(
         (await db.chat.findUniqueOrThrow({ where: { id: chat.c2 } })).scheduleId
       ).toBeNull()
+    })
+  })
+
+  describe("duplicate (#118)", () => {
+    it("copies a visible template to the viewer, editable and not tied to an album", async () => {
+      await db.template.update({
+        where: { id: tpl.super },
+        data: { kind: "copy", sourceChatId: 5, mediaGroupId: "g1" },
+      })
+      expect(
+        (await duplicateTemplate(form({ id: tpl.super }))).error
+      ).toBeUndefined()
+      const copy = await db.template.findFirstOrThrow({
+        where: { name: "t-super (копия)" },
+      })
+      expect(copy).toMatchObject({
+        authorId: m1.id,
+        kind: "copy",
+        sourceChatId: BigInt(5),
+        mediaGroupId: null,
+      })
+      expect(
+        (
+          await saveTemplate(
+            null,
+            form({ id: copy.id, name: "Мой", kind: "text", text: "x" })
+          )
+        ).error
+      ).toBeUndefined()
+    })
+
+    it("a template copy is a clean object: same content and settings, own id, no chats, no link back", async () => {
+      await db.template.update({
+        where: { id: tpl.super },
+        data: {
+          kind: "poll",
+          options: ["Да", "Нет"],
+          anonymous: true,
+          multiple: true,
+          mentionAll: true,
+        },
+      })
+      await duplicateTemplate(form({ id: tpl.super }))
+      const [orig, copy] = await Promise.all([
+        db.template.findUniqueOrThrow({ where: { id: tpl.super } }),
+        db.template.findFirstOrThrow({ where: { name: "t-super (копия)" } }),
+      ])
+      expect(copy.id).not.toBe(orig.id)
+      expect(copy).toMatchObject({
+        authorId: m1.id,
+        text: orig.text,
+        kind: "poll",
+        options: ["Да", "Нет"],
+        anonymous: true,
+        multiple: true,
+        mentionAll: true,
+      })
+      expect(
+        await db.scheduleItem.count({ where: { templateId: copy.id } })
+      ).toBe(0)
+    })
+
+    it("refuses a template the viewer does not see", async () => {
+      expect((await duplicateTemplate(form({ id: tpl.other }))).error).toMatch(
+        /Не найдено/
+      )
+      expect(await db.template.count()).toBe(4)
+    })
+
+    it("copies a foreign schedule to the viewer, without chats and hidden-template items", async () => {
+      await db.chat.update({
+        where: { id: chat.c1 },
+        data: { scheduleId: sch.super },
+      })
+      await db.scheduleItem.create({
+        data: { scheduleId: sch.super, templateId: tpl.other, time: "10:00" },
+      })
+      expect(
+        (await duplicateSchedule(form({ id: sch.super }))).error
+      ).toBeUndefined()
+      const copy = await db.schedule.findFirstOrThrow({
+        where: { name: "s-super (копия)" },
+        include: { items: true, chats: true },
+      })
+      expect(copy.authorId).toBe(m1.id)
+      expect(copy.chats).toEqual([])
+      expect(copy.items.map((i) => i.templateId)).toEqual([tpl.super])
+      const [o] = await db.scheduleItem.findMany({
+        where: { scheduleId: sch.super },
+      })
+      expect(copy.items[0]).toMatchObject({
+        time: o.time,
+        period: o.period,
+        startDate: o.startDate,
+      })
+      expect(copy.items[0].id).not.toBe(o.id)
+      // the original keeps its chat; the copy has none
+      expect(
+        (await db.chat.findUniqueOrThrow({ where: { id: chat.c1 } })).scheduleId
+      ).toBe(sch.super)
+      expect(
+        (await duplicateSchedule(form({ id: sch.super }))).error
+      ).toBeUndefined()
+      expect(
+        await db.schedule.count({ where: { name: "s-super (копия 2)" } })
+      ).toBe(1)
+      // the copy is the manager's own: editable
+      expect(
+        (await deleteSchedule(form({ id: copy.id }))).error
+      ).toBeUndefined()
+    })
+
+    it("refuses a schedule the viewer does not see", async () => {
+      expect((await duplicateSchedule(form({ id: sch.other }))).error).toMatch(
+        /Не найдено/
+      )
+      expect(
+        (await duplicateSchedule(form({ id: [sch.own, sch.super] }))).error
+      ).toMatch(/Не найдено/)
+    })
+
+    it("refuses an item with no template chosen", async () => {
+      const r = await saveSchedule(
+        null,
+        form({
+          name: "Пусто",
+          templateId: "",
+          time: "09:00",
+          startDate: "2030-01-01",
+          period: "day",
+        })
+      )
+      expect(r.error).toBe("Выберите шаблон")
+      expect(await db.schedule.count({ where: { name: "Пусто" } })).toBe(0)
     })
   })
 

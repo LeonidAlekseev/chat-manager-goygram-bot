@@ -144,7 +144,7 @@ export function SendForm({
         </>
       )}
       <fieldset className="grid gap-2">
-        <legend className="mb-1.5 text-sm font-bold text-muted-foreground">
+        <legend className="mb-1.5 text-sm font-bold whitespace-nowrap text-muted-foreground">
           Чаты · {chats.length}
         </legend>
         {chats.length === 0 && <Empty>Нет активных чатов.</Empty>}
