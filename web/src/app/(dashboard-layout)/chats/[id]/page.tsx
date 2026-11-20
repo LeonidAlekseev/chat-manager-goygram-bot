@@ -24,6 +24,7 @@ import { toItemView } from "../../schedules/item-view"
 import { ScheduleForm } from "../../schedules/schedule-form"
 import { assignManagers } from "../actions"
 import { DeleteChatForm } from "../delete-chat-form"
+import { NotAdminBadge, NotAdminHint, managerStatus } from "../member-status"
 
 export const metadata: Metadata = { title: "Чат" }
 
@@ -40,12 +41,16 @@ export default async function ChatPage({
     where: { id, ...visibleChats(v) },
     include: {
       schedule: { include: { items: { orderBy: { time: "asc" } } } },
-      managers: { select: { managerId: true } },
+      // the superadmin sees every assigned manager's admin status (#99), a manager only their own
+      managers: {
+        where: isSuper(v) ? {} : { managerId: v.id },
+        select: { managerId: true, memberStatus: true },
+      },
     },
   })
   if (!chat || chat.deleting) notFound()
   const items = chat.schedule?.items.map(toItemView) ?? []
-  const [schedules, templates, sharedWith, managers] = await Promise.all([
+  const [schedules, templates, sharedWith, managers, me] = await Promise.all([
     db.schedule.findMany({
       where: visibleSchedules(v),
       orderBy: { name: "asc" },
@@ -69,11 +74,25 @@ export default async function ChatPage({
       ? db.manager.findMany({
           where: { role: "manager" },
           orderBy: [{ active: "desc" }, { login: "asc" }],
-          select: { id: true, login: true, name: true, active: true },
+          select: {
+            id: true,
+            login: true,
+            name: true,
+            active: true,
+            telegramUserId: true,
+          },
         })
       : [],
+    db.manager.findUnique({
+      where: { id: v.id },
+      select: { telegramUserId: true },
+    }),
   ])
-  const assigned = new Set(chat.managers.map((m) => m.managerId))
+  const assigned = new Map(
+    chat.managers.map((m) => [m.managerId, m.memberStatus])
+  )
+  const linked = !!me?.telegramUserId
+  const myStatus = isSuper(v) ? null : (chat.managers[0]?.memberStatus ?? null)
   // a chat shared by two managers may follow the other one's schedule: show only that it exists
   const hidden =
     !!chat.scheduleId && !schedules.some((s) => s.id === chat.scheduleId)
@@ -84,7 +103,10 @@ export default async function ChatPage({
     <section className="container grid gap-4 p-4">
       <Card>
         <CardHeader className="flex-row flex-wrap items-center justify-between gap-2 space-y-0">
-          <CardTitle>{chat.title}</CardTitle>
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
+            <CardTitle className="min-w-0 break-words">{chat.title}</CardTitle>
+            {linked && <NotAdminBadge status={myStatus} />}
+          </div>
           <div className="flex flex-wrap items-center gap-2">
             {link && (
               <Button asChild variant="outline">
@@ -97,7 +119,11 @@ export default async function ChatPage({
             {isSuper(v) && <DeleteChatForm chat={chat} />}
           </div>
         </CardHeader>
-        <CardContent>
+        <CardContent className="space-y-4">
+          {!isSuper(v) &&
+            (!linked || myStatus === "member" || myStatus === "absent") && (
+              <NotAdminHint linked={linked} />
+            )}
           <ActionForm action={bindChat} className="flex flex-wrap gap-2">
             <input type="hidden" name="chatId" value={chat.id} />
             <Select
@@ -164,7 +190,10 @@ export default async function ChatPage({
                 </p>
               )}
               {managers.map((m) => (
-                <label key={m.id} className="flex items-center gap-2 text-sm">
+                <label
+                  key={m.id}
+                  className="flex flex-wrap items-center gap-x-2 text-sm"
+                >
                   <input
                     type="checkbox"
                     name="managerId"
@@ -174,6 +203,11 @@ export default async function ChatPage({
                   {m.name || m.login}
                   {!m.active && (
                     <span className="text-muted-foreground">(отключён)</span>
+                  )}
+                  {assigned.has(m.id) && (
+                    <span className="text-muted-foreground">
+                      — {managerStatus(assigned.get(m.id)!, !!m.telegramUserId)}
+                    </span>
                   )}
                 </label>
               ))}

@@ -56,6 +56,9 @@ model ChatManager {
   managerId Int     @map("manager_id")
   chat      Chat    @relation(fields: [chatId], references: [id], onDelete: Cascade)
   manager   Manager @relation(fields: [managerId], references: [id], onDelete: Cascade)
+  // the manager in the chat, per the bot's getChatMember: admin | member | absent | unknown; NULL = not checked yet
+  memberStatus String?   @map("member_status")
+  checkedAt    DateTime? @map("checked_at") @db.Timestamptz(3)
 
   @@id([chatId, managerId])
   @@index([managerId])

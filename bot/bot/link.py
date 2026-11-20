@@ -13,10 +13,17 @@ async def handle_link_start(db: asyncpg.Pool, message: dict[str, Any]) -> str | 
     code = text[len(PREFIX):].strip()
     try:
         # One statement: the code is single-use and a disabled/expired one never matches.
+        # The new account's admin statuses (#99) are checked again.
         linked = await db.fetchval(
             """
-            UPDATE managers SET telegram_user_id = $2, link_code = NULL, link_code_expires_at = NULL
-            WHERE link_code = $1 AND link_code_expires_at > now() AND active RETURNING id
+            WITH m AS (
+                UPDATE managers SET telegram_user_id = $2, link_code = NULL, link_code_expires_at = NULL
+                WHERE link_code = $1 AND link_code_expires_at > now() AND active RETURNING id
+            ), queued AS (
+                UPDATE chat_managers SET member_status = NULL, checked_at = NULL
+                WHERE manager_id IN (SELECT id FROM m)
+            )
+            SELECT id FROM m
             """,
             code, message["from"]["id"])
     except asyncpg.UniqueViolationError:
