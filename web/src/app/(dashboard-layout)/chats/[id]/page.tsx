@@ -195,7 +195,7 @@ export default async function ChatPage({
         </Card>
       )}
       {isSuper(v) && (
-        <Card id="managers" className="scroll-mt-20">
+        <Card id="managers">
           <CardHeader>
             <CardTitle icon={Users}>Менеджеры чата</CardTitle>
           </CardHeader>

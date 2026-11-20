@@ -173,6 +173,11 @@
   }
   html {
     color-scheme: light;
+    /* anchors (#t-N, #schedule, #managers) land below the phone's sticky header */
+    scroll-padding-top: 5rem;
+    @media (width >= 64rem) {
+      scroll-padding-top: 2rem;
+    }
   }
   @media (prefers-reduced-motion: reduce) {
     * {

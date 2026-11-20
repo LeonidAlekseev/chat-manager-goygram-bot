@@ -500,7 +500,11 @@ test("mobile: managers anchor, collapsed bound schedule, t.me link for supergrou
     const top = await page
       .locator("#managers")
       .evaluate((e) => e.getBoundingClientRect().top)
-    expect(top).toBeGreaterThanOrEqual(0)
+    // not under the sticky header (scroll-padding-top on <html>)
+    const header = await page
+      .locator("header")
+      .evaluate((e) => e.getBoundingClientRect().bottom)
+    expect(top).toBeGreaterThanOrEqual(header)
     await page.locator("details#schedule summary").click()
     await expect(page.locator("details#schedule")).toHaveAttribute("open", "")
   } finally {
