@@ -148,7 +148,8 @@ async def _serve(db: asyncpg.Pool, secret: str, settings: Settings, app: Any) ->
     outbox = asyncio.create_task(run_outbox_forever(db, app, user))
     discovery = asyncio.create_task(run_discover_forever(db, user))  # «Найти группы бота» in the panel
     retention = asyncio.create_task(purge_forever(db))
-    admin_checks = asyncio.create_task(run_admin_checks_forever(db, app))  # «Вы не администратор» in the panel
+    # «Вы не администратор» in the panel; start_bot already passed getMe, bot_req works without polling
+    admin_checks = asyncio.create_task(run_admin_checks_forever(db, app))
     runner = asyncio.create_task(app.run())
     # New token or API data: exit and let compose (restart: unless-stopped) start us with them.
     watcher = asyncio.create_task(watch_settings(db, secret, settings))

@@ -37,10 +37,19 @@ async def test_member_status(member, status):
 
 
 async def test_unknown_user_is_absent_and_other_errors_unknown():
-    not_found = RuntimeError('botapi getChatMember http 400: {"description":"Bad Request: user not found"}')
-    bot = FakeBot({(1, 2): not_found, (1, 3): RuntimeError("botapi getChatMember http 403: bot was kicked")})
-    assert await status_of(bot, 1, 2) == "absent"
-    assert await status_of(bot, 1, 3) == "unknown"
+    # the text GoyGram 0.8.29 raises (transports/botapi.py req): the Bot API response dict after the status
+    def http_error(code, description):
+        raw = {"ok": False, "error_code": code, "description": description}
+        return RuntimeError(f"botapi getChatMember http {code}: {raw}")
+
+    bot = FakeBot({
+        (1, 2): http_error(400, "Bad Request: user not found"),
+        (1, 3): http_error(400, "Bad Request: PARTICIPANT_ID_INVALID"),
+        (1, 4): http_error(403, "Forbidden: bot was kicked from the supergroup chat"),
+        (1, 5): http_error(400, "Bad Request: chat not found"),
+        (1, 6): TimeoutError(),
+    })
+    assert [await status_of(bot, 1, u) for u in (2, 3, 4, 5, 6)] == ["absent", "absent", "unknown", "unknown", "unknown"]
 
 
 async def setup(db):
@@ -109,3 +118,25 @@ async def test_a_relink_during_the_check_keeps_the_new_account_due(db):
 
     await check_due(db, Relinking({}), pause=0, batch=1)
     assert await db.fetchval("SELECT count(*) FROM chat_managers WHERE checked_at IS NOT NULL") == 0
+
+
+async def test_a_failed_check_keeps_the_last_status_and_is_retried_within_hours(db):
+    ids = await setup(db)
+    await db.execute("UPDATE chat_managers SET member_status = 'member', checked_at = now() - interval '2 days'")
+    bot = FakeBot({(-1001, 42): TimeoutError(), (-1004, 42): {"status": "administrator"}})
+    await check_due(db, bot, pause=0)
+    assert (await statuses(db, ids["linked"]))[-1001] == "member"  # a 429 or timeout does not hide the badge
+    assert await db.fetchval(
+        "SELECT checked_at < now() - interval '22 hours' AND checked_at > now() - interval '1 day' "
+        "FROM chat_managers WHERE chat_id = $1 AND manager_id = $2", ids[-1001], ids["linked"])
+    await check_due(db, bot, pause=0)
+    assert len(bot.calls) == 2  # not again at once
+    await db.execute("UPDATE chat_managers SET checked_at = checked_at - interval '2 hours' WHERE chat_id = $1", ids[-1001])
+    await check_due(db, bot, pause=0)
+    assert bot.calls[2:] == [(-1001, 42)]
+
+
+async def test_a_pair_never_checked_that_fails_is_unknown(db):
+    ids = await setup(db)
+    await check_due(db, FakeBot({(-1001, 42): TimeoutError(), (-1004, 42): TimeoutError()}), pause=0)
+    assert (await statuses(db, ids["linked"]))[-1001] == "unknown"
