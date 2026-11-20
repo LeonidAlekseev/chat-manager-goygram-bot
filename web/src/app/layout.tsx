@@ -4,8 +4,6 @@ import { cn } from "@/lib/utils"
 
 import "./globals.css"
 
-import { Providers } from "@/providers"
-
 import type { Metadata } from "next"
 import type { ReactNode } from "react"
 
@@ -49,11 +47,9 @@ export default function RootLayout(props: { children: ReactNode }) {
           latoFont.variable
         )}
       >
-        <Providers locale="en">
-          {children}
-          <Toaster />
-          <Sonner />
-        </Providers>
+        {children}
+        <Toaster />
+        <Sonner />
       </body>
     </html>
   )

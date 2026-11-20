@@ -24,7 +24,6 @@
 
   --color-action: hsl(var(--action));
   --color-action-foreground: hsl(var(--action-foreground));
-  --color-action-soft: hsl(var(--action-soft));
 
   --color-secondary: hsl(var(--secondary));
   --color-secondary-foreground: hsl(var(--secondary-foreground));
@@ -203,7 +202,6 @@
   --accent-foreground: 175 77% 26%;
   --action: 17.5 88% 40.4%;
   --action-foreground: 0 0% 100%;
-  --action-soft: 34 100% 91.8%;
   --destructive: 0 74% 42%;
   --destructive-foreground: 0 0% 100%;
   --destructive-soft: 0 93% 94%;

@@ -33,7 +33,7 @@ export const dynamic = "force-dynamic"
 
 // icon + word, never color alone
 const STATUS = {
-  scheduled: { label: "Запланировано", variant: "action", icon: Clock },
+  scheduled: { label: "Запланировано", variant: "default", icon: Clock },
   queued: { label: "В очереди", variant: "secondary", icon: LoaderCircle },
   pending: { label: "Отправляется", variant: "secondary", icon: LoaderCircle },
   sent: { label: "Отправлено", variant: "default", icon: CircleCheck },

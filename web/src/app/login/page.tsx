@@ -1,12 +1,13 @@
 "use client"
 
 import { useActionState } from "react"
-import { LogIn, Send } from "lucide-react"
+import { LogIn } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Brand } from "@/components/layout"
 import { login } from "./actions"
 
 export default function LoginPage() {
@@ -14,12 +15,7 @@ export default function LoginPage() {
 
   return (
     <main className="flex min-h-dvh w-full flex-col items-center justify-center gap-6 p-4">
-      <p className="flex items-center gap-2">
-        <span className="grid size-10 place-items-center rounded-xl bg-primary text-primary-foreground">
-          <Send className="size-5" aria-hidden />
-        </span>
-        <span className="text-2xl font-black tracking-tight">TaskManager</span>
-      </p>
+      <Brand />
       <Card className="w-full max-w-sm">
         <CardHeader>
           <CardTitle className="text-xl font-black">Вход в панель</CardTitle>

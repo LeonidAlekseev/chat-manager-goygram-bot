@@ -77,7 +77,7 @@ export function CronField({
         )}
         {runs.length > 1 &&
           runs[1].getTime() - runs[0].getTime() === 60_000 && (
-            <p className="text-action">
+            <p className="text-destructive">
               Отправка каждую минуту: каждый привязанный чат получит сообщение
               ежеминутно.
             </p>

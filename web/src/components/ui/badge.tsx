@@ -14,7 +14,6 @@ export const badgeVariants = cva(
         default: "border-transparent bg-primary-soft text-primary",
         secondary: "border-border bg-background text-muted-foreground",
         destructive: "border-transparent bg-destructive-soft text-destructive",
-        action: "border-transparent bg-action-soft text-action",
         outline: "text-foreground",
       },
     },

@@ -139,7 +139,7 @@ function RailLink({ s, current }: { s: Section; current: boolean }) {
   )
 }
 
-function Brand() {
+export function Brand() {
   return (
     <Link
       href="/chats"
