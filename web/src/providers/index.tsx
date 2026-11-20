@@ -2,7 +2,6 @@ import type { LocaleType } from "@/types"
 import type { ReactNode } from "react"
 
 import { SettingsProvider } from "@/contexts/settings-context"
-import { SidebarProvider } from "@/components/ui/sidebar"
 import { ThemeProvider } from "./theme-provider"
 
 export function Providers({
@@ -14,9 +13,7 @@ export function Providers({
 }>) {
   return (
     <SettingsProvider locale={locale}>
-      <ThemeProvider>
-        <SidebarProvider>{children}</SidebarProvider>
-      </ThemeProvider>
+      <ThemeProvider>{children}</ThemeProvider>
     </SettingsProvider>
   )
 }
