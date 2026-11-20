@@ -14,8 +14,8 @@ import { Toaster } from "@/components/ui/toaster"
 // More info: https://nextjs.org/docs/app/building-your-application/optimizing/metadata
 export const metadata: Metadata = {
   title: {
-    template: "%s | TaskManager",
-    default: "TaskManager",
+    template: "%s | ChatManager",
+    default: "ChatManager",
   },
   description: "",
   metadataBase: new URL(process.env.BASE_URL ?? "http://localhost:3000"),

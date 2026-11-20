@@ -9,7 +9,7 @@ import { CHAT } from "./global-setup"
 
 test.use({ viewport: { width: 390, height: 844 } })
 
-test("mobile: no horizontal overflow, chat title visible, light /v2 theme only, TaskManager", async ({
+test("mobile: no horizontal overflow, chat title visible, light /v2 theme only, ChatManager", async ({
   page,
 }) => {
   await page.emulateMedia({ colorScheme: "dark" }) // the panel ignores the system theme
@@ -38,7 +38,7 @@ test("mobile: no horizontal overflow, chat title visible, light /v2 theme only, 
     "/settings",
   ]) {
     await page.goto(path)
-    await expect(page).toHaveTitle(/TaskManager/)
+    await expect(page).toHaveTitle(/ChatManager/)
     // body's overflow-x-hidden would mask a real overflow: measure without it
     await page.addStyleTag({ content: "body{overflow-x:visible!important}" })
     await page.evaluate(() =>
