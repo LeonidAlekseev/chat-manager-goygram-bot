@@ -14,12 +14,13 @@ import {
   visibleSchedules,
   visibleTemplates,
 } from "@/lib/access"
+import { normalizeCron, parseCron } from "@/lib/cron"
 import { db } from "@/lib/db"
 import { TIMEZONE, nowInZone } from "@/lib/timezone"
 
 export type ActionState = { error?: string } | null
 
-const PERIODS = ["none", "day", "week", "twoweek", "month"] as const
+const PERIODS = ["none", "day", "week", "twoweek", "month", "custom"] as const
 
 // Postgres INT: a larger id can never exist, and Prisma would throw on it
 const Id = z
@@ -41,16 +42,29 @@ function gone(e: unknown) {
   throw e
 }
 
-const Item = z.object({
-  id: Id.optional(), // absent for a new row
-  templateId: Id,
-  time: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Время — ЧЧ:ММ"),
-  startDate: z
-    .string()
-    .regex(/^\d{4}-\d{2}-\d{2}$/, "Дата старта — ГГГГ-ММ-ДД")
-    .transform((d) => new Date(`${d}T00:00:00Z`)),
-  period: z.enum(PERIODS, { message: "Неизвестный период" }),
-})
+// a custom item keeps its cron in `time`: the (schedule, template, time) key and the old bot both hold
+const Item = z
+  .object({
+    id: Id.optional(), // absent for a new row
+    templateId: Id,
+    time: z.string().max(100, "Cron — до 100 символов"),
+    startDate: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/, "Дата старта — ГГГГ-ММ-ДД")
+      .transform((d) => new Date(`${d}T00:00:00Z`)),
+    period: z.enum(PERIODS, { message: "Неизвестный период" }),
+  })
+  .refine(
+    (i) => i.period === "custom" || /^([01]\d|2[0-3]):[0-5]\d$/.test(i.time),
+    "Время — ЧЧ:ММ"
+  )
+  .refine(
+    (i) => i.period !== "custom" || parseCron(i.time),
+    "Cron — 5 полей: минута час день месяц день_недели"
+  )
+  .transform((i) =>
+    i.period === "custom" ? { ...i, time: normalizeCron(i.time) } : i
+  )
 
 const Schema = z.object({
   id: Id.optional(),

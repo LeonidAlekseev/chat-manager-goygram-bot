@@ -123,3 +123,26 @@ async def test_minutes_dropped_by_the_catch_up_limit_are_logged(pool, caplog):
     caplog.clear()
     await run_pending(pool, FakeTelegram(), T0, T0 + 2 * MIN)
     assert "skipped" not in caplog.text
+
+
+async def test_an_every_minute_cron_catches_up_only_its_latest_slot(pool):
+    await _bind(pool, "* * * * *")
+    await pool.execute("UPDATE schedule_items SET period = 'custom'")
+    tg = FakeTelegram()
+    await run_pending(pool, tg, T0 - 10 * MIN, T0)  # down 10 minutes, back at 07:59: one send, not 10
+    assert len(tg.calls) == 1
+    last = await run_pending(pool, tg, T0, T0 + 3 * MIN)  # a slow tick: 08:00–08:02, only 08:02 sent
+    await run_pending(pool, tg, T0 - MIN, last)  # a restart re-runs them: nothing twice
+    assert len(tg.calls) == 2
+    assert [r[0] for r in await pool.fetch(
+        "SELECT to_char(slot AT TIME ZONE 'UTC', 'HH24:MI') FROM send_logs ORDER BY slot")] == ["04:59", "05:02"]
+
+
+async def test_a_broken_cron_is_skipped_with_a_warning_and_the_rest_still_send(pool, caplog):
+    await _bind(pool, "08:00")
+    await pool.execute("INSERT INTO schedule_items (schedule_id, template_id, time, start_date, period) "
+                       "VALUES (1, 1, '9' || repeat('9', 5000) || ' * * * *', $1, 'custom')", date(2026, 3, 1))
+    tg = FakeTelegram()
+    await run_due(pool, tg, T0 + MIN)  # 08:00
+    assert len(tg.calls) == 1
+    assert "schedule item 2 skipped" in caplog.text

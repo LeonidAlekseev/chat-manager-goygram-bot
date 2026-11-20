@@ -8,15 +8,20 @@ from typing import Any
 import asyncpg
 
 from bot.chats import migrate_chat
+from bot.cron import cron_matches
 from bot.sender import FETCH_TIMEOUT, Telegram, fetch_members, send_template
 
 log = logging.getLogger(__name__)
 
 
 def is_due(time: str, start: date, period: str, now: datetime) -> bool:
-    """Whether a schedule item fires at the local minute `now`."""
+    """Whether a schedule item fires at the local minute `now`; a `custom` item's `time` is its cron."""
     today = now.date()
-    if now.strftime("%H:%M") != time or today < start:
+    if today < start:
+        return False
+    if period == "custom":
+        return cron_matches(time, now)
+    if now.strftime("%H:%M") != time:
         return False
     days = (today - start).days
     if period == "none":
@@ -155,8 +160,13 @@ async def snapshot_members(db: asyncpg.Pool, user: Any, polls: list[tuple[str, i
         log.warning("member snapshot ran out of time")
 
 
-async def run_due(db: asyncpg.Pool, tg: Telegram, now: datetime, user: Any = None) -> None:
+async def run_due(
+    db: asyncpg.Pool, tg: Telegram, now: datetime, user: Any = None, until: datetime | None = None
+) -> None:
     """Sends every item due at `now` (aware, in TIMEZONE_NAME) to the active chats bound to its schedule.
+
+    `until`: the last minute of this catch-up run. A custom item due again by then waits for that later
+    slot, so downtime does not burst an every-minute cron: it catches up only its latest missed slot.
 
     Inserting the (chat, item, slot) log row claims the send, so a restart within the minute sends
     nothing twice. A crash between the claim and the send leaves a `pending` row: the send is skipped, and fail_stuck later marks it an error.
@@ -169,12 +179,21 @@ async def run_due(db: asyncpg.Pool, tg: Telegram, now: datetime, user: Any = Non
         "FROM chats c JOIN schedule_items i ON i.schedule_id = c.schedule_id "
         "JOIN templates t ON t.id = i.template_id "
         # a chat bound or reactivated after the slot (both bump updated_at) does not get it on catch-up
-        "WHERE c.active AND i.time = $1 AND c.updated_at < ($2::timestamptz AT TIME ZONE 'UTC') ORDER BY c.id, i.id",
+        "WHERE c.active AND (i.time = $1 OR i.period = 'custom') "
+        "AND c.updated_at < ($2::timestamptz AT TIME ZONE 'UTC') ORDER BY c.id, i.id",
         slot.strftime("%H:%M"), slot + MINUTE,
     )
+    utc = slot.astimezone(UTC)  # step in UTC: local time may jump at DST
+    later = [(utc + k * MINUTE).astimezone(slot.tzinfo) for k in range(1, (until - utc) // MINUTE + 1)] if until else []
     polls = []
     for r in rows:
-        if not is_due(r["time"], r["start_date"], r["period"], slot):
+        try:
+            if not is_due(r["time"], r["start_date"], r["period"], slot) or (
+                r["period"] == "custom" and any(is_due(r["time"], r["start_date"], "custom", t) for t in later)
+            ):
+                continue
+        except ValueError as e:  # a bad cron (also a number too long for int())
+            log.warning("schedule item %s skipped: %r (%s)", r["item_id"], r["time"], e)
             continue
         log_id = await db.fetchval(
             CLAIM, r["chat_id"], r["item_id"], r["template_id"], slot, None, r["text"], r["options"]
@@ -200,7 +219,7 @@ async def run_pending(db: asyncpg.Pool, tg: Telegram, last: datetime | None, now
     if last is not None and (lost := (slot - _minute(last)) // MINUTE - 1) > 0:
         log.warning("catch-up limit: skipped %d minute(s) of schedules after %s", lost, _minute(last))
     while slot <= end:
-        await run_due(db, tg, slot.astimezone(now.tzinfo), user)
+        await run_due(db, tg, slot.astimezone(now.tzinfo), user, end)
         slot += MINUTE
     return slot - MINUTE
 

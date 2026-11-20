@@ -183,6 +183,69 @@ test("schedule form: a saved time sticks, and a second save does not revert it",
   expect(await dbTime()).toBe("09:00")
 })
 
+test("schedule form: a custom period saves a cron picked from the presets", async ({
+  page,
+}) => {
+  const name = `E2E cron ${Date.now()}`
+  const tpl = await db.template.create({
+    data: { name, kind: "text", text: "hi" },
+  })
+  const sch = await db.schedule.create({
+    data: {
+      name,
+      items: {
+        create: {
+          templateId: tpl.id,
+          time: "08:00",
+          startDate: new Date("2999-01-01T00:00:00Z"),
+          period: "day",
+        },
+      },
+    },
+  })
+  await page.goto("/login")
+  await page.getByLabel("Логин").fill(LOGIN)
+  await page.getByLabel("Пароль").fill(PASSWORD)
+  await page.getByRole("button", { name: "Войти" }).click()
+  await page.waitForURL("**/chats")
+
+  await page.goto("/schedules")
+  const item = page.locator("details").filter({
+    has: page.locator("summary", { hasText: name }),
+  })
+  await item.locator("summary").click()
+  await item.getByLabel("Периодичность").selectOption("custom")
+  const cron = item.getByLabel(/^Cron/)
+  await cron.fill("61 * * * *")
+  await expect(item.getByText(/Неверный cron/)).toBeVisible()
+  await item
+    .getByLabel("Быстрый выбор")
+    .selectOption({ label: "Каждую минуту" })
+  await expect(item.getByText(/ежеминутно/)).toBeVisible()
+  await item
+    .getByLabel("Быстрый выбор")
+    .selectOption({ label: "Каждые 15 минут" })
+  await expect(cron).toHaveValue("*/15 * * * *")
+  await expect(
+    item.getByText(
+      /каждые 15 мин\. Ближайшие: 2999-01-01 00:00, 2999-01-01 00:15/
+    )
+  ).toBeVisible()
+  await expect(item.getByText(/ежеминутно/)).toBeHidden()
+  await item.getByRole("button", { name: "Сохранить", exact: true }).click()
+  await expect
+    .poll(async () =>
+      db.scheduleItem.findFirstOrThrow({
+        where: { scheduleId: sch.id },
+        select: { time: true, period: true },
+      })
+    )
+    .toEqual({ time: "*/15 * * * *", period: "custom" })
+  await page.reload()
+  await item.locator("summary").click()
+  await expect(item.getByLabel(/^Cron/)).toHaveValue("*/15 * * * *")
+})
+
 test("journal: 200 rows per page, «Дальше» shows the rest", async ({
   page,
 }) => {

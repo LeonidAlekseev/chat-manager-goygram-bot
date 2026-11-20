@@ -21,3 +21,8 @@ export function toItemView(i: {
     period: i.period,
   }
 }
+
+/** Timed items by time, then custom ones: as text a cron like `0 * * * *` would sort before 08:00. */
+export const byTime = (a: ItemView, b: ItemView) =>
+  +(a.period === "custom") - +(b.period === "custom") ||
+  (a.time < b.time ? -1 : a.time > b.time ? 1 : 0)

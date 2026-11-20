@@ -20,6 +20,8 @@ import {
 import { Input } from "@/components/ui/input"
 import { Select } from "@/components/ui/select"
 import { saveSchedule } from "./actions"
+import { CronField } from "./cron-field"
+import { byTime } from "./item-view"
 
 const PERIODS = [
   ["none", "Один раз"],
@@ -27,6 +29,7 @@ const PERIODS = [
   ["week", "Каждую неделю"],
   ["twoweek", "Раз в две недели"],
   ["month", "Каждый месяц"],
+  ["custom", "Своя периодичность (cron)"],
 ] as const
 
 const labelCls = "grid gap-1 text-sm font-medium"
@@ -96,13 +99,16 @@ export function ScheduleForm({
   )
   const [rows, setRows] = useState(() =>
     schedule
-      ? schedule.items.map((item, key) => ({ ...item, key }))
+      ? [...schedule.items].sort(byTime).map((item, key) => ({ ...item, key }))
       : templates.length
         ? [newRow(0)]
         : []
   )
   const [name, setName] = useState(schedule?.name ?? "")
   const [nextKey, setNextKey] = useState(rows.length)
+
+  const edit = (key: number, patch: Partial<ItemView>) =>
+    setRows(rows.map((x) => (x.key === key ? { ...x, ...patch } : x)))
 
   function addRow() {
     setRows([...rows, newRow(nextKey)])
@@ -153,29 +159,42 @@ export function ScheduleForm({
                 ))}
               </Select>
             </label>
-            <label className={labelCls}>
-              Время ({timezone})
-              <Input
-                type="time"
-                name="time"
-                defaultValue={r.time}
-                required
-                className="sm:w-28"
+            {r.period === "custom" ? (
+              <CronField
+                defaultValue={r.time.includes(" ") ? r.time : "0 * * * *"}
+                timezone={timezone}
+                startDate={r.startDate}
               />
-            </label>
+            ) : (
+              <label className={labelCls}>
+                Время ({timezone})
+                <Input
+                  type="time"
+                  name="time"
+                  defaultValue={r.time.includes(":") ? r.time : "08:00"}
+                  required
+                  className="sm:w-28"
+                />
+              </label>
+            )}
             <label className={labelCls}>
               Дата старта
               <Input
                 type="date"
                 name="startDate"
                 defaultValue={r.startDate}
+                onChange={(e) => edit(r.key, { startDate: e.target.value })}
                 required
                 className="sm:w-40"
               />
             </label>
             <label className={labelCls}>
               Периодичность
-              <Select name="period" defaultValue={r.period}>
+              <Select
+                name="period"
+                value={r.period}
+                onChange={(e) => edit(r.key, { period: e.target.value })}
+              >
                 {PERIODS.map(([v, label]) => (
                   <option key={v} value={v}>
                     {label}
