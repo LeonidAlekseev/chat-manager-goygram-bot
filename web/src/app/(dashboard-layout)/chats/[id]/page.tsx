@@ -36,7 +36,7 @@ import { toItemView } from "../../schedules/item-view"
 import { ScheduleForm } from "../../schedules/schedule-form"
 import { assignManagers } from "../actions"
 import { DeleteChatForm } from "../delete-chat-form"
-import { NotAdminBadge, NotAdminHint, managerStatus } from "../member-status"
+import { AbsentBadge, MentionHint, managerStatus } from "../member-status"
 
 export const metadata: Metadata = { title: "Чат" }
 
@@ -130,7 +130,7 @@ export default async function ChatPage({
             >
               ID {chat.telegramId.toString()}
             </Badge>
-            {linked && <NotAdminBadge status={myStatus} />}
+            {linked && <AbsentBadge status={myStatus} />}
           </div>
           {(link || isSuper(v)) && (
             <div className="flex flex-wrap items-center gap-2">
@@ -148,7 +148,7 @@ export default async function ChatPage({
         </CardHeader>
         <CardContent className="space-y-4">
           {!isSuper(v) && (!linked || myStatus === "absent") && (
-            <NotAdminHint linked={linked} />
+            <MentionHint linked={linked} />
           )}
           <ActionForm action={bindChat} className="flex flex-wrap gap-2">
             <input type="hidden" name="chatId" value={chat.id} />
