@@ -1,4 +1,5 @@
 import { notFound, redirect } from "next/navigation"
+import { ChevronRight, ExternalLink, Link2, Save } from "lucide-react"
 
 import type { Metadata } from "next"
 
@@ -10,6 +11,7 @@ import {
   visibleSchedules,
   visibleTemplates,
 } from "@/lib/access"
+import { chatLink } from "@/lib/chat-link"
 import { db } from "@/lib/db"
 import { TIMEZONE } from "@/lib/timezone"
 
@@ -95,6 +97,8 @@ export default async function ChatPage({
   const hidden =
     !!chat.scheduleId && !schedules.some((s) => s.id === chat.scheduleId)
 
+  const link = chatLink(chat.telegramId)
+
   return (
     <section className="container grid gap-4 p-4">
       <Card>
@@ -103,7 +107,17 @@ export default async function ChatPage({
             <CardTitle className="min-w-0 break-words">{chat.title}</CardTitle>
             {linked && <NotAdminBadge status={myStatus} />}
           </div>
-          {isSuper(v) && <DeleteChatForm chat={chat} />}
+          <div className="flex flex-wrap items-center gap-2">
+            {link && (
+              <Button asChild variant="outline">
+                <a href={link} target="_blank" rel="noopener noreferrer">
+                  <ExternalLink />
+                  Открыть в Telegram
+                </a>
+              </Button>
+            )}
+            {isSuper(v) && <DeleteChatForm chat={chat} />}
+          </div>
         </CardHeader>
         <CardContent className="space-y-4">
           {!isSuper(v) &&
@@ -131,6 +145,7 @@ export default async function ChatPage({
               ))}
             </Select>
             <Button type="submit" variant="outline">
+              <Link2 />
               Привязать
             </Button>
           </ActionForm>
@@ -138,24 +153,31 @@ export default async function ChatPage({
       </Card>
       {chat.schedule && !hidden && (
         <Card>
-          <CardHeader>
-            <CardTitle>Расписание чата</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <ScheduleForm
-              key={JSON.stringify(items)} // remount on saved changes, or the form resets to stale values
-              schedule={{ ...chat.schedule, items }}
-              timezone={TIMEZONE}
-              templates={templates}
-              chatId={chat.id}
-              sharedWith={sharedWith}
-              own={canEdit(v, chat.schedule)}
-            />
-          </CardContent>
+          {/* collapsed by default, like the template cards */}
+          <details id="schedule" className="group">
+            <summary className="flex cursor-pointer list-none items-center gap-2 p-6 [&::-webkit-details-marker]:hidden">
+              <ChevronRight
+                className="size-4 shrink-0 transition-transform group-open:rotate-90"
+                aria-hidden
+              />
+              <CardTitle>Расписание чата</CardTitle>
+            </summary>
+            <CardContent>
+              <ScheduleForm
+                key={JSON.stringify(items)} // remount on saved changes, or the form resets to stale values
+                schedule={{ ...chat.schedule, items }}
+                timezone={TIMEZONE}
+                templates={templates}
+                chatId={chat.id}
+                sharedWith={sharedWith}
+                own={canEdit(v, chat.schedule)}
+              />
+            </CardContent>
+          </details>
         </Card>
       )}
       {isSuper(v) && (
-        <Card>
+        <Card id="managers" className="scroll-mt-24">
           <CardHeader>
             <CardTitle>Менеджеры чата</CardTitle>
           </CardHeader>
@@ -190,6 +212,7 @@ export default async function ChatPage({
                 </label>
               ))}
               <Button type="submit" variant="outline" className="w-fit">
+                <Save />
                 Сохранить менеджеров
               </Button>
             </ActionForm>

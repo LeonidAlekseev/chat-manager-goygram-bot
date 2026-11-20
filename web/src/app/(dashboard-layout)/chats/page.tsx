@@ -1,5 +1,6 @@
 import Link from "next/link"
 import { redirect } from "next/navigation"
+import { CalendarClock, ExternalLink, Save, Users } from "lucide-react"
 
 import type { Metadata } from "next"
 
@@ -9,6 +10,7 @@ import {
   visibleChats,
   visibleSchedules,
 } from "@/lib/access"
+import { chatLink } from "@/lib/chat-link"
 import { db } from "@/lib/db"
 import { discoveryView } from "@/lib/settings"
 
@@ -32,11 +34,15 @@ export default async function ChatsPage() {
     db.chat.findMany({
       where: visibleChats(v),
       orderBy: [{ active: "desc" }, { title: "asc" }],
-      // the viewer's own admin status only (#99); the superadmin is not assigned, so gets none
       include: {
         managers: {
-          where: { managerId: v.id },
-          select: { memberStatus: true },
+          // a manager gets only their own row: their admin status (#99)
+          where: isSuper(v) ? {} : { managerId: v.id },
+          select: {
+            managerId: true,
+            memberStatus: true,
+            manager: { select: { name: true, login: true } },
+          },
         },
       },
     }),
@@ -52,6 +58,8 @@ export default async function ChatsPage() {
   ])
   // an unlinked manager's statuses are of an old account or none: not shown
   const linked = !!me?.telegramUserId
+  const myStatus = (chat: (typeof chats)[number]) =>
+    chat.managers.find((m) => m.managerId === v.id)?.memberStatus ?? null
   const scheduleName = (id: number | null) =>
     id &&
     (schedules.find((s) => s.id === id)?.name ?? "Расписание другого менеджера")
@@ -66,9 +74,7 @@ export default async function ChatsPage() {
           {isSuper(v) && <DiscoverChats scan={scan} />}
           {!isSuper(v) &&
             chats.some(
-              (c) =>
-                !linked ||
-                ["member", "absent"].includes(c.managers[0]?.memberStatus ?? "")
+              (c) => !linked || ["member", "absent"].includes(myStatus(c) ?? "")
             ) && <NotAdminHint linked={linked} />}
           {chats.length === 0 ? (
             <p className="text-muted-foreground">
@@ -77,70 +83,100 @@ export default async function ChatsPage() {
           ) : (
             // one markup: a card per chat on a phone, table-like columns from md up
             <div className="grid text-sm">
-              <div className="hidden gap-4 py-2 font-medium text-muted-foreground md:grid md:grid-cols-[minmax(0,2fr)_auto_auto_minmax(0,1fr)_auto]">
+              <div className="hidden gap-4 py-2 font-medium text-muted-foreground md:grid md:grid-cols-[minmax(0,2fr)_auto_minmax(0,1fr)_auto]">
                 <span>Название</span>
-                <span>Telegram ID</span>
-                <span>Статус</span>
+                <span>Telegram ID · Статус</span>
                 <span>Расписание</span>
                 <span />
               </div>
-              {chats.map((chat) => (
-                <div
-                  key={chat.id}
-                  className="relative grid gap-2 border-t py-3 pr-12 md:pr-0 md:grid-cols-[minmax(0,2fr)_auto_auto_minmax(0,1fr)_auto] md:items-center md:gap-4 md:py-2"
-                >
-                  <div className="grid min-w-0 gap-1">
-                    <ActionForm action={renameChat} className="flex gap-2">
-                      <input type="hidden" name="id" value={chat.id} />
-                      <Input
-                        className="min-w-0"
-                        name="title"
-                        defaultValue={chat.title}
-                        aria-label={`Название чата ${chat.telegramId}`}
-                        required
-                        maxLength={255}
-                      />
-                      <Button type="submit" variant="outline">
-                        Сохранить
-                      </Button>
-                    </ActionForm>
-                    {linked && (
-                      <NotAdminBadge
-                        status={chat.managers[0]?.memberStatus ?? null}
+              {chats.map((chat) => {
+                const link = chatLink(chat.telegramId)
+                return (
+                  <div
+                    key={chat.id}
+                    className="relative grid gap-2 border-t py-3 pr-12 md:pr-0 md:grid-cols-[minmax(0,2fr)_auto_minmax(0,1fr)_auto] md:items-center md:gap-4 md:py-2"
+                  >
+                    <div className="grid min-w-0 gap-1">
+                      <ActionForm action={renameChat} className="flex gap-2">
+                        <input type="hidden" name="id" value={chat.id} />
+                        <Input
+                          className="min-w-0"
+                          name="title"
+                          defaultValue={chat.title}
+                          aria-label={`Название чата ${chat.telegramId}`}
+                          required
+                          maxLength={255}
+                        />
+                        <Button type="submit" variant="outline">
+                          <Save />
+                          Сохранить
+                        </Button>
+                      </ActionForm>
+                      {linked && <NotAdminBadge status={myStatus(chat)} />}
+                    </div>
+                    <span className="flex flex-wrap items-center gap-x-2 gap-y-1 whitespace-nowrap">
+                      <span className="font-mono text-muted-foreground md:text-foreground">
+                        {chat.telegramId.toString()}
+                      </span>
+                      <span aria-hidden>·</span>
+                      {chat.deleting ? (
+                        <Badge variant="secondary">Удаляется…</Badge>
+                      ) : chat.active ? (
+                        <Badge>Активен</Badge>
+                      ) : (
+                        <Badge variant="secondary">Бот удалён</Badge>
+                      )}
+                    </span>
+                    {chat.deleting ? (
+                      <span />
+                    ) : (
+                      <span className="flex flex-wrap items-center gap-x-4 gap-y-1">
+                        <Link
+                          href={`/chats/${chat.id}`}
+                          className="inline-flex items-center gap-1 whitespace-nowrap underline underline-offset-4"
+                        >
+                          <CalendarClock className="size-4" aria-hidden />
+                          {scheduleName(chat.scheduleId) ||
+                            "Настроить расписание"}
+                        </Link>
+                        {isSuper(v) && (
+                          <Link
+                            href={`/chats/${chat.id}#managers`}
+                            className="inline-flex items-center gap-1 whitespace-nowrap underline underline-offset-4"
+                          >
+                            <Users className="size-4" aria-hidden />
+                            Настроить менеджеров
+                          </Link>
+                        )}
+                        {link && (
+                          <a
+                            href={link}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 whitespace-nowrap underline underline-offset-4"
+                          >
+                            <ExternalLink className="size-4" aria-hidden />
+                            Открыть в Telegram
+                          </a>
+                        )}
+                        {isSuper(v) && chat.managers.length > 0 && (
+                          <span className="basis-full text-xs text-muted-foreground">
+                            {chat.managers
+                              .map((m) => m.manager.name || m.manager.login)
+                              .join(", ")}
+                          </span>
+                        )}
+                      </span>
+                    )}
+                    {!chat.deleting && isSuper(v) && (
+                      <DeleteChatForm
+                        chat={chat}
+                        className="absolute right-0 top-3 md:static"
                       />
                     )}
                   </div>
-                  <span className="font-mono text-muted-foreground md:text-foreground">
-                    {chat.telegramId.toString()}
-                  </span>
-                  <span>
-                    {chat.deleting ? (
-                      <Badge variant="secondary">Удаляется…</Badge>
-                    ) : chat.active ? (
-                      <Badge>Активен</Badge>
-                    ) : (
-                      <Badge variant="secondary">Бот удалён</Badge>
-                    )}
-                  </span>
-                  <span>
-                    {!chat.deleting && (
-                      <Link
-                        href={`/chats/${chat.id}`}
-                        className="underline underline-offset-4"
-                      >
-                        {scheduleName(chat.scheduleId) ||
-                          "Настроить расписание"}
-                      </Link>
-                    )}
-                  </span>
-                  {!chat.deleting && isSuper(v) && (
-                    <DeleteChatForm
-                      chat={chat}
-                      className="absolute right-0 top-3 md:static"
-                    />
-                  )}
-                </div>
-              ))}
+                )
+              })}
             </div>
           )}
         </CardContent>

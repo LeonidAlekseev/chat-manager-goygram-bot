@@ -1,6 +1,7 @@
 "use client"
 
 import { useActionState } from "react"
+import { Save } from "lucide-react"
 
 import type { ActionState } from "./actions"
 
@@ -22,9 +23,10 @@ export function EditManagerForm({
     null
   )
   return (
-    <form action={action} className="flex flex-wrap gap-2">
+    <form action={action} className="flex flex-wrap gap-2 sm:flex-nowrap">
       <input type="hidden" name="id" value={id} />
       <Input
+        className="min-w-0 flex-1"
         name="name"
         defaultValue={name}
         aria-label={`Имя ${login}`}
@@ -32,6 +34,7 @@ export function EditManagerForm({
         maxLength={255}
       />
       <Input
+        className="min-w-0 flex-1"
         name="password"
         type="password"
         placeholder="Новый пароль"
@@ -40,8 +43,15 @@ export function EditManagerForm({
         maxLength={72}
         autoComplete="new-password"
       />
-      <Button type="submit" variant="outline" disabled={pending}>
-        Сохранить
+      <Button
+        type="submit"
+        variant="outline"
+        disabled={pending}
+        aria-label="Сохранить"
+        className="max-sm:w-9 max-sm:px-0"
+      >
+        <Save />
+        <span className="max-sm:hidden">Сохранить</span>
       </Button>
       {state?.error && (
         <p className="w-full text-sm text-destructive">{state.error}</p>

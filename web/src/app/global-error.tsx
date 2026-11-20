@@ -49,7 +49,7 @@ export default function Error({
         </CardContent>
         <CardFooter className="flex justify-center">
           <Button onClick={reset} variant="outline">
-            <RefreshCw className="mr-2 h-4 w-4" /> Try again
+            <RefreshCw /> Try again
           </Button>
         </CardFooter>
       </Card>

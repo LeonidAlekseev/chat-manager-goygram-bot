@@ -18,7 +18,7 @@ export function BottomBarHeader() {
           height={24}
           width={24}
         />
-        <span>OzonWaao</span>
+        <span>TaskManager</span>
       </Link>
       <div className="flex gap-2">
         <FullscreenToggle />
