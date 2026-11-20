@@ -147,6 +147,9 @@ describe("schedules", () => {
     ["a bad time", { time: "24:00" }],
     ["an unknown period", { period: "yearly" }],
     ["a bad date", { startDate: "01.03.2026" }],
+    ["a bad cron", { period: "custom", time: "60 * * * *" }],
+    ["a time for a cron", { period: "custom", time: "08:00" }],
+    ["a cron for a time", { time: "* * * * *" }],
   ])("rejects an item with %s", async (_, over) => {
     const r = await saveSchedule(
       null,
@@ -154,6 +157,25 @@ describe("schedules", () => {
     )
     expect(r.error).toBeTruthy()
     expect(await db.schedule.count()).toBe(0)
+  })
+
+  it("saves a custom item's cron, spaces normalised, in its time", async () => {
+    const r = await saveSchedule(
+      null,
+      form({ name: "S" }, [
+        {
+          ...morning,
+          templateId: tpl,
+          period: "custom",
+          time: " */5  * * * * ",
+        },
+      ])
+    )
+    expect(r.error).toBeUndefined()
+    const s = await db.schedule.findFirstOrThrow()
+    expect(await itemsOf(s.id)).toEqual([
+      { ...morning, templateId: tpl, period: "custom", time: "*/5 * * * *" },
+    ])
   })
 
   it("rejects a one-time item in the past, accepts one in the future and repeating ones", async () => {

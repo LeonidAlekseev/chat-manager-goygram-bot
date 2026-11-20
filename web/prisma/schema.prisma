@@ -112,9 +112,9 @@ model ScheduleItem {
   id         Int       @id @default(autoincrement())
   scheduleId Int       @map("schedule_id")
   templateId Int       @map("template_id")
-  time       String // HH:MM in TIMEZONE_NAME
+  time       String // HH:MM in TIMEZONE_NAME, or the cron of a custom item
   startDate  DateTime  @default(dbgenerated("CURRENT_DATE")) @map("start_date") @db.Date
-  period     String    @default("day") // none | day | week | twoweek | month
+  period     String    @default("day") // none | day | week | twoweek | month | custom (then `time` holds a 5-field cron)
   schedule   Schedule  @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
   template   Template  @relation(fields: [templateId], references: [id], onDelete: Restrict)
   sendLogs   SendLog[]

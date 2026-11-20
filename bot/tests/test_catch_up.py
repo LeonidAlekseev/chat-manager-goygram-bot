@@ -123,3 +123,15 @@ async def test_minutes_dropped_by_the_catch_up_limit_are_logged(pool, caplog):
     caplog.clear()
     await run_pending(pool, FakeTelegram(), T0, T0 + 2 * MIN)
     assert "skipped" not in caplog.text
+
+
+async def test_an_every_minute_cron_catches_up_each_minute_once(pool):
+    await _bind(pool, "* * * * *")
+    await pool.execute("UPDATE schedule_items SET period = 'custom'")
+    tg = FakeTelegram()
+    last = await run_pending(pool, tg, None, T0)  # 07:59
+    last = await run_pending(pool, tg, last, T0 + 3 * MIN)  # a slow tick: 08:00–08:02 caught up
+    await run_pending(pool, tg, T0 - MIN, T0 + 3 * MIN)  # a restart re-runs them: nothing twice
+    assert len(tg.calls) == 4
+    assert [r[0] for r in await pool.fetch("SELECT to_char(slot AT TIME ZONE 'UTC', 'HH24:MI') FROM send_logs ORDER BY slot")] == [
+        "04:59", "05:00", "05:01", "05:02"]  # slots are stored in UTC

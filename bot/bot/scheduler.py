@@ -8,15 +8,20 @@ from typing import Any
 import asyncpg
 
 from bot.chats import migrate_chat
+from bot.cron import cron_matches
 from bot.sender import FETCH_TIMEOUT, Telegram, fetch_members, send_template
 
 log = logging.getLogger(__name__)
 
 
 def is_due(time: str, start: date, period: str, now: datetime) -> bool:
-    """Whether a schedule item fires at the local minute `now`."""
+    """Whether a schedule item fires at the local minute `now`; a `custom` item's `time` is its cron."""
     today = now.date()
-    if now.strftime("%H:%M") != time or today < start:
+    if today < start:
+        return False
+    if period == "custom":
+        return cron_matches(time, now)
+    if now.strftime("%H:%M") != time:
         return False
     days = (today - start).days
     if period == "none":
@@ -169,7 +174,8 @@ async def run_due(db: asyncpg.Pool, tg: Telegram, now: datetime, user: Any = Non
         "FROM chats c JOIN schedule_items i ON i.schedule_id = c.schedule_id "
         "JOIN templates t ON t.id = i.template_id "
         # a chat bound or reactivated after the slot (both bump updated_at) does not get it on catch-up
-        "WHERE c.active AND i.time = $1 AND c.updated_at < ($2::timestamptz AT TIME ZONE 'UTC') ORDER BY c.id, i.id",
+        "WHERE c.active AND (i.time = $1 OR i.period = 'custom') "
+        "AND c.updated_at < ($2::timestamptz AT TIME ZONE 'UTC') ORDER BY c.id, i.id",
         slot.strftime("%H:%M"), slot + MINUTE,
     )
     polls = []
