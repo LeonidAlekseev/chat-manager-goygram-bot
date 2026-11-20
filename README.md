@@ -12,8 +12,6 @@
 ![Docker Compose](https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white)
 ![Telegram Bot API](https://img.shields.io/badge/Telegram-Bot%20API-26A5E4?logo=telegram&logoColor=white)
 
-[ozon.waao.ru](https://ozon.waao.ru)
-
 <img src="docs/images/hero.png" alt="Панель Chat Manager: список чатов" width="900">
 
 </div>
