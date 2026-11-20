@@ -4,6 +4,8 @@ import logging
 from contextlib import suppress
 from typing import Any
 
+import asyncpg
+
 log = logging.getLogger(__name__)
 
 DEFAULT_TEXT = "Сообщение для всех"
@@ -51,6 +53,18 @@ async def mention_all(bot: Any, user: Any, chat_id: int, text: str | None, reply
         await bot.bot_req("sendMessage", chat_id=chat_id, text=part, parse_mode="HTML", **extra)
 
 
+# A linked, active manager: a superadmin anywhere, any other one only in a chat they are assigned to.
+CAN_MENTION = """
+SELECT EXISTS (
+  SELECT 1 FROM managers m
+  WHERE m.telegram_user_id = $2 AND m.active AND (
+    m.role = 'superadmin' OR EXISTS (
+      SELECT 1 FROM chat_managers cm JOIN chats c ON c.id = cm.chat_id
+      WHERE cm.manager_id = m.id AND c.telegram_id = $1 AND c.active AND NOT c.deleting))
+)
+"""
+
+
 async def _say(bot: Any, chat_id: int, text: str) -> None:
     await bot.bot_req("sendMessage", chat_id=chat_id, text=html.escape(text, quote=False))
 
@@ -59,8 +73,8 @@ async def _say(bot: Any, chat_id: int, text: str) -> None:
 RUNNING: dict[int, asyncio.Task[None]] = {}
 
 
-async def handle_all(bot: Any, user: Any, message: dict[str, Any]) -> asyncio.Task[None] | None:
-    """`/all [text]` in a group: admins only; a reply makes the mentions answer that message.
+async def handle_all(db: asyncpg.Pool, bot: Any, user: Any, message: dict[str, Any]) -> asyncio.Task[None] | None:
+    """`/all [text]` in a group: chat admins and the panel's managers; a reply makes the mentions answer that message.
 
     Returns the started task, or None for other messages and while this chat's /all is still running."""
     parts = (message.get("text") or "").split(maxsplit=1)
@@ -69,18 +83,20 @@ async def handle_all(bot: Any, user: Any, message: dict[str, Any]) -> asyncio.Ta
     chat_id = message["chat"]["id"]
     if message["chat"]["type"] == "private" or chat_id in RUNNING:
         return None
-    task = RUNNING[chat_id] = asyncio.create_task(_all(bot, user, message, parts))
+    task = RUNNING[chat_id] = asyncio.create_task(_all(db, bot, user, message, parts))
     task.add_done_callback(lambda _: RUNNING.pop(chat_id, None))
     return task
 
 
-async def _all(bot: Any, user: Any, message: dict[str, Any], parts: list[str]) -> None:
+async def _all(db: asyncpg.Pool, bot: Any, user: Any, message: dict[str, Any], parts: list[str]) -> None:
     chat_id = message["chat"]["id"]
     try:
-        member = await bot.bot_req("getChatMember", chat_id=chat_id, user_id=message["from"]["id"])
-        # shortcut: bot_req may or may not unwrap "result"; unverified live
-        if member.get("result", member).get("status") not in ADMIN_STATUSES:
-            return await _say(bot, chat_id, "Команда доступна только администраторам чата.")
+        author = message["from"]["id"]
+        if not await db.fetchval(CAN_MENTION, chat_id, author):
+            member = await bot.bot_req("getChatMember", chat_id=chat_id, user_id=author)
+            # shortcut: bot_req may or may not unwrap "result"; unverified live
+            if member.get("result", member).get("status") not in ADMIN_STATUSES:
+                return await _say(bot, chat_id, "Команда доступна администраторам чата и менеджерам панели.")
         reply = (message.get("reply_to_message") or {}).get("message_id")
         await mention_all(bot, user, chat_id, parts[1] if len(parts) > 1 else None, reply)
     except Exception as e:

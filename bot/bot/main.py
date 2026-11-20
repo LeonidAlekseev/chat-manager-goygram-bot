@@ -126,7 +126,7 @@ async def _serve(db: asyncpg.Pool, secret: str, settings: Settings, app: Any) ->
         await handle_group_migration(db, message)
         await register_chat(db, message)
         await queue_photo(db, message)
-        await handle_all(app, user, message)
+        await handle_all(db, app, user, message)
         text = await handle_link_start(db, message) or await handle_private(db, message, os.environ.get("PANEL_URL"))
         if text is None:
             text = reply_for(message)
@@ -151,7 +151,7 @@ async def _serve(db: asyncpg.Pool, secret: str, settings: Settings, app: Any) ->
     outbox = asyncio.create_task(run_outbox_forever(db, app, user))
     discovery = asyncio.create_task(run_discover_forever(db, user))  # «Найти группы бота» in the panel
     retention = asyncio.create_task(purge_forever(db))
-    # «Вы не администратор» in the panel; start_bot already passed getMe, bot_req works without polling
+    # «Вас нет в чате» / managers' statuses in the panel; start_bot already passed getMe, bot_req works without polling
     admin_checks = asyncio.create_task(run_admin_checks_forever(db, app))
     photos = asyncio.create_task(run_photos_forever(db, app))  # chat photos for the panel (#113)
     runner = asyncio.create_task(app.run())

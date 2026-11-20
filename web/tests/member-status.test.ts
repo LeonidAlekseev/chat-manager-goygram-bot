@@ -68,14 +68,14 @@ describe("admin status badges", () => {
       ).id
   })
 
-  it("a linked manager sees a badge where they are not an admin", async () => {
+  it("a linked manager sees a badge only where they are absent from the chat", async () => {
     as("ms-linked")
     const html = await list()
-    expect(count(html, "Вы не администратор")).toBe(1)
+    expect(count(html, "Вы не администратор")).toBe(0)
     expect(count(html, "Вас нет в чате")).toBe(1)
-    expect(html).toContain("доступны только администраторам")
-    expect(await page(ids["Участник"])).toContain("Вы не администратор")
-    for (const t of ["Админ", "Ошибка"]) {
+    expect(html).toContain("/all работает для администраторов")
+    expect(await page(ids["Участник"])).not.toContain("Вы не администратор")
+    for (const t of ["Админ", "Ошибка", "Участник"]) {
       const chat = await page(ids[t])
       expect(chat).not.toContain("Вы не администратор")
       expect(chat).not.toContain("Вас нет в чате")
@@ -86,22 +86,22 @@ describe("admin status badges", () => {
     as("ms-unlinked")
     const html = await list()
     expect(html).not.toContain("Вы не администратор")
-    expect(html).toContain("Привяжите Telegram")
+    expect(html).toContain("пользоваться /all")
     expect(await page(ids["Участник"])).not.toContain("Вы не администратор")
   })
 
-  it("no hint for a manager who is an admin everywhere", async () => {
+  it("no hint for a manager who is in every chat", async () => {
     await db.chatManager.updateMany({
       where: { managerId: ids.linked },
-      data: { memberStatus: "admin" },
+      data: { memberStatus: "member" },
     })
     as("ms-linked")
-    expect(await list()).not.toContain("доступны только администраторам")
+    expect(await list()).not.toContain("/all работает")
   })
 
   it("the superadmin sees every assigned manager's status, no badge of their own", async () => {
     as("ms-root")
-    expect(await list()).not.toContain("Вы не администратор")
+    expect(await list()).not.toContain("Вас нет в чате")
     const html = await page(ids["Участник"])
     expect(html).toContain("Не администратор")
     expect(html).toContain("Telegram не привязан")
