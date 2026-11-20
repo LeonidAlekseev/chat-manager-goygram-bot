@@ -33,7 +33,7 @@ const empty: TemplateView = {
 }
 
 const area =
-  "min-h-24 rounded-xl border bg-card p-3 text-base focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/20 focus-visible:outline-hidden"
+  "min-h-24 rounded-xl border bg-card p-3 text-base disabled:cursor-not-allowed disabled:opacity-50 focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/20 focus-visible:outline-hidden"
 
 function Check({
   name,
@@ -45,7 +45,7 @@ function Check({
   on: boolean
 }) {
   return (
-    <label className="flex min-h-11 items-center gap-2 text-sm">
+    <label className="flex min-h-11 items-center gap-2 text-sm has-disabled:opacity-50">
       <input
         type="checkbox"
         name={name}
@@ -74,68 +74,75 @@ export function TemplateForm({
   return (
     <form action={action} className="grid gap-3">
       {t.id && <input type="hidden" name="id" value={t.id} />}
-      <Input
-        name="name"
-        defaultValue={t.name}
-        placeholder="Название"
-        required
-        maxLength={255}
-      />
-      {copy ? (
-        <>
-          <p className="rounded-xl border bg-background p-3 text-sm whitespace-pre-wrap">
-            {t.text || "Без текста"}
-          </p>
-          <p className="text-sm text-muted-foreground">
-            Содержимое изменить нельзя — перешлите сообщение боту заново.
-          </p>
-          <Check name="mentionAll" label="Отметить всех" on={t.mentionAll} />
-        </>
-      ) : (
-        <>
-          <Select
-            name="kind"
-            value={kind}
-            onChange={(e) => setKind(e.target.value as typeof kind)}
-          >
-            <option value="poll">Опрос</option>
-            <option value="text">Текст</option>
-          </Select>
-          <textarea
-            name="text"
-            defaultValue={t.text}
-            placeholder={
-              poll ? "Вопрос опроса (до 300)" : "Текст сообщения (до 4096)"
-            }
-            required
-            maxLength={4096}
-            className={area}
-          />
-          {poll && (
+      {/* read-only: the fields are disabled too, not only the button hidden */}
+      <fieldset disabled={readOnly} className="contents">
+        <Input
+          name="name"
+          defaultValue={t.name}
+          placeholder="Название"
+          required
+          maxLength={255}
+        />
+        {copy ? (
+          <>
+            <p className="rounded-xl border bg-background p-3 text-sm whitespace-pre-wrap">
+              {t.text || "Без текста"}
+            </p>
+            <p className="text-sm text-muted-foreground">
+              Содержимое изменить нельзя — перешлите сообщение боту заново.
+            </p>
+            <Check name="mentionAll" label="Отметить всех" on={t.mentionAll} />
+          </>
+        ) : (
+          <>
+            <Select
+              name="kind"
+              value={kind}
+              onChange={(e) => setKind(e.target.value as typeof kind)}
+            >
+              <option value="poll">Опрос</option>
+              <option value="text">Текст</option>
+            </Select>
             <textarea
-              name="options"
-              defaultValue={t.options.join("\n")}
+              name="text"
+              defaultValue={t.text}
               placeholder={
-                "Варианты опроса — по одному в строке (2–10, до 100 символов)"
+                poll ? "Вопрос опроса (до 300)" : "Текст сообщения (до 4096)"
               }
+              required
+              maxLength={4096}
               className={area}
             />
-          )}
-          <div className="flex flex-wrap gap-x-4">
             {poll && (
-              <>
-                <Check name="anonymous" label="Анонимный" on={t.anonymous} />
-                <Check
-                  name="multiple"
-                  label="Несколько ответов"
-                  on={t.multiple}
-                />
-              </>
+              <textarea
+                name="options"
+                defaultValue={t.options.join("\n")}
+                placeholder={
+                  "Варианты опроса — по одному в строке (2–10, до 100 символов)"
+                }
+                className={area}
+              />
             )}
-            <Check name="mentionAll" label="Отметить всех" on={t.mentionAll} />
-          </div>
-        </>
-      )}
+            <div className="flex flex-wrap gap-x-4">
+              {poll && (
+                <>
+                  <Check name="anonymous" label="Анонимный" on={t.anonymous} />
+                  <Check
+                    name="multiple"
+                    label="Несколько ответов"
+                    on={t.multiple}
+                  />
+                </>
+              )}
+              <Check
+                name="mentionAll"
+                label="Отметить всех"
+                on={t.mentionAll}
+              />
+            </div>
+          </>
+        )}
+      </fieldset>
       {state?.error && (
         <p className="text-sm text-destructive">{state.error}</p>
       )}

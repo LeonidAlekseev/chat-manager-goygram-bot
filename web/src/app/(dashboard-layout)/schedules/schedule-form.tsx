@@ -47,7 +47,7 @@ export function ScheduleForm({
   const [open, setOpen] = useState(false)
   const newRow = (key: number): ItemView & { key: number } => ({
     key,
-    templateId: templates[0]?.id ?? 0,
+    templateId: 0, // «Не выбран»: the manager picks it
     time: "08:00",
     startDate: new Date().toLocaleDateString("sv", { timeZone: timezone }), // YYYY-MM-DD
     period: "day",
@@ -98,6 +98,8 @@ export function ScheduleForm({
   )
   const [name, setName] = useState(schedule?.name ?? "")
   const [nextKey, setNextKey] = useState(rows.length)
+
+  const unpicked = rows.some((r) => !r.templateId) // a row still on «Не выбран»
 
   const edit = (key: number, patch: Partial<ItemView>) =>
     setRows(rows.map((x) => (x.key === key ? { ...x, ...patch } : x)))
@@ -153,7 +155,15 @@ export function ScheduleForm({
               <input type="hidden" name="itemId" value={r.id ?? ""} />
               <label className={labelCls}>
                 Шаблон
-                <Select name="templateId" defaultValue={r.templateId}>
+                <Select
+                  name="templateId"
+                  value={r.templateId || ""}
+                  onChange={(e) =>
+                    edit(r.key, { templateId: Number(e.target.value) })
+                  }
+                  required
+                >
+                  <option value="">Не выбран</option>
                   {templates.map((t) => (
                     <option key={t.id} value={t.id}>
                       {t.name}
@@ -225,7 +235,7 @@ export function ScheduleForm({
             variant="outline"
             className="border-dashed border-primary"
             onClick={addRow}
-            disabled={templates.length === 0}
+            disabled={templates.length === 0 || unpicked}
           >
             <Plus />
             Добавить шаблон
@@ -234,7 +244,7 @@ export function ScheduleForm({
         {!own && !chatId ? null : own && chatId && sharedWith > 0 ? (
           <Dialog open={open} onOpenChange={setOpen}>
             <DialogTrigger asChild>
-              <Button type="button" disabled={pending}>
+              <Button type="button" disabled={pending || unpicked}>
                 <Save />
                 Сохранить
               </Button>
@@ -273,7 +283,7 @@ export function ScheduleForm({
             </DialogContent>
           </Dialog>
         ) : (
-          <Button type="submit" disabled={pending}>
+          <Button type="submit" disabled={pending || unpicked}>
             {schedule ? <Save /> : <Plus />}
             {schedule ? "Сохранить" : "Создать"}
           </Button>

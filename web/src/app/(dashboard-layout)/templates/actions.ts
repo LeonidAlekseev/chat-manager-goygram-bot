@@ -136,3 +136,29 @@ export async function deleteTemplate(
   revalidatePath("/templates")
   return {}
 }
+
+// A copy owned by the viewer. An album's media_group_id is left empty: the pair
+// (source chat, group) is unique and the bot would merge new album items into the copy.
+export async function duplicateTemplate(
+  formData: FormData
+): Promise<{ error?: string }> {
+  const v = await requireViewer()
+  if (duplicated(formData, "id")) return { error: NOT_FOUND }
+  const id = z.coerce.number().int().positive().safeParse(formData.get("id"))
+  const orig = id.success
+    ? await db.template.findFirst({
+        where: { id: id.data, ...visibleTemplates(v) },
+      })
+    : null
+  if (!orig) return { error: NOT_FOUND }
+  const { id: _id, createdAt: _at, mediaGroupId: _g, ...data } = orig
+  await db.template.create({
+    data: {
+      ...data,
+      name: `${orig.name} (копия)`.slice(0, 255),
+      authorId: v.id,
+    },
+  })
+  revalidatePath("/templates")
+  return {}
+}

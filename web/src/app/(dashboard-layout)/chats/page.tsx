@@ -213,22 +213,27 @@ export default async function ChatsPage() {
                     )}
                   </dl>
                 )}
-                <div className="mt-auto flex min-h-11 items-center gap-2 border-t pt-3">
-                  {link && (
-                    <a
-                      href={link}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex min-h-11 items-center gap-1.5 rounded-lg font-bold text-primary underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-ring"
-                    >
-                      <ExternalLink className="size-4" aria-hidden />
-                      Открыть в Telegram
-                    </a>
-                  )}
-                  {!chat.deleting && isSuper(v) && (
-                    <DeleteChatForm chat={chat} className="relative ml-auto" />
-                  )}
-                </div>
+                {(link || (!chat.deleting && isSuper(v))) && (
+                  <div className="mt-auto flex min-h-11 items-center gap-2 border-t pt-3">
+                    {link && (
+                      <a
+                        href={link}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex min-h-11 items-center gap-1.5 rounded-lg font-bold text-primary underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-ring"
+                      >
+                        <ExternalLink className="size-4" aria-hidden />
+                        Открыть в Telegram
+                      </a>
+                    )}
+                    {!chat.deleting && isSuper(v) && (
+                      <DeleteChatForm
+                        chat={chat}
+                        className="relative ml-auto"
+                      />
+                    )}
+                  </div>
+                )}
               </li>
             )
           })}

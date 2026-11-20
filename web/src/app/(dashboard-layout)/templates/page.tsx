@@ -5,7 +5,6 @@ import {
   Copy,
   FileText,
   Images,
-  Lock,
   MessageSquareText,
   Plus,
   Trophy,
@@ -19,7 +18,10 @@ import { db } from "@/lib/db"
 
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { DuplicateForm } from "@/components/duplicate-form"
 import { Empty } from "@/components/empty"
+import { ReadOnlyBadge } from "@/components/readonly-badge"
+import { duplicateTemplate } from "./actions"
 import { DeleteTemplate, TemplateForm } from "./template-form"
 
 export const metadata: Metadata = { title: "Шаблоны" }
@@ -118,15 +120,7 @@ export default async function TemplatesPage({
                           <Icon aria-hidden />
                           {label}
                         </Badge>
-                        {!canEdit(v, t) && (
-                          <Badge
-                            variant="secondary"
-                            title="Только суперадмин меняет"
-                          >
-                            <Lock aria-hidden />
-                            Неизменяемый
-                          </Badge>
-                        )}
+                        {!canEdit(v, t) && <ReadOnlyBadge />}
                         {t.author && (
                           <span className="text-xs text-muted-foreground">
                             Автор: {t.author.name || t.author.login}
@@ -137,6 +131,11 @@ export default async function TemplatesPage({
                   </summary>
                   <div className="mt-3 grid gap-3">
                     <TemplateForm t={t} readOnly={!canEdit(v, t)} />
+                    <DuplicateForm
+                      action={duplicateTemplate}
+                      id={t.id}
+                      name={t.name}
+                    />
                   </div>
                 </details>
                 {canEdit(v, t) && <DeleteTemplate id={t.id} name={t.name} />}
