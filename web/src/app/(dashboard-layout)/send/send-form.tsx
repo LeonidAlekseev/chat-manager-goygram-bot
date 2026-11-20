@@ -152,10 +152,7 @@ export function SendForm({
           {chats.map((c) => (
             <label key={c.id} className={chip}>
               <input type="checkbox" name="chatIds" value={c.id} />
-              <ChatAvatar
-                chat={c}
-                className="size-6 rounded-md bg-primary-soft text-xs font-black text-primary"
-              />
+              <ChatAvatar chat={c} className="size-6 rounded-md text-xs" />
               <span className="font-bold">{c.title}</span>
             </label>
           ))}

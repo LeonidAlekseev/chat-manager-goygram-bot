@@ -8,7 +8,6 @@ export function ChatAvatar({
   chat: { id: number; title: string; photo: { uniqueId: string } | null }
   className?: string
 }) {
-  const box = cn("size-8 shrink-0 rounded-full", className)
   return chat.photo ? (
     // eslint-disable-next-line @next/next/no-img-element -- a tiny private image; next/image would proxy it for nothing
     <img
@@ -16,14 +15,15 @@ export function ChatAvatar({
       alt="" // decorative: the chat's title is always next to it
       width={32}
       height={32}
-      className={cn(box, "object-cover")}
+      className={cn("size-8 shrink-0 rounded-full object-cover", className)}
     />
   ) : (
     <span
       aria-hidden
+      // className last: a caller's size, shape and colors win
       className={cn(
-        box,
-        "grid place-items-center bg-muted text-sm font-semibold uppercase text-muted-foreground"
+        "grid size-8 shrink-0 place-items-center rounded-full bg-primary-soft text-sm font-black uppercase text-primary",
+        className
       )}
     >
       {chat.title.slice(0, 1)}

@@ -115,10 +115,7 @@ export default async function ChatPage({
       <Card>
         <CardHeader className="flex-row flex-wrap items-center justify-between gap-2 space-y-0">
           <div className="flex min-w-0 flex-wrap items-center gap-2">
-            <ChatAvatar
-              chat={chat}
-              className="size-10 rounded-xl bg-primary-soft text-base font-black text-primary"
-            />
+            <ChatAvatar chat={chat} className="size-10 rounded-xl text-base" />
             <CardTitle className="break-words">{chat.title}</CardTitle>
             {linked && <NotAdminBadge status={myStatus} />}
           </div>

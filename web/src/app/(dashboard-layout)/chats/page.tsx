@@ -130,7 +130,7 @@ export default async function ChatsPage() {
                     <ChatAvatar
                       chat={chat}
                       className={cn(
-                        "size-11 rounded-xl bg-primary-soft text-base font-black text-primary",
+                        "size-11 rounded-xl text-base",
                         off && "bg-border text-muted-foreground grayscale"
                       )}
                     />
