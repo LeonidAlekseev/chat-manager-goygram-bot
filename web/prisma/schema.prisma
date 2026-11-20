@@ -27,6 +27,7 @@ model Manager {
   linkCodeExpiresAt DateTime? @map("link_code_expires_at") @db.Timestamptz(3)
   templates         Template[]
   schedules         Schedule[]
+  sends             Outbox[]
   chats             ChatManager[]
 
   @@map("managers")
@@ -202,9 +203,16 @@ model Outbox {
   templateId Int?      @map("template_id")
   text       String? // custom text; wins over the template
   mentionAll Boolean   @default(false) @map("mention_all") // custom text only; a template has its own
+  // a custom poll: `text` is its question, set when it has options (a template has its own)
+  options    String[]  @default([])
+  anonymous  Boolean   @default(false)
+  multiple   Boolean   @default(false)
+  sendAt     DateTime? @map("send_at") // the bot takes the job from then on; null = at once
+  authorId   Int?      @map("author_id") // who queued it; only they or the superadmin cancel it
   createdAt  DateTime  @default(now()) @map("created_at")
   chat       Chat      @relation(fields: [chatId], references: [id], onDelete: Cascade)
   template   Template? @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  author     Manager?  @relation(fields: [authorId], references: [id], onDelete: SetNull)
   sendLog    SendLog?
 
   @@map("outbox")

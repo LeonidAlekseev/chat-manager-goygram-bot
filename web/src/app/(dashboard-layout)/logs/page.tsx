@@ -126,7 +126,9 @@ export default async function LogsPage({
                       <td className="py-2 pe-4" title={l.text ?? undefined}>
                         {l.template?.name ??
                           (l.outbox?.text != null
-                            ? "Ручной текст"
+                            ? l.options.length
+                              ? "Свой опрос"
+                              : "Ручной текст"
                             : "— удалён —")}
                       </td>
                       <td className="py-2 pe-4">

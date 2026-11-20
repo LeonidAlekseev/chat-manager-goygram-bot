@@ -147,3 +147,52 @@ async def test_custom_text_mention_failure_is_recorded_but_the_job_stays_sent(wo
     [row] = await jobs(world)
     assert row[1] == "sent" and row[4]
     assert [k["text"] for _, k in tg.calls] == ["Все сюда"]
+
+
+async def test_a_job_scheduled_for_later_waits_until_its_time(world):
+    await world.execute(
+        "INSERT INTO outbox (chat_id, text, send_at) VALUES "
+        "(1, 'потом', (now() AT TIME ZONE 'UTC') + interval '1 hour'), "
+        "(2, 'уже пора', (now() AT TIME ZONE 'UTC') - interval '1 minute')"
+    )
+    tg = FakeTelegram()
+    await run_outbox(world, tg)
+    assert [k["text"] for _, k in tg.calls] == ["уже пора"]
+    assert [r[1] for r in await jobs(world)] == [None, "sent"]  # the later one is not claimed
+    await world.execute("UPDATE outbox SET send_at = (now() AT TIME ZONE 'UTC') - interval '1 second'")
+    tg = FakeTelegram()
+    await run_outbox(world, tg)
+    assert [k["text"] for _, k in tg.calls] == ["потом"]
+
+
+async def test_custom_poll_is_sent_as_a_poll_and_logged_like_a_template_poll(world):
+    from tests.test_sender import FakeUser
+
+    await world.execute("TRUNCATE poll_members")
+    await world.execute(
+        "INSERT INTO outbox (chat_id, text, options, anonymous, multiple) VALUES (1, 'Обед?', '{Да,Нет}', true, true)"
+    )
+    tg = FakeTelegram()
+    await run_outbox(world, tg, FakeUser())
+    [(meth, kw)] = tg.calls
+    assert meth == "sendPoll"
+    assert (kw["question"], kw["options"], kw["is_anonymous"], kw["allows_multiple_answers"]) == (
+        "Обед?", [{"text": "Да"}, {"text": "Нет"}], True, True,
+    )
+    assert "type" not in kw  # a regular poll, not a quiz
+    assert (await jobs(world))[0] == (-1001, "sent", 101, "poll-1", None, None)
+    assert tuple(await world.fetchrow("SELECT text, options FROM send_logs")) == ("Обед?", ["Да", "Нет"])
+    rows = await world.fetch("SELECT poll_id, user_id FROM poll_members ORDER BY user_id")
+    assert [tuple(r) for r in rows] == [("poll-1", 5), ("poll-1", 6)]
+
+
+async def test_custom_poll_with_mention_all_mentions_after_the_poll(world):
+    from tests.test_sender import FakeUser
+
+    await world.execute(
+        "INSERT INTO outbox (chat_id, text, options, mention_all) VALUES (1, 'Обед?', '{Да,Нет}', true)"
+    )
+    tg = FakeTelegram()
+    await run_outbox(world, tg, FakeUser())
+    assert [m for m, _ in tg.calls] == ["sendPoll", "sendMessage"]
+    assert "tg://user?id=5" in tg.calls[1][1]["text"]

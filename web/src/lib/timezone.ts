@@ -12,3 +12,13 @@ export function nowInZone(): string {
     minute: "2-digit",
   })
 }
+
+/** The instant of local "YYYY-MM-DDTHH:MM" in `TIMEZONE`.
+ * shortcut: one offset lookup, so a time inside a DST jump may be off by an hour; fine for zones without DST (Moscow). */
+export function zonedToUtc(local: string): Date {
+  const guess = new Date(`${local}Z`)
+  const shown = guess
+    .toLocaleString("sv-SE", { timeZone: TIMEZONE })
+    .replace(" ", "T")
+  return new Date(2 * guess.getTime() - new Date(`${shown}Z`).getTime())
+}

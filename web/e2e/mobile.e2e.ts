@@ -250,11 +250,12 @@ test("mobile: menu and profile buttons float over content with the same style, n
   expect(scroll).toBeLessThanOrEqual(inner)
 })
 
-test("mobile: send now — template or own text, own text can mention everyone", async ({
+test("mobile: send — template, own text or own poll, now or later; cancel a scheduled one", async ({
   page,
 }) => {
   const db = new PrismaClient()
   const text = `E2E send ${Date.now()}`
+  const question = `E2E poll ${Date.now()}`
   try {
     await page.goto("/login")
     await page.getByLabel("Логин").fill(LOGIN)
@@ -262,8 +263,13 @@ test("mobile: send now — template or own text, own text can mention everyone",
     await page.getByRole("button", { name: "Войти" }).click()
     await page.waitForURL("**/chats")
     await page.goto("/send")
+    await expect(page.getByText("Отправить сообщение")).toBeVisible()
+    // own poll is the default
+    await expect(page.getByLabel("Свой опрос")).toBeChecked()
+    await expect(page.getByRole("textbox", { name: "Вопрос" })).toBeVisible()
+    await page.getByLabel("Шаблон", { exact: true }).check()
     await expect(page.getByRole("combobox", { name: "Шаблон" })).toBeVisible()
-    await expect(page.getByRole("textbox", { name: "Текст" })).toHaveCount(0)
+    await expect(page.getByRole("textbox", { name: "Вопрос" })).toHaveCount(0)
     await page.getByLabel("Свой текст").check()
     await expect(page.getByRole("combobox", { name: "Шаблон" })).toHaveCount(0)
     await page.getByRole("textbox", { name: "Текст" }).fill(text)
@@ -273,9 +279,44 @@ test("mobile: send now — template or own text, own text can mention everyone",
     await page.getByRole("button", { name: "Отправить" }).click()
     await expect(page.getByText("Поставлено в очередь.")).toBeVisible()
     const job = await db.outbox.findFirstOrThrow({ where: { text } })
-    expect([job.templateId, job.mentionAll]).toEqual([null, true])
+    expect([job.templateId, job.mentionAll, job.sendAt]).toEqual([
+      null,
+      true,
+      null,
+    ])
+
+    await page.reload()
+    await page.getByRole("textbox", { name: "Вопрос" }).fill(question)
+    await page.getByRole("textbox", { name: "Варианты" }).fill("Да\nНет")
+    await page.getByLabel("Анонимный").check()
+    await page.getByLabel(CHAT).check()
+    await page.getByLabel("Запланировать").check()
+    await expect(page.getByText(/Дата и время \(/)).toBeVisible()
+    await page.getByLabel(/Дата и время/).fill("2030-01-01T10:00")
+    await page.getByRole("button", { name: "Запланировать" }).click()
+    await expect(page.getByText("Запланировано.")).toBeVisible()
+    const poll = await db.outbox.findFirstOrThrow({ where: { text: question } })
+    expect(poll.options).toEqual(["Да", "Нет"])
+    expect(poll.anonymous).toBe(true)
+    expect(poll.sendAt).not.toBeNull()
+
+    await page.reload()
+    const row = page.getByRole("row").filter({ hasText: question })
+    await expect(row.getByText("Запланировано")).toBeVisible()
+    await page.addStyleTag({ content: "body{overflow-x:visible!important}" })
+    const [scroll, inner] = await page.evaluate(() => [
+      document.documentElement.scrollWidth,
+      window.innerWidth,
+    ])
+    expect(scroll).toBeLessThanOrEqual(inner)
+    page.once("dialog", (d) => d.accept())
+    await row.getByRole("button", { name: "Отменить отправку" }).click()
+    await expect(
+      page.getByRole("row").filter({ hasText: question })
+    ).toHaveCount(0)
+    expect(await db.outbox.count({ where: { text: question } })).toBe(0)
   } finally {
-    await db.outbox.deleteMany({ where: { text } })
+    await db.outbox.deleteMany({ where: { text: { in: [text, question] } } })
     await db.$disconnect()
   }
 })

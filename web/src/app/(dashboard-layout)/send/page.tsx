@@ -10,15 +10,19 @@ import {
   visibleTemplates,
 } from "@/lib/access"
 import { db } from "@/lib/db"
+import { TIMEZONE } from "@/lib/timezone"
 
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { DeleteForm } from "@/components/delete-form"
+import { cancelSend } from "./actions"
 import { SendForm } from "./send-form"
 
 export const metadata: Metadata = { title: "Отправка" }
 export const dynamic = "force-dynamic"
 
-const STATUS: Record<SendStatus | "queued", string> = {
+const STATUS: Record<SendStatus | "queued" | "scheduled", string> = {
+  scheduled: "Запланировано",
   queued: "В очереди",
   pending: "Отправляется",
   sent: "Отправлено",
@@ -28,7 +32,7 @@ const STATUS: Record<SendStatus | "queued", string> = {
 const fmt = new Intl.DateTimeFormat("ru-RU", {
   dateStyle: "short",
   timeStyle: "medium",
-  timeZone: process.env.TIMEZONE_NAME || "Europe/Moscow",
+  timeZone: TIMEZONE,
 })
 
 export default async function SendPage() {
@@ -56,15 +60,16 @@ export default async function SendPage() {
       },
     }),
   ])
+  const now = new Date()
 
   return (
     <section className="container grid gap-4 p-4">
       <Card>
         <CardHeader>
-          <CardTitle>Отправить сейчас</CardTitle>
+          <CardTitle>Отправить сообщение</CardTitle>
         </CardHeader>
         <CardContent>
-          <SendForm templates={templates} chats={chats} />
+          <SendForm templates={templates} chats={chats} timezone={TIMEZONE} />
         </CardContent>
       </Card>
       <Card>
@@ -88,24 +93,37 @@ export default async function SendPage() {
                 </thead>
                 <tbody>
                   {jobs.map((j) => {
-                    const status = j.sendLog?.status ?? "queued"
+                    const later = !j.sendLog && j.sendAt && j.sendAt > now
+                    const status =
+                      j.sendLog?.status ?? (later ? "scheduled" : "queued")
                     return (
                       <tr key={j.id} className="border-t align-top">
                         <td className="py-2 pe-4 whitespace-nowrap">
-                          {fmt.format(j.createdAt)}
+                          {fmt.format(j.sendAt ?? j.createdAt)}
                         </td>
                         <td className="py-2 pe-4">{j.chat.title}</td>
                         <td className="py-2 pe-4">
+                          {j.options.length > 0 && "Опрос: "}
                           {j.text ?? j.template?.name ?? "— удалён —"}
                         </td>
                         <td className="py-2 pe-4">
-                          <Badge
-                            variant={
-                              status === "error" ? "destructive" : "secondary"
-                            }
-                          >
-                            {STATUS[status]}
-                          </Badge>
+                          <div className="relative flex items-center gap-2">
+                            <Badge
+                              variant={
+                                status === "error" ? "destructive" : "secondary"
+                              }
+                            >
+                              {STATUS[status]}
+                            </Badge>
+                            {later && (
+                              <DeleteForm
+                                action={cancelSend}
+                                id={j.id}
+                                label="Отменить отправку"
+                                confirmText="Отменить запланированную отправку?"
+                              />
+                            )}
+                          </div>
                         </td>
                         <td className="py-2 break-all text-destructive">
                           {j.sendLog?.error}
