@@ -97,7 +97,7 @@ async def test_handle_all_denies_non_admin(db):
     bot = FakeBot("member")
     await run_all(db, bot, FakeUser([{"user_id": 1}]), message("/all"))
     [s] = bot.sent()
-    assert "администраторам" in s["text"] and "tg://" not in s["text"]
+    assert s["text"] == "Команда доступна администраторам чата и менеджерам панели." and "tg://" not in s["text"]
 
 
 async def test_handle_all_reports_error_in_chat(db):
@@ -163,3 +163,19 @@ async def test_handle_all_for_panel_managers(db, user, allowed):
     await run_all(db, bot, FakeUser([{"user_id": 1}]), message("/all", user=user))
     [s] = bot.sent()
     assert ("tg://" in s["text"]) == allowed
+
+
+class RaisingBot(FakeBot):
+    async def bot_req(self, method, **kw):
+        if method == "getChatMember":
+            raise RuntimeError("getChatMember down")
+        return await super().bot_req(method, **kw)
+
+
+async def test_handle_all_assigned_manager_passes_even_if_get_chat_member_fails(db):
+    await seed(db)
+    bot = RaisingBot()
+    await run_all(db, bot, FakeUser([{"user_id": 1}]), message("/all", user=10))
+    [s] = bot.sent()
+    assert "tg://" in s["text"]
+    assert all(m != "getChatMember" for m, _ in bot.calls)

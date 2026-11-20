@@ -527,7 +527,7 @@ test("mobile: managers anchor, collapsed bound schedule, t.me link only for a pu
   }
 })
 
-test("mobile: a manager's «not in the chat» badge fits the screen (#99)", async ({
+test("mobile: a manager's «not in the chat» badge fits the screen (#121)", async ({
   page,
 }) => {
   const db = new PrismaClient()

@@ -92,12 +92,11 @@ async def _all(db: asyncpg.Pool, bot: Any, user: Any, message: dict[str, Any], p
     chat_id = message["chat"]["id"]
     try:
         author = message["from"]["id"]
-        member = await bot.bot_req("getChatMember", chat_id=chat_id, user_id=author)
-        # shortcut: bot_req may or may not unwrap "result"; unverified live
-        if member.get("result", member).get("status") not in ADMIN_STATUSES and not await db.fetchval(
-            CAN_MENTION, chat_id, author
-        ):
-            return await _say(bot, chat_id, "Команда доступна администраторам чата и менеджерам панели.")
+        if not await db.fetchval(CAN_MENTION, chat_id, author):
+            member = await bot.bot_req("getChatMember", chat_id=chat_id, user_id=author)
+            # shortcut: bot_req may or may not unwrap "result"; unverified live
+            if member.get("result", member).get("status") not in ADMIN_STATUSES:
+                return await _say(bot, chat_id, "Команда доступна администраторам чата и менеджерам панели.")
         reply = (message.get("reply_to_message") or {}).get("message_id")
         await mention_all(bot, user, chat_id, parts[1] if len(parts) > 1 else None, reply)
     except Exception as e:
