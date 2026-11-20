@@ -1,17 +1,56 @@
+<div align="center">
+
 # Chat Manager
 
-Telegram-бот и веб-панель для рабочих чатов: менеджеры готовят шаблоны (опросы и обычные сообщения), настраивают расписания, а бот сам рассылает их в нужные чаты и собирает ответы на опросы.
+**Telegram-бот и веб-панель для рабочих чатов: шаблоны, расписания, рассылка и журнал ответов на опросы.**
+
+[![CI](https://github.com/LeonidAlekseev/chat-manager-goygram-bot/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/LeonidAlekseev/chat-manager-goygram-bot/actions/workflows/ci.yml)
+![Python](https://img.shields.io/badge/Python-3776AB?logo=python&logoColor=white)
+![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?logo=typescript&logoColor=white)
+![Next.js](https://img.shields.io/badge/Next.js-000000?logo=nextdotjs&logoColor=white)
+![PostgreSQL 17](https://img.shields.io/badge/PostgreSQL-17-4169E1?logo=postgresql&logoColor=white)
+![Docker Compose](https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white)
+![Telegram Bot API](https://img.shields.io/badge/Telegram-Bot%20API-26A5E4?logo=telegram&logoColor=white)
+
+<img src="docs/images/hero.png" alt="Панель Chat Manager: список чатов" width="900">
+
+</div>
+
+## Оглавление
+
+- [Возможности](#возможности)
+- [Скриншоты](#скриншоты)
+- [Архитектура](#архитектура)
+- [Быстрый старт](#быстрый-старт)
+- [Деплой на VPS](#деплой-на-vps)
+- [Системные логи](#системные-логи)
+- [Команды бота](#команды-бота)
+- [Как работают шаблоны](#как-работают-шаблоны)
+- [Хранение данных](#хранение-данных)
+- [Обновление и резервная копия](#обновление-и-резервная-копия)
+- [Разработка и тесты](#разработка-и-тесты)
+- [Структура репозитория](#структура-репозитория)
+- [Известные ограничения](#известные-ограничения)
+- [Лицензии](#лицензии)
 
 ## Возможности
 
-- **Шаблоны** — опросы и сообщения; создаются в панели или пересылкой сообщения боту в личку.
-- **Расписания** — отправка один раз, каждый день, неделю, две недели или месяц в заданное время (`TIMEZONE_NAME`); расписание привязывается к чатам.
-- **Отправить сейчас** — разовая отправка шаблона или своего текста в выбранные чаты.
-- **Упоминание всех** — `/all` в группе и опция «упомянуть всех» у шаблона.
-- **Журнал** — что и когда отправлено, ответы на опросы и кто не ответил.
-- **Менеджеры** — несколько учётных записей панели, привязка Telegram-аккаунта.
-- **Системные логи** — суперадмин видит логи контейнеров (`bot`, `web`, `db`, `caddy`) в панели, с фильтром ошибок и поиском.
-- **Настройки в панели** — токен бота и вход MTProto-аккаунта без правки файлов и перезапуска вручную.
+- 📝 **Шаблоны** — опросы и сообщения; создаются в панели или пересылкой сообщения боту в личку.
+- ⏰ **Расписания** — отправка один раз, каждый день, неделю, две недели или месяц в заданное время (`TIMEZONE_NAME`); расписание привязывается к чатам.
+- 🚀 **Отправить сейчас** — разовая отправка шаблона или своего текста в выбранные чаты.
+- 📣 **Упоминание всех** — `/all` в группе и опция «упомянуть всех» у шаблона.
+- 📊 **Журнал** — что и когда отправлено, ответы на опросы и кто не ответил.
+- 👥 **Менеджеры** — несколько учётных записей панели, привязка Telegram-аккаунта.
+- 🖥️ **Системные логи** — суперадмин видит логи контейнеров (`bot`, `web`, `db`, `caddy`) в панели, с фильтром ошибок и поиском.
+- ⚙️ **Настройки в панели** — токен бота и вход MTProto-аккаунта без правки файлов и перезапуска вручную.
+
+## Скриншоты
+
+Демо-данные, не настоящие чаты.
+
+![Чаты](docs/images/chats.png)
+
+![Шаблоны](docs/images/templates.png)
 
 ## Архитектура
 
@@ -41,6 +80,9 @@ flowchart LR
 cp .env.example .env
 ```
 
+<details>
+<summary>Переменные окружения</summary>
+
 | Переменная | Назначение |
 |---|---|
 | `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB` | Доступ к Postgres; смените пароль. |
@@ -51,6 +93,8 @@ cp .env.example .env
 | `WEB_PORT` | Порт панели на хосте, только для `docker-compose.dev.yml` (по умолчанию `3000`). |
 | `TIMEZONE_NAME` | Часовой пояс расписаний и журнала (по умолчанию `Europe/Moscow`). |
 | `PANEL_URL` | Публичный адрес панели для ссылки «Открыть в панели» в ответе бота; пусто — без ссылки. |
+
+</details>
 
 **2. Запустите**
 
@@ -112,6 +156,9 @@ docker compose up -d --build
 
 ## Обновление и резервная копия
 
+<details>
+<summary>Команды обновления и резервной копии</summary>
+
 ```sh
 # резервная копия (по умолчанию POSTGRES_USER/DB — chatmanager)
 docker compose exec -T db pg_dump -U chatmanager chatmanager > backup.sql
@@ -128,9 +175,16 @@ docker builder prune -f --filter until=72h && docker image prune -f  # кэш с
 docker compose exec -T db psql -U chatmanager chatmanager < backup.sql
 ```
 
+</details>
+
 Подставьте свои `POSTGRES_USER`/`POSTGRES_DB`, если меняли их в `.env`.
 
 ## Разработка и тесты
+
+> **Только тестовые БД.** `pytest` бота выполняет `DROP SCHEMA public CASCADE` в `TEST_DATABASE_URL`, а e2e панели применяет миграции и добавляет в БД тестовый чат. Никогда не указывайте на рабочую БД; у бота и панели — разные БД.
+
+<details>
+<summary>Команды разработки и тестов</summary>
 
 Нужны Postgres, [uv](https://docs.astral.sh/uv/) (Python 3.13), Node 22 и pnpm 10. Команды совпадают с CI (`.github/workflows/ci.yml`).
 
@@ -154,7 +208,7 @@ pnpm exec playwright install chromium
 DATABASE_URL=$TEST_DATABASE_URL pnpm e2e
 ```
 
-> **Только тестовые БД.** `pytest` бота выполняет `DROP SCHEMA public CASCADE` в `TEST_DATABASE_URL`, а e2e панели применяет миграции и добавляет в БД тестовый чат. Никогда не указывайте на рабочую БД; у бота и панели — разные БД.
+</details>
 
 Изменение схемы: `cd web && pnpm exec prisma migrate dev --name <что>`; бот работает с теми же таблицами через SQL.
 
