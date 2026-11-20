@@ -47,11 +47,11 @@ export function EditManagerForm({
         type="submit"
         variant="outline"
         disabled={pending}
-        aria-label="Сохранить"
-        className="max-sm:w-9 max-sm:px-0"
+        size="icon"
+        aria-label={`Сохранить ${login}`}
+        title="Сохранить"
       >
         <Save />
-        <span className="max-sm:hidden">Сохранить</span>
       </Button>
       {state?.error && (
         <p className="w-full text-sm text-destructive">{state.error}</p>
