@@ -478,9 +478,12 @@ test("mobile: managers anchor, collapsed bound schedule, t.me link for supergrou
     await page.waitForURL("**/chats")
     await page.getByLabel(`Название чата -100${stamp}`).waitFor()
     await page
-      .getByRole("link", { name: "Настроить менеджеров" })
+      .getByRole("link", { name: /^Настроить менеджеров/ })
       .first()
       .waitFor()
+    await expect(
+      page.getByRole("link", { name: /^Настроить расписание/ }).first()
+    ).toBeVisible()
     await page.goto(`/chats/${chat.id}#managers`)
     await expect(page.locator("details#schedule")).not.toHaveAttribute("open")
     await expect(

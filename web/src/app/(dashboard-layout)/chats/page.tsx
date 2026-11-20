@@ -1,6 +1,12 @@
 import Link from "next/link"
 import { redirect } from "next/navigation"
-import { CalendarClock, ExternalLink, Save, Users } from "lucide-react"
+import {
+  CalendarClock,
+  ExternalLink,
+  Save,
+  Settings,
+  Users,
+} from "lucide-react"
 
 import type { Metadata } from "next"
 
@@ -13,6 +19,7 @@ import {
 import { chatLink } from "@/lib/chat-link"
 import { db } from "@/lib/db"
 import { discoveryView } from "@/lib/settings"
+import { cn } from "@/lib/utils"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -25,6 +32,16 @@ import { DiscoverChats } from "./discover-chats"
 import { NotAdminBadge, NotAdminHint } from "./member-status"
 
 export const metadata: Metadata = { title: "Чаты" }
+
+function ConfigureLink({ href, label }: { href: string; label: string }) {
+  return (
+    <Button asChild variant="ghost" size="icon" className="size-8 shrink-0">
+      <Link href={href} aria-label={label} title="Настроить">
+        <Settings className="size-4" aria-hidden />
+      </Link>
+    </Button>
+  )
+}
 
 export default async function ChatsPage() {
   // Layouts are not re-rendered on client navigation, so data pages check the session themselves.
@@ -94,7 +111,11 @@ export default async function ChatsPage() {
                 return (
                   <div
                     key={chat.id}
-                    className="relative grid gap-2 border-t py-3 pr-12 md:pr-0 md:grid-cols-[minmax(0,2fr)_auto_minmax(0,1fr)_auto] md:items-center md:gap-4 md:py-2"
+                    title={chat.active ? undefined : "Бот удалён из чата"}
+                    className={cn(
+                      "relative grid gap-2 border-t py-3 pr-12 md:pr-0 md:grid-cols-[minmax(0,2fr)_auto_minmax(0,1fr)_auto] md:items-center md:gap-4 md:py-2",
+                      !chat.active && "opacity-50"
+                    )}
                   >
                     <div className="grid min-w-0 gap-1">
                       <ActionForm action={renameChat} className="flex gap-2">
@@ -107,9 +128,15 @@ export default async function ChatsPage() {
                           required
                           maxLength={255}
                         />
-                        <Button type="submit" variant="outline">
+                        <Button
+                          type="submit"
+                          variant="outline"
+                          size="icon"
+                          className="shrink-0"
+                          aria-label={`Сохранить название ${chat.telegramId}`}
+                          title="Сохранить"
+                        >
                           <Save />
-                          Сохранить
                         </Button>
                       </ActionForm>
                       {linked && <NotAdminBadge status={myStatus(chat)} />}
@@ -118,53 +145,62 @@ export default async function ChatsPage() {
                       <span className="font-mono text-muted-foreground md:text-foreground">
                         {chat.telegramId.toString()}
                       </span>
-                      <span aria-hidden>·</span>
                       {chat.deleting ? (
                         <Badge variant="secondary">Удаляется…</Badge>
-                      ) : chat.active ? (
-                        <Badge>Активен</Badge>
                       ) : (
-                        <Badge variant="secondary">Бот удалён</Badge>
+                        !chat.active && (
+                          <Badge variant="secondary">Бот удалён</Badge>
+                        )
                       )}
                     </span>
                     {chat.deleting ? (
                       <span />
                     ) : (
-                      <span className="flex flex-wrap items-center gap-x-4 gap-y-1">
-                        <Link
-                          href={`/chats/${chat.id}`}
-                          className="inline-flex items-center gap-1 whitespace-nowrap underline underline-offset-4"
-                        >
-                          <CalendarClock className="size-4" aria-hidden />
-                          {scheduleName(chat.scheduleId) ||
-                            "Настроить расписание"}
-                        </Link>
+                      <span className="grid min-w-0 gap-1">
+                        <span className="flex min-w-0 items-center gap-1">
+                          <CalendarClock
+                            className="size-4 shrink-0 text-muted-foreground"
+                            aria-hidden
+                          />
+                          <span className="min-w-0 break-words">
+                            {scheduleName(chat.scheduleId) || "Без расписания"}
+                          </span>
+                          <ConfigureLink
+                            href={`/chats/${chat.id}#schedule`}
+                            label={`Настроить расписание ${chat.telegramId}`}
+                          />
+                        </span>
                         {isSuper(v) && (
-                          <Link
-                            href={`/chats/${chat.id}#managers`}
-                            className="inline-flex items-center gap-1 whitespace-nowrap underline underline-offset-4"
-                          >
-                            <Users className="size-4" aria-hidden />
-                            Настроить менеджеров
-                          </Link>
+                          <span className="flex min-w-0 items-center gap-1">
+                            <Users
+                              className="size-4 shrink-0 text-muted-foreground"
+                              aria-hidden
+                            />
+                            <span className="min-w-0 break-words">
+                              {chat.managers.length > 0
+                                ? chat.managers
+                                    .map(
+                                      (m) => m.manager.name || m.manager.login
+                                    )
+                                    .join(", ")
+                                : "Без менеджеров"}
+                            </span>
+                            <ConfigureLink
+                              href={`/chats/${chat.id}#managers`}
+                              label={`Настроить менеджеров ${chat.telegramId}`}
+                            />
+                          </span>
                         )}
                         {link && (
                           <a
                             href={link}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="inline-flex items-center gap-1 whitespace-nowrap underline underline-offset-4"
+                            className="inline-flex items-center gap-1 whitespace-nowrap text-xs underline underline-offset-4"
                           >
                             <ExternalLink className="size-4" aria-hidden />
                             Открыть в Telegram
                           </a>
-                        )}
-                        {isSuper(v) && chat.managers.length > 0 && (
-                          <span className="basis-full text-xs text-muted-foreground">
-                            {chat.managers
-                              .map((m) => m.manager.name || m.manager.login)
-                              .join(", ")}
-                          </span>
                         )}
                       </span>
                     )}

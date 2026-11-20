@@ -50,8 +50,24 @@ export default async function ManagersPage() {
                       key={m.id}
                       className="block border-t py-2 md:table-row md:py-0"
                     >
-                      <td className="block py-1 pe-4 font-mono md:table-cell md:py-2">
-                        {m.login}
+                      <td className="block py-1 pe-4 md:table-cell md:py-2">
+                        <span className="font-mono">{m.login}</span>
+                        <span className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
+                          {m.telegramUserId ? (
+                            <span className="font-mono text-muted-foreground">
+                              {m.telegramUserId.toString()}
+                            </span>
+                          ) : (
+                            <span className="text-muted-foreground">
+                              Telegram не привязан
+                            </span>
+                          )}
+                          {m.active ? (
+                            <Badge>Активен</Badge>
+                          ) : (
+                            <Badge variant="secondary">Отключён</Badge>
+                          )}
+                        </span>
                       </td>
                       <td className="block py-1 pe-4 md:table-cell md:py-2">
                         <EditManagerForm
@@ -71,14 +87,14 @@ export default async function ManagersPage() {
                             name="active"
                             value={String(!m.active)}
                           />
-                          {m.active ? (
-                            <Badge>Активен</Badge>
-                          ) : (
-                            <Badge variant="secondary">Отключён</Badge>
-                          )}
-                          <Button type="submit" variant="outline">
+                          <Button
+                            type="submit"
+                            variant="outline"
+                            size="icon"
+                            aria-label={`${m.active ? "Отключить" : "Включить"} ${m.login}`}
+                            title={m.active ? "Отключить" : "Включить"}
+                          >
                             {m.active ? <PowerOff /> : <Power />}
-                            {m.active ? "Отключить" : "Включить"}
                           </Button>
                         </form>
                       </td>
