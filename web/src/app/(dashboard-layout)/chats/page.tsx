@@ -158,11 +158,14 @@ export default async function ChatsPage() {
                       <Save />
                     </Button>
                   </ActionForm>
-                  <span className="ps-13 font-mono text-xs text-muted-foreground tabular-nums">
-                    {chat.telegramId.toString()}
-                  </span>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
+                  <Badge
+                    variant="secondary"
+                    className="whitespace-nowrap tabular-nums"
+                  >
+                    ID {chat.telegramId.toString()}
+                  </Badge>
                   {chat.deleting ? (
                     <Badge variant="secondary">
                       <LoaderCircle aria-hidden />
