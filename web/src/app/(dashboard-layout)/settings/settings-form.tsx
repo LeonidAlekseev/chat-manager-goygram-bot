@@ -1,6 +1,7 @@
 "use client"
 
 import { useActionState } from "react"
+import { Save } from "lucide-react"
 
 import type { settingsView } from "@/lib/settings"
 import type { ActionState } from "./actions"
@@ -64,6 +65,7 @@ export function SettingsForm({
       </div>
       <div className="flex items-center gap-4">
         <Button type="submit" disabled={pending}>
+          <Save />
           Сохранить
         </Button>
         {state?.saved && (

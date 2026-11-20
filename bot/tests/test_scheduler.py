@@ -71,4 +71,5 @@ def test_custom_waits_for_the_start_date_and_crosses_month_ends():
     assert not is_due("* * * * *", start, "custom", at(2026, 2, 28, 23, 59))
     assert is_due("* * * * *", start, "custom", at(2026, 3, 1, 0, 0))
     assert is_due("0 0 1 * *", start, "custom", at(2027, 1, 1, 0, 0))  # month and year roll over
-    assert not is_due("not a cron", start, "custom", at(2026, 3, 1, 0, 0))  # never fires, never raises
+    with pytest.raises(ValueError):  # run_due skips it with a warning
+        is_due("not a cron", start, "custom", at(2026, 3, 1, 0, 0))

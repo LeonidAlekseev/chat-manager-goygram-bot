@@ -1,3 +1,4 @@
+import { byTime } from "@/app/(dashboard-layout)/schedules/item-view"
 import { describe, expect, it } from "vitest"
 
 import { cronMatches, describeCron, nextRuns, parseCron } from "@/lib/cron"
@@ -44,5 +45,28 @@ describe("cron", () => {
     ["0 9 * * 1-5", "минута 0, час 9, день недели 1-5"],
   ])("describes %j", (expr, text) => {
     expect(describeCron(expr)).toBe(text)
+  })
+})
+
+describe("schedule items order", () => {
+  it("puts custom items after the timed ones, each group in order", () => {
+    const item = (time: string, period = "day") => ({
+      templateId: 1,
+      startDate: "2026-03-01",
+      time,
+      period,
+    })
+    const sorted = [
+      item("*/5 * * * *", "custom"),
+      item("21:00"),
+      item("0 * * * *", "custom"),
+      item("08:00", "none"),
+    ].sort(byTime)
+    expect(sorted.map((i) => i.time)).toEqual([
+      "08:00",
+      "21:00",
+      "*/5 * * * *",
+      "0 * * * *",
+    ])
   })
 })

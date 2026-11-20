@@ -36,9 +36,10 @@ def parse_cron(expr: str) -> tuple[list[set[int]], bool] | None:
 
 
 def cron_matches(expr: str, now: datetime) -> bool:
+    """Raises ValueError for an invalid cron: the panel never saves one, so it is reported, not ignored."""
     parsed = parse_cron(expr)
     if parsed is None:
-        return False
+        raise ValueError("invalid cron")
     (minute, hour, day, month, weekday), either = parsed
     days = now.day in day, now.isoweekday() % 7 in weekday
     return now.minute in minute and now.hour in hour and now.month in month and (any(days) if either else all(days))

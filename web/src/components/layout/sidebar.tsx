@@ -115,7 +115,7 @@ export function Sidebar() {
             height={24}
             width={24}
           />
-          <span>OzonWaao</span>
+          <span>TaskManager</span>
         </Link>
         <CommandMenu buttonClassName="max-w-full" />
       </SidebarHeader>

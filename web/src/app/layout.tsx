@@ -16,8 +16,8 @@ import { Toaster } from "@/components/ui/toaster"
 // More info: https://nextjs.org/docs/app/building-your-application/optimizing/metadata
 export const metadata: Metadata = {
   title: {
-    template: "%s | OzonWaao",
-    default: "OzonWaao",
+    template: "%s | TaskManager",
+    default: "TaskManager",
   },
   description: "",
   metadataBase: new URL(process.env.BASE_URL ?? "http://localhost:3000"),
