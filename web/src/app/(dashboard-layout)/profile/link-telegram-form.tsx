@@ -15,11 +15,14 @@ export function LinkTelegramForm() {
         Привязать Telegram
       </Button>
       {state && (
-        <p className="text-sm">
+        <p className="rounded-xl bg-background p-3 text-sm break-words">
           {state.url ? (
             <>
               Откройте ссылку и нажмите «Запустить» (действует 15 минут):{" "}
-              <a href={state.url} className="underline">
+              <a
+                href={state.url}
+                className="font-bold break-all text-primary underline"
+              >
                 {state.url}
               </a>
             </>

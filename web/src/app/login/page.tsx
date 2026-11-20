@@ -7,16 +7,18 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Brand } from "@/components/layout"
 import { login } from "./actions"
 
 export default function LoginPage() {
   const [error, action, pending] = useActionState(login, null)
 
   return (
-    <main className="flex min-h-screen w-full items-center justify-center p-4">
+    <main className="flex min-h-dvh w-full flex-col items-center justify-center gap-6 p-4">
+      <Brand />
       <Card className="w-full max-w-sm">
         <CardHeader>
-          <CardTitle>Вход в панель</CardTitle>
+          <CardTitle className="text-xl font-black">Вход в панель</CardTitle>
         </CardHeader>
         <CardContent>
           <form action={action} className="grid gap-4">

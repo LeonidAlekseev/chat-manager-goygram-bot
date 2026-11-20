@@ -23,7 +23,7 @@ export function Voter({ v }: { v: VoterRow }) {
             href={`https://t.me/${v.username}`}
             target="_blank"
             rel="noopener noreferrer"
-            className="underline"
+            className="font-bold text-primary underline underline-offset-4"
           >
             @{v.username}
           </a>

@@ -25,7 +25,10 @@ export function DiscoverChats({
   }, [busy, router])
 
   return (
-    <ActionForm action={discoverChats} className="mb-4 grid gap-2">
+    <ActionForm
+      action={discoverChats}
+      className="grid gap-2 rounded-2xl border bg-card p-4"
+    >
       <div className="flex flex-wrap items-center gap-4">
         <Button type="submit" variant="outline">
           <Search />

@@ -27,12 +27,18 @@ export function DeleteForm({
       action={action}
       confirmText={confirmText}
       className={cn(
-        "[&>p]:absolute [&>p]:right-0 [&>p]:top-full [&>p]:z-10 [&>p]:mt-1 [&>p]:w-56 [&>p]:rounded-md [&>p]:border [&>p]:bg-background [&>p]:p-2 [&>p]:text-right",
+        "[&>p]:absolute [&>p]:right-0 [&>p]:top-full [&>p]:z-10 [&>p]:mt-1 [&>p]:w-56 [&>p]:rounded-xl [&>p]:border [&>p]:bg-card [&>p]:p-2 [&>p]:text-right",
         className
       )}
     >
       <input type="hidden" name="id" value={id} />
-      <Button type="submit" variant="outline" size="icon" aria-label={label}>
+      <Button
+        type="submit"
+        variant="outline"
+        size="icon"
+        aria-label={label}
+        className="text-destructive hover:bg-destructive-soft hover:text-destructive"
+      >
         <Trash2 className="size-4" aria-hidden />
       </Button>
     </ActionForm>

@@ -1,5 +1,6 @@
 import Link from "next/link"
 import { notFound, redirect } from "next/navigation"
+import { ArrowLeft, ChartBar } from "lucide-react"
 
 import type { Metadata } from "next"
 
@@ -7,6 +8,7 @@ import { getViewer, visibleSends } from "@/lib/access"
 import { db } from "@/lib/db"
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Empty } from "@/components/empty"
 import { Voter } from "./voter"
 
 export const metadata: Metadata = { title: "Ответы на опрос" }
@@ -52,18 +54,24 @@ export default async function PollAnswersPage({
   const missing = members.filter((m) => !answeredIds.has(m.userId))
 
   return (
-    <section className="container p-4">
+    <section className="grid gap-4">
       <Card>
         <CardHeader>
-          <CardTitle>{text ?? "Опрос"}</CardTitle>
-          <p className="text-sm text-muted-foreground">
-            {log.chat.title} ·{" "}
-            <Link href="/logs" className="underline">
+          <CardTitle icon={ChartBar} className="break-words">
+            {text ?? "Опрос"}
+          </CardTitle>
+          <p className="flex flex-wrap items-center gap-x-2 text-sm text-muted-foreground">
+            <span className="font-bold break-words">{log.chat.title}</span>·
+            <Link
+              href="/logs"
+              className="inline-flex min-h-11 items-center gap-1 font-bold text-primary underline-offset-4 hover:underline"
+            >
+              <ArrowLeft className="size-4" aria-hidden />
               назад к журналу
             </Link>
           </p>
         </CardHeader>
-        <CardContent className="grid gap-2">
+        <CardContent className="grid gap-3">
           {anonymous ? (
             <>
               <p className="text-muted-foreground">
@@ -72,7 +80,10 @@ export default async function PollAnswersPage({
               {result && (
                 <ul className="grid gap-1 text-sm">
                   {options.map((o, i) => (
-                    <li key={i}>
+                    <li
+                      key={i}
+                      className="rounded-lg bg-background px-3 py-2 break-words"
+                    >
                       {o}: <b>{result.counts[i] ?? 0}</b>
                     </li>
                   ))}
@@ -80,11 +91,14 @@ export default async function PollAnswersPage({
               )}
             </>
           ) : voted.length === 0 ? (
-            <p className="text-muted-foreground">Ответов пока нет.</p>
+            <Empty>Ответов пока нет.</Empty>
           ) : (
             <ul className="grid gap-2 text-sm">
               {voted.map((a) => (
-                <li key={String(a.userId)} className="min-w-0 break-words">
+                <li
+                  key={String(a.userId)}
+                  className="min-w-0 rounded-lg bg-background px-3 py-2 break-words"
+                >
                   <Voter v={a} />:{" "}
                   {a.optionIds.map((o) => options[o] ?? `#${o + 1}`).join(", ")}
                 </li>
@@ -97,15 +111,16 @@ export default async function PollAnswersPage({
             </p>
           ) : (
             <>
-              <h3 className="mt-2 font-medium">
-                Не ответили ({missing.length})
-              </h3>
+              <h3 className="mt-2 font-bold">Не ответили ({missing.length})</h3>
               {missing.length === 0 ? (
                 <p className="text-sm">—</p>
               ) : (
                 <ul className="grid gap-2 text-sm">
                   {missing.map((m) => (
-                    <li key={String(m.userId)} className="min-w-0 break-words">
+                    <li
+                      key={String(m.userId)}
+                      className="min-w-0 rounded-lg bg-background px-3 py-2 break-words"
+                    >
                       <Voter v={byUser.get(m.userId) ?? m} />
                     </li>
                   ))}
