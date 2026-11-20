@@ -4,20 +4,15 @@ import { CircleAlert, Info } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 
 // #99: the bot checks with getChatMember whether an assigned manager is a chat admin; NULL = not checked yet.
-const HINT = "Команды бота, например /all, доступны только администраторам чата"
+const HINT =
+  "/all работает для администраторов чата и назначенных менеджеров, если вы состоите в чате"
 
-const NOT_ADMIN: Record<string, string> = {
-  member: "Вы не администратор",
-  absent: "Вас нет в чате",
-}
-
-// the manager's own badge: only where something is wrong
+// the manager's own badge: only where they are not in the chat (a plain member can use /all too)
 export function NotAdminBadge({ status }: { status: string | null }) {
-  const label = NOT_ADMIN[status ?? ""]
-  return label ? (
+  return status === "absent" ? (
     <Badge variant="destructive" title={HINT} className="w-fit">
       <CircleAlert aria-hidden />
-      {label}
+      Вас нет в чате
     </Badge>
   ) : null
 }
@@ -34,7 +29,7 @@ export function NotAdminHint({ linked }: { linked: boolean }) {
             <Link href="/profile" className="underline underline-offset-4">
               Привяжите Telegram в профиле
             </Link>
-            , чтобы видеть, в каких чатах вы не администратор.
+            , чтобы пользоваться /all в своих чатах.
           </>
         )}
       </span>

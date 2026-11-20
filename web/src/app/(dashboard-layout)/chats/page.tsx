@@ -103,9 +103,9 @@ export default async function ChatsPage() {
       </div>
       {isSuper(v) && <DiscoverChats scan={scan} />}
       {!isSuper(v) &&
-        chats.some(
-          (c) => !linked || ["member", "absent"].includes(myStatus(c) ?? "")
-        ) && <NotAdminHint linked={linked} />}
+        chats.some((c) => !linked || myStatus(c) === "absent") && (
+          <NotAdminHint linked={linked} />
+        )}
       {chats.length === 0 ? (
         <Empty>Добавьте бота в группу — чат появится здесь.</Empty>
       ) : (

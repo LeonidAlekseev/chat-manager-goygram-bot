@@ -527,7 +527,7 @@ test("mobile: managers anchor, collapsed bound schedule, t.me link only for a pu
   }
 })
 
-test("mobile: a manager's «not an admin» badge fits the screen (#99)", async ({
+test("mobile: a manager's «not in the chat» badge fits the screen (#99)", async ({
   page,
 }) => {
   const db = new PrismaClient()
@@ -544,7 +544,7 @@ test("mobile: a manager's «not an admin» badge fits the screen (#99)", async (
     data: {
       telegramId: BigInt(-stamp),
       title,
-      managers: { create: { managerId: mgr.id, memberStatus: "member" } },
+      managers: { create: { managerId: mgr.id, memberStatus: "absent" } },
     },
   })
   try {
@@ -555,9 +555,9 @@ test("mobile: a manager's «not an admin» badge fits the screen (#99)", async (
     await page.waitForURL("**/chats")
     for (const path of ["/chats", `/chats/${chat.id}`]) {
       await page.goto(path)
-      await expect(page.getByText("Вы не администратор")).toBeVisible()
+      await expect(page.getByText("Вас нет в чате")).toBeVisible()
       await expect(
-        page.getByText(/доступны только администраторам/)
+        page.getByText(/\/all работает для администраторов/)
       ).toBeVisible()
       await page.addStyleTag({ content: "body{overflow-x:visible!important}" })
       const [scroll, inner] = await page.evaluate(() => [
