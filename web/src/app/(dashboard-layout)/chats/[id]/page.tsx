@@ -22,6 +22,7 @@ import { chatLink } from "@/lib/chat-link"
 import { db } from "@/lib/db"
 import { TIMEZONE } from "@/lib/timezone"
 
+import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Select } from "@/components/ui/select"
@@ -121,11 +122,16 @@ export default async function ChatPage({
               className="size-10 rounded-xl text-base"
             />
             <CardTitle className="break-words">{chat.title}</CardTitle>
+          </div>
+          <div className="flex w-full flex-wrap items-center gap-2">
+            <Badge
+              variant="secondary"
+              className="whitespace-nowrap tabular-nums"
+            >
+              ID {chat.telegramId.toString()}
+            </Badge>
             {linked && <NotAdminBadge status={myStatus} />}
           </div>
-          <span className="w-full font-mono text-xs text-muted-foreground tabular-nums">
-            {chat.telegramId.toString()}
-          </span>
           {(link || isSuper(v)) && (
             <div className="flex flex-wrap items-center gap-2">
               {link && (
