@@ -82,34 +82,34 @@ def message(text, user=7, reply=None):
     return m
 
 
-async def run_all(bot, user, msg):
-    await (await handle_all(bot, user, msg))
+async def run_all(db, bot, user, msg):
+    await (await handle_all(db, bot, user, msg))
 
 
-async def test_handle_all_admin_with_text_and_reply():
+async def test_handle_all_admin_with_text_and_reply(db):
     bot = FakeBot("creator")
-    await run_all(bot, FakeUser([{"user_id": 1}]), message("/all@b Внимание", reply=3))
+    await run_all(db, bot, FakeUser([{"user_id": 1}]), message("/all@b Внимание", reply=3))
     [s] = bot.sent()
     assert s["text"].startswith("Внимание") and s["reply_parameters"] == {"message_id": 3}
 
 
-async def test_handle_all_denies_non_admin():
+async def test_handle_all_denies_non_admin(db):
     bot = FakeBot("member")
-    await run_all(bot, FakeUser([{"user_id": 1}]), message("/all"))
+    await run_all(db, bot, FakeUser([{"user_id": 1}]), message("/all"))
     [s] = bot.sent()
-    assert "администратор" in s["text"] and "tg://" not in s["text"]
+    assert "администраторам" in s["text"] and "tg://" not in s["text"]
 
 
-async def test_handle_all_reports_error_in_chat():
+async def test_handle_all_reports_error_in_chat(db):
     bot = FakeBot()
-    await run_all(bot, None, message("/all"))
+    await run_all(db, bot, None, message("/all"))
     assert "Не выполнен вход" in bot.sent()[0]["text"]
 
 
-async def test_handle_all_ignores_other_commands_and_private():
+async def test_handle_all_ignores_other_commands_and_private(db):
     bot = FakeBot()
-    assert await handle_all(bot, None, message("/chatid")) is None
-    assert await handle_all(bot, None, {**message("/all"), "chat": {"id": 1, "type": "private"}}) is None
+    assert await handle_all(db, bot, None, message("/chatid")) is None
+    assert await handle_all(db, bot, None, {**message("/all"), "chat": {"id": 1, "type": "private"}}) is None
     assert bot.calls == []
 
 
@@ -123,20 +123,43 @@ class SlowUser:
         yield
 
 
-async def test_handle_all_returns_at_once_and_reports_a_failure_in_chat():
+async def test_handle_all_returns_at_once_and_reports_a_failure_in_chat(db):
     bot, user = FakeBot(), SlowUser()
-    task = await handle_all(bot, user, message("/all"))
+    task = await handle_all(db, bot, user, message("/all"))
     assert not task.done()  # other updates are not held up meanwhile
-    assert await handle_all(bot, user, message("/all")) is None  # one /all per chat at a time
+    assert await handle_all(db, bot, user, message("/all")) is None  # one /all per chat at a time
     user.go.set()
     await task
     [s] = bot.sent()
     assert "Не удалось получить список участников" in s["text"] and "ConnectionError" in s["text"]
-    assert await handle_all(bot, FakeUser(), message("/all")) is not None  # the chat is free again
+    assert await handle_all(db, bot, FakeUser(), message("/all")) is not None  # the chat is free again
 
 
-async def test_handle_all_gives_up_on_a_hung_member_list(monkeypatch):
+async def test_handle_all_gives_up_on_a_hung_member_list(db, monkeypatch):
     monkeypatch.setattr("bot.sender.FETCH_TIMEOUT", 0.01)
     bot = FakeBot()
-    await run_all(bot, SlowUser(), message("/all"))
+    await run_all(db, bot, SlowUser(), message("/all"))
     assert "не ответил" in bot.sent()[0]["text"]
+
+
+async def seed(db):
+    """Managers by telegram id: 10 assigned here, 11 assigned elsewhere, 12 inactive and assigned here, 13 superadmin."""
+    await db.execute("TRUNCATE managers CASCADE")
+    here = await db.fetchval("INSERT INTO chats (telegram_id, title) VALUES (-100, 't') RETURNING id")
+    other = await db.fetchval("INSERT INTO chats (telegram_id, title) VALUES (-200, 't') RETURNING id")
+    for tg, role, active, chat in ((10, "manager", True, here), (11, "manager", True, other),
+                                   (12, "manager", False, here), (13, "superadmin", True, None)):
+        m = await db.fetchval(
+            "INSERT INTO managers (login, password_hash, role, active, telegram_user_id) "
+            "VALUES ($1, 'x', $2, $3, $4) RETURNING id", str(tg), role, active, tg)
+        if chat:
+            await db.execute("INSERT INTO chat_managers (chat_id, manager_id) VALUES ($1, $2)", chat, m)
+
+
+@pytest.mark.parametrize(("user", "allowed"), [(10, True), (11, False), (12, False), (13, True), (99, False)])
+async def test_handle_all_for_panel_managers(db, user, allowed):
+    await seed(db)
+    bot = FakeBot("member")
+    await run_all(db, bot, FakeUser([{"user_id": 1}]), message("/all", user=user))
+    [s] = bot.sent()
+    assert ("tg://" in s["text"]) == allowed

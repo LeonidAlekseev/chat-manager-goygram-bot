@@ -126,7 +126,7 @@ async def _serve(db: asyncpg.Pool, secret: str, settings: Settings, app: Any) ->
         await handle_group_migration(db, message)
         await register_chat(db, message)
         await queue_photo(db, message)
-        await handle_all(app, user, message)
+        await handle_all(db, app, user, message)
         text = await handle_link_start(db, message) or await handle_private(db, message, os.environ.get("PANEL_URL"))
         if text is None:
             text = reply_for(message)
