@@ -141,10 +141,9 @@ export default async function ChatPage({
           )}
         </CardHeader>
         <CardContent className="space-y-4">
-          {!isSuper(v) &&
-            (!linked || myStatus === "member" || myStatus === "absent") && (
-              <NotAdminHint linked={linked} />
-            )}
+          {!isSuper(v) && (!linked || myStatus === "absent") && (
+            <NotAdminHint linked={linked} />
+          )}
           <ActionForm action={bindChat} className="flex flex-wrap gap-2">
             <input type="hidden" name="chatId" value={chat.id} />
             <Select
