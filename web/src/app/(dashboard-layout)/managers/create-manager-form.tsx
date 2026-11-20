@@ -1,6 +1,7 @@
 "use client"
 
 import { useActionState } from "react"
+import { Plus } from "lucide-react"
 
 import type { ActionState } from "./actions"
 
@@ -27,6 +28,7 @@ export function CreateManagerForm() {
         autoComplete="new-password"
       />
       <Button type="submit" disabled={pending}>
+        <Plus />
         Создать
       </Button>
       {state?.error && (

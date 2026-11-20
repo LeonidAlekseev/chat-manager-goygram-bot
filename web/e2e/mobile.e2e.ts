@@ -8,7 +8,7 @@ import { CHAT } from "./global-setup"
 
 test.use({ viewport: { width: 390, height: 844 } })
 
-test("mobile: no horizontal overflow, chat title visible, light only, OzonWaao", async ({
+test("mobile: no horizontal overflow, chat title visible, light only, TaskManager", async ({
   page,
 }) => {
   await page.emulateMedia({ colorScheme: "dark" }) // the panel ignores the system theme
@@ -37,7 +37,7 @@ test("mobile: no horizontal overflow, chat title visible, light only, OzonWaao",
     "/settings",
   ]) {
     await page.goto(path)
-    await expect(page).toHaveTitle(/OzonWaao/)
+    await expect(page).toHaveTitle(/TaskManager/)
     // body's overflow-x-hidden would mask a real overflow: measure without it
     await page.addStyleTag({ content: "body{overflow-x:visible!important}" })
     await page.evaluate(() =>
@@ -49,6 +49,13 @@ test("mobile: no horizontal overflow, chat title visible, light only, OzonWaao",
     ])
     expect(scroll, `${path} overflows`).toBeLessThanOrEqual(inner)
   }
+
+  // manager row: name, password and the save button share one line
+  await page.goto("/managers")
+  const save = page.getByRole("button", { name: "Сохранить" }).first()
+  const pw = page.getByLabel(/Новый пароль/).first()
+  const [a, b] = await Promise.all([save.boundingBox(), pw.boundingBox()])
+  expect(Math.abs(a!.y - b!.y)).toBeLessThan(20)
 })
 
 test("mobile: delete buttons fit the screen; deleting a chat hands it to the bot", async ({
@@ -433,6 +440,50 @@ test("mobile: long names, options and logins do not overflow any page", async ({
     await db.template.deleteMany({ where: { id: tpl.id } })
     await db.chat.deleteMany({ where: { id: chat.id } })
     await db.manager.deleteMany({ where: { id: mgr.id } })
+    await db.$disconnect()
+  }
+})
+
+test("mobile: managers anchor, collapsed bound schedule, t.me link for supergroups", async ({
+  page,
+}) => {
+  const db = new PrismaClient()
+  const stamp = Date.now()
+  const sch = await db.schedule.create({
+    data: { name: `E2E anchor ${stamp}` },
+  })
+  const chat = await db.chat.create({
+    data: {
+      telegramId: BigInt(`-100${stamp}`),
+      title: `E2E anchor ${stamp}`,
+      scheduleId: sch.id,
+    },
+  })
+  try {
+    await page.goto("/login")
+    await page.getByLabel("Логин").fill(LOGIN)
+    await page.getByLabel("Пароль").fill(PASSWORD)
+    await page.getByRole("button", { name: "Войти" }).click()
+    await page.waitForURL("**/chats")
+    await page.getByLabel(`Название чата -100${stamp}`).waitFor()
+    await page
+      .getByRole("link", { name: "Настроить менеджеров" })
+      .first()
+      .waitFor()
+    await page.goto(`/chats/${chat.id}#managers`)
+    await expect(page.locator("details#schedule")).not.toHaveAttribute("open")
+    await expect(
+      page.getByRole("link", { name: "Открыть в Telegram" })
+    ).toHaveAttribute("href", `https://t.me/c/${stamp}`)
+    const top = await page
+      .locator("#managers")
+      .evaluate((e) => e.getBoundingClientRect().top)
+    expect(top).toBeGreaterThanOrEqual(0)
+    await page.locator("details#schedule summary").click()
+    await expect(page.locator("details#schedule")).toHaveAttribute("open", "")
+  } finally {
+    await db.chat.delete({ where: { id: chat.id } })
+    await db.schedule.delete({ where: { id: sch.id } })
     await db.$disconnect()
   }
 })

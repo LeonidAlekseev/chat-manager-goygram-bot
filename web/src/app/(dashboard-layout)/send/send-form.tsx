@@ -1,6 +1,7 @@
 "use client"
 
 import { useActionState, useState } from "react"
+import { Send } from "lucide-react"
 
 import type { ActionState } from "./actions"
 
@@ -163,6 +164,7 @@ export function SendForm({
         </p>
       )}
       <Button type="submit" disabled={pending} className="w-fit">
+        <Send />
         {when === "later" ? "Запланировать" : "Отправить"}
       </Button>
     </form>

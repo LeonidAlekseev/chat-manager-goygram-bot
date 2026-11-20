@@ -2,6 +2,7 @@
 
 import { useEffect } from "react"
 import { useRouter } from "next/navigation"
+import { Search } from "lucide-react"
 
 import type { discoveryView } from "@/lib/settings"
 
@@ -27,6 +28,7 @@ export function DiscoverChats({
     <ActionForm action={discoverChats} className="mb-4 grid gap-2">
       <div className="flex flex-wrap items-center gap-4">
         <Button type="submit" variant="outline">
+          <Search />
           Найти группы бота
         </Button>
         {scan?.stuck ? (

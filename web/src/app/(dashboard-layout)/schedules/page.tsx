@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation"
-import { ChevronRight } from "lucide-react"
+import { ChevronRight, Save } from "lucide-react"
 
 import type { Metadata } from "next"
 
@@ -127,6 +127,7 @@ export default async function SchedulesPage() {
                         </label>
                       ))}
                       <Button type="submit" variant="outline" className="w-fit">
+                        <Save />
                         Сохранить привязку
                       </Button>
                     </ActionForm>

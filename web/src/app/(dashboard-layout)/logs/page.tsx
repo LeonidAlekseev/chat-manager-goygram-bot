@@ -1,5 +1,6 @@
 import Link from "next/link"
 import { redirect } from "next/navigation"
+import { ChevronRight, Filter } from "lucide-react"
 
 import type { SendStatus } from "@prisma/client"
 import type { Metadata } from "next"
@@ -99,6 +100,7 @@ export default async function LogsPage({
               ))}
             </Select>
             <Button type="submit" variant="outline">
+              <Filter />
               Показать
             </Button>
           </form>
@@ -159,7 +161,10 @@ export default async function LogsPage({
           )}
           {rows.length > PAGE && (
             <Button asChild variant="outline" className="w-fit">
-              <Link href={`/logs?${next}`}>Дальше</Link>
+              <Link href={`/logs?${next}`}>
+                Дальше
+                <ChevronRight />
+              </Link>
             </Button>
           )}
         </CardContent>
