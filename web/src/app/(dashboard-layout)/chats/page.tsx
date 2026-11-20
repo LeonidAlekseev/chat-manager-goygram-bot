@@ -20,6 +20,7 @@ import { ActionForm } from "@/components/action-form"
 import { renameChat } from "./actions"
 import { DeleteChatForm } from "./delete-chat-form"
 import { DiscoverChats } from "./discover-chats"
+import { NotAdminBadge, NotAdminHint } from "./member-status"
 
 export const metadata: Metadata = { title: "Чаты" }
 
@@ -27,17 +28,30 @@ export default async function ChatsPage() {
   // Layouts are not re-rendered on client navigation, so data pages check the session themselves.
   const v = await getViewer()
   if (!v) redirect("/login")
-  const [chats, schedules, scan] = await Promise.all([
+  const [chats, schedules, scan, me] = await Promise.all([
     db.chat.findMany({
       where: visibleChats(v),
       orderBy: [{ active: "desc" }, { title: "asc" }],
+      // the viewer's own admin status only (#99); the superadmin is not assigned, so gets none
+      include: {
+        managers: {
+          where: { managerId: v.id },
+          select: { memberStatus: true },
+        },
+      },
     }),
     db.schedule.findMany({
       where: visibleSchedules(v),
       select: { id: true, name: true },
     }),
     isSuper(v) ? discoveryView() : null,
+    db.manager.findUnique({
+      where: { id: v.id },
+      select: { telegramUserId: true },
+    }),
   ])
+  // an unlinked manager's statuses are of an old account or none: not shown
+  const linked = !!me?.telegramUserId
   const scheduleName = (id: number | null) =>
     id &&
     (schedules.find((s) => s.id === id)?.name ?? "Расписание другого менеджера")
@@ -50,6 +64,12 @@ export default async function ChatsPage() {
         </CardHeader>
         <CardContent>
           {isSuper(v) && <DiscoverChats scan={scan} />}
+          {!isSuper(v) &&
+            chats.some(
+              (c) =>
+                !linked ||
+                ["member", "absent"].includes(c.managers[0]?.memberStatus ?? "")
+            ) && <NotAdminHint linked={linked} />}
           {chats.length === 0 ? (
             <p className="text-muted-foreground">
               Добавьте бота в группу — чат появится здесь.
@@ -69,20 +89,27 @@ export default async function ChatsPage() {
                   key={chat.id}
                   className="relative grid gap-2 border-t py-3 pr-12 md:pr-0 md:grid-cols-[minmax(0,2fr)_auto_auto_minmax(0,1fr)_auto] md:items-center md:gap-4 md:py-2"
                 >
-                  <ActionForm action={renameChat} className="flex gap-2">
-                    <input type="hidden" name="id" value={chat.id} />
-                    <Input
-                      className="min-w-0"
-                      name="title"
-                      defaultValue={chat.title}
-                      aria-label={`Название чата ${chat.telegramId}`}
-                      required
-                      maxLength={255}
-                    />
-                    <Button type="submit" variant="outline">
-                      Сохранить
-                    </Button>
-                  </ActionForm>
+                  <div className="grid min-w-0 gap-1">
+                    <ActionForm action={renameChat} className="flex gap-2">
+                      <input type="hidden" name="id" value={chat.id} />
+                      <Input
+                        className="min-w-0"
+                        name="title"
+                        defaultValue={chat.title}
+                        aria-label={`Название чата ${chat.telegramId}`}
+                        required
+                        maxLength={255}
+                      />
+                      <Button type="submit" variant="outline">
+                        Сохранить
+                      </Button>
+                    </ActionForm>
+                    {linked && (
+                      <NotAdminBadge
+                        status={chat.managers[0]?.memberStatus ?? null}
+                      />
+                    )}
+                  </div>
                   <span className="font-mono text-muted-foreground md:text-foreground">
                     {chat.telegramId.toString()}
                   </span>

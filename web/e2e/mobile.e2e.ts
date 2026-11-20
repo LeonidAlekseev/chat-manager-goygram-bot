@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test"
 import { PrismaClient } from "@prisma/client"
+import bcrypt from "bcryptjs"
 
 import type { Locator } from "@playwright/test"
 
@@ -390,6 +391,52 @@ test("mobile: long names, options and logins do not overflow any page", async ({
     await db.pollMember.deleteMany({ where: { pollId: `p${stamp}` } })
     await db.schedule.deleteMany({ where: { id: sch.id } })
     await db.template.deleteMany({ where: { id: tpl.id } })
+    await db.chat.deleteMany({ where: { id: chat.id } })
+    await db.manager.deleteMany({ where: { id: mgr.id } })
+    await db.$disconnect()
+  }
+})
+
+test("mobile: a manager's «not an admin» badge fits the screen (#99)", async ({
+  page,
+}) => {
+  const db = new PrismaClient()
+  const stamp = Date.now()
+  const title = `E2E бейдж ${stamp} ` + "Длинное название чата ".repeat(4)
+  const mgr = await db.manager.create({
+    data: {
+      login: `e2e-badge-${stamp}`,
+      passwordHash: await bcrypt.hash("pw-badge-test", 4),
+      telegramUserId: BigInt(stamp),
+    },
+  })
+  const chat = await db.chat.create({
+    data: {
+      telegramId: BigInt(-stamp),
+      title,
+      managers: { create: { managerId: mgr.id, memberStatus: "member" } },
+    },
+  })
+  try {
+    await page.goto("/login")
+    await page.getByLabel("Логин").fill(mgr.login)
+    await page.getByLabel("Пароль").fill("pw-badge-test")
+    await page.getByRole("button", { name: "Войти" }).click()
+    await page.waitForURL("**/chats")
+    for (const path of ["/chats", `/chats/${chat.id}`]) {
+      await page.goto(path)
+      await expect(page.getByText("Вы не администратор")).toBeVisible()
+      await expect(
+        page.getByText(/доступны только администраторам/)
+      ).toBeVisible()
+      await page.addStyleTag({ content: "body{overflow-x:visible!important}" })
+      const [scroll, inner] = await page.evaluate(() => [
+        document.documentElement.scrollWidth,
+        window.innerWidth,
+      ])
+      expect(scroll, `${path} overflows`).toBeLessThanOrEqual(inner)
+    }
+  } finally {
     await db.chat.deleteMany({ where: { id: chat.id } })
     await db.manager.deleteMany({ where: { id: mgr.id } })
     await db.$disconnect()

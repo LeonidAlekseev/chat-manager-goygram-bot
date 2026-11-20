@@ -83,7 +83,10 @@ export async function assignManagers(
   const ids = managerIds.map((m) => m.data!)
   try {
     await db.$transaction([
-      db.chatManager.deleteMany({ where: { chatId: id.data } }),
+      // kept managers keep their admin status (#99); a new row is checked by the bot
+      db.chatManager.deleteMany({
+        where: { chatId: id.data, managerId: { notIn: ids } },
+      }),
       db.chatManager.createMany({
         data: ids.map((managerId) => ({ chatId: id.data, managerId })),
         skipDuplicates: true,
