@@ -1,6 +1,7 @@
 "use client"
 
 import { useActionState, useState } from "react"
+import { Plus, Save } from "lucide-react"
 
 import type { ActionState } from "./actions"
 
@@ -135,6 +136,7 @@ export function TemplateForm({
         </p>
       ) : (
         <Button type="submit" disabled={pending} className="w-fit">
+          {t.id ? <Save /> : <Plus />}
           {t.id ? "Сохранить" : "Создать"}
         </Button>
       )}

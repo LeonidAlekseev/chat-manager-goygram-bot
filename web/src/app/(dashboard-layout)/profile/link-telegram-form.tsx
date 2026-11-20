@@ -1,6 +1,7 @@
 "use client"
 
 import { useActionState } from "react"
+import { Link2 } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { createLinkCode } from "./actions"
@@ -10,6 +11,7 @@ export function LinkTelegramForm() {
   return (
     <form action={action} className="space-y-2">
       <Button type="submit" disabled={pending}>
+        <Link2 />
         Привязать Telegram
       </Button>
       {state && (

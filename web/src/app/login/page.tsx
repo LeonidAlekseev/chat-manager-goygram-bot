@@ -1,6 +1,7 @@
 "use client"
 
 import { useActionState } from "react"
+import { LogIn } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -39,6 +40,7 @@ export default function LoginPage() {
               </p>
             )}
             <Button type="submit" disabled={pending}>
+              <LogIn />
               Войти
             </Button>
           </form>

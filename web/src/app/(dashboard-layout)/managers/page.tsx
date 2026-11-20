@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation"
 import { auth } from "@/auth"
+import { Power, PowerOff } from "lucide-react"
 
 import type { Metadata } from "next"
 
@@ -45,16 +46,21 @@ export default async function ManagersPage() {
               <table className="w-full text-sm">
                 <tbody>
                   {managers.map((m) => (
-                    <tr key={m.id} className="border-t">
-                      <td className="py-2 pe-4 font-mono">{m.login}</td>
-                      <td className="py-2 pe-4">
+                    <tr
+                      key={m.id}
+                      className="block border-t py-2 md:table-row md:py-0"
+                    >
+                      <td className="block py-1 pe-4 font-mono md:table-cell md:py-2">
+                        {m.login}
+                      </td>
+                      <td className="block py-1 pe-4 md:table-cell md:py-2">
                         <EditManagerForm
                           id={m.id}
                           login={m.login}
                           name={m.name}
                         />
                       </td>
-                      <td className="py-2">
+                      <td className="block py-1 md:table-cell md:py-2">
                         <form
                           action={setManagerActive}
                           className="flex items-center gap-2"
@@ -71,6 +77,7 @@ export default async function ManagersPage() {
                             <Badge variant="secondary">Отключён</Badge>
                           )}
                           <Button type="submit" variant="outline">
+                            {m.active ? <PowerOff /> : <Power />}
                             {m.active ? "Отключить" : "Включить"}
                           </Button>
                         </form>

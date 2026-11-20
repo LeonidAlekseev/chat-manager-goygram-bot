@@ -1,6 +1,7 @@
 "use client"
 
 import { useActionState, useState } from "react"
+import { Send } from "lucide-react"
 
 import type { ActionState } from "./actions"
 
@@ -82,6 +83,7 @@ export function SendForm({
         <p className="text-sm text-muted-foreground">Поставлено в очередь.</p>
       )}
       <Button type="submit" disabled={pending} className="w-fit">
+        <Send />
         Отправить
       </Button>
     </form>

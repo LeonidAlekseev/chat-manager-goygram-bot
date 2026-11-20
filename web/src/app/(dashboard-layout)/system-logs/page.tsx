@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation"
 import { auth } from "@/auth"
+import { RefreshCw } from "lucide-react"
 
 import type { Metadata } from "next"
 
@@ -72,6 +73,7 @@ export default async function SystemLogsPage({
               className="w-48"
             />
             <Button type="submit" variant="outline">
+              <RefreshCw />
               Обновить
             </Button>
           </form>
