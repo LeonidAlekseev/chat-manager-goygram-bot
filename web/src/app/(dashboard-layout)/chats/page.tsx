@@ -26,6 +26,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { ActionForm } from "@/components/action-form"
+import { ChatAvatar } from "@/components/chat-avatar"
 import { renameChat } from "./actions"
 import { DeleteChatForm } from "./delete-chat-form"
 import { DiscoverChats } from "./discover-chats"
@@ -52,6 +53,7 @@ export default async function ChatsPage() {
       where: visibleChats(v),
       orderBy: [{ active: "desc" }, { title: "asc" }],
       include: {
+        photo: { select: { uniqueId: true } },
         managers: {
           // a manager gets only their own row: their admin status (#99)
           where: isSuper(v) ? {} : { managerId: v.id },
@@ -118,7 +120,11 @@ export default async function ChatsPage() {
                     )}
                   >
                     <div className="grid min-w-0 gap-1">
-                      <ActionForm action={renameChat} className="flex gap-2">
+                      <ActionForm
+                        action={renameChat}
+                        className="flex items-center gap-2"
+                      >
+                        <ChatAvatar chat={chat} className="size-9" />
                         <input type="hidden" name="id" value={chat.id} />
                         <Input
                           className="min-w-0"

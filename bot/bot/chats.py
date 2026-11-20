@@ -29,7 +29,7 @@ async def handle_member_update(db: asyncpg.Pool, update: dict[str, Any]) -> None
     await db.execute(
         """
         INSERT INTO chats (telegram_id, title, active, updated_at) VALUES ($1, $2, $3, now())
-        ON CONFLICT (telegram_id) DO UPDATE SET active = EXCLUDED.active, updated_at = now()
+        ON CONFLICT (telegram_id) DO UPDATE SET active = EXCLUDED.active, updated_at = now(), photo_checked_at = NULL
         """,
         chat["id"],
         chat.get("title") or str(chat["id"]),

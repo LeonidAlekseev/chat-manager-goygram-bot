@@ -54,7 +54,7 @@ export default async function SendPage() {
     db.chat.findMany({
       where: { active: true, deleting: false, ...visibleChats(v) },
       orderBy: { title: "asc" },
-      select: { id: true, title: true },
+      select: { id: true, title: true, photo: { select: { uniqueId: true } } },
     }),
     // every scheduled job, however many sends came after it, so it can still be cancelled
     db.outbox.findMany({

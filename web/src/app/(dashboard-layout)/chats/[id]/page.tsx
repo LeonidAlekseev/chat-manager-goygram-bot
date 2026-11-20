@@ -19,6 +19,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Select } from "@/components/ui/select"
 import { ActionForm } from "@/components/action-form"
+import { ChatAvatar } from "@/components/chat-avatar"
 import { bindChat } from "../../schedules/actions"
 import { toItemView } from "../../schedules/item-view"
 import { ScheduleForm } from "../../schedules/schedule-form"
@@ -40,6 +41,7 @@ export default async function ChatPage({
   const chat = await db.chat.findFirst({
     where: { id, ...visibleChats(v) },
     include: {
+      photo: { select: { uniqueId: true } },
       schedule: { include: { items: { orderBy: { time: "asc" } } } },
       // the superadmin sees every assigned manager's admin status (#99), a manager only their own
       managers: {
@@ -104,6 +106,7 @@ export default async function ChatPage({
       <Card>
         <CardHeader className="flex-row flex-wrap items-center justify-between gap-2 space-y-0">
           <div className="flex min-w-0 flex-wrap items-center gap-2">
+            <ChatAvatar chat={chat} className="size-10" />
             <CardTitle className="min-w-0 break-words">{chat.title}</CardTitle>
             {linked && <NotAdminBadge status={myStatus} />}
           </div>
