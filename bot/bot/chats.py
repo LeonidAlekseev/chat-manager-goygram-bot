@@ -37,6 +37,24 @@ async def handle_member_update(db: asyncpg.Pool, update: dict[str, Any]) -> None
     )
 
 
+async def register_chat(db: asyncpg.Pool, message: dict[str, Any]) -> None:
+    """A message from a group means the bot is there: a group it joined before the panel knew it gets a row (#94).
+
+    A known row is left alone: a deleting one is still deleted, an inactive one waits for my_chat_member.
+    """
+    chat = message["chat"]
+    # migrate_to: the old group's row has just moved to the new id; left_chat_member: maybe the bot itself
+    if chat.get("type") not in ("group", "supergroup") or "migrate_to_chat_id" in message or "left_chat_member" in message:
+        return
+    await db.execute(
+        # NOT EXISTS first: a plain ON CONFLICT would take an id from the sequence on every message
+        "INSERT INTO chats (telegram_id, title, updated_at) SELECT $1, $2, now() "
+        "WHERE NOT EXISTS (SELECT 1 FROM chats WHERE telegram_id = $1) ON CONFLICT (telegram_id) DO NOTHING",
+        chat["id"],
+        chat.get("title") or str(chat["id"]),
+    )
+
+
 async def handle_group_migration(db: asyncpg.Pool, message: dict[str, Any]) -> None:
     """A basic group upgraded to a supergroup gets a new id; Telegram sends no new my_chat_member."""
     new_id = message.get("migrate_to_chat_id")

@@ -45,6 +45,11 @@ test("a manager sees neither another manager's template nor an unassigned chat u
   await expect(page.getByLabel(`Название чата ${chat.telegramId}`)).toHaveCount(
     0
   )
+  // the group scan is the superadmin's
+  await expect(page.getByText("Добавьте бота в группу")).toBeVisible()
+  await expect(
+    page.getByRole("button", { name: "Найти группы бота" })
+  ).toHaveCount(0)
   // notFound() streams in a 200 response, so check what is rendered
   await page.goto(`/chats/${chat.id}`)
   await expect(page.getByRole("heading", { name: "404" })).toBeVisible()
@@ -53,6 +58,9 @@ test("a manager sees neither another manager's template nor an unassigned chat u
   await expect(page.getByText(`Чужой ${tag}`)).toHaveCount(0)
 
   await signIn(page, LOGIN, PASSWORD)
+  await expect(
+    page.getByRole("button", { name: "Найти группы бота" })
+  ).toBeVisible()
   await page.goto(`/chats/${chat.id}`)
   await page.getByLabel(`Менеджер a ${tag}`).check()
   await page.getByRole("button", { name: "Сохранить менеджеров" }).click()

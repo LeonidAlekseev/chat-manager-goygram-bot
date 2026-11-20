@@ -1,7 +1,12 @@
-import { deleteChat, renameChat } from "@/app/(dashboard-layout)/chats/actions"
+import {
+  deleteChat,
+  discoverChats,
+  renameChat,
+} from "@/app/(dashboard-layout)/chats/actions"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
 import { db } from "@/lib/db"
+import { discoveryView } from "@/lib/settings"
 
 const session = vi.hoisted(() => ({ current: null as unknown }))
 vi.mock("@/auth", () => ({ auth: async () => session.current }))
@@ -126,5 +131,96 @@ describe("deleteChat", () => {
     expect(
       (await db.chat.findUniqueOrThrow({ where: { id: chat.id } })).deleting
     ).toBe(false)
+  })
+})
+
+describe("discoverChats", () => {
+  const scan = () =>
+    db.chatDiscovery.findUnique({
+      where: { id: 1 },
+      select: { state: true, found: true, added: true, error: true },
+    })
+
+  beforeEach(async () => {
+    await db.chatDiscovery.deleteMany()
+    await db.settings.upsert({
+      where: { id: 1 },
+      create: { apiSession: "cipher", botSeenAt: new Date() },
+      update: { apiSession: "cipher", botSeenAt: new Date() },
+    })
+    await db.manager.upsert({
+      where: { login: "boss" },
+      create: { login: "boss", passwordHash: "x", role: "superadmin" },
+      update: { role: "superadmin", active: true },
+    })
+    session.current = { user: { name: "boss" } }
+  })
+
+  it("queues a scan for the bot", async () => {
+    expect(await discoverChats()).toEqual({})
+    expect(await scan()).toEqual({
+      state: "queued",
+      found: null,
+      added: null,
+      error: null,
+    })
+  })
+
+  it("starts a new scan after a finished one and leaves a running one alone", async () => {
+    await db.chatDiscovery.create({
+      data: { state: "done", found: 3, added: 1, error: "x" },
+    })
+    await discoverChats()
+    expect(await scan()).toEqual({
+      state: "queued",
+      found: null,
+      added: null,
+      error: null,
+    })
+    await db.chatDiscovery.update({
+      where: { id: 1 },
+      data: { state: "running" },
+    })
+    await discoverChats()
+    expect((await scan())?.state).toBe("running")
+  })
+
+  it("queues again a scan the bot has not answered", async () => {
+    const old = new Date(Date.now() - 3 * 60_000)
+    await db.chatDiscovery.create({ data: { state: "queued", updatedAt: old } })
+    await db.$executeRaw`UPDATE chat_discovery SET updated_at = ${old}`
+    expect((await discoveryView())?.stuck).toBe(true)
+    await discoverChats()
+    const row = await db.chatDiscovery.findUniqueOrThrow({ where: { id: 1 } })
+    expect(+row.updatedAt).toBeGreaterThan(+old)
+    expect((await discoveryView())?.stuck).toBe(false)
+    // a running scan may wait out a long FLOOD_WAIT: only a silent bot makes it stuck
+    await db.$executeRaw`UPDATE chat_discovery SET state = 'running', updated_at = ${old}`
+    expect((await discoveryView())?.stuck).toBe(false)
+    await db.settings.update({ where: { id: 1 }, data: { botSeenAt: old } })
+    expect((await discoveryView())?.stuck).toBe(true)
+    await discoverChats()
+    expect((await scan())?.state).toBe("queued")
+  })
+
+  it("explains that the scan needs the Telegram account", async () => {
+    await db.settings.update({ where: { id: 1 }, data: { apiSession: null } })
+    expect((await discoverChats()).error).toMatch(/Настройках/)
+    expect(await scan()).toBeNull()
+  })
+
+  it("is for the superadmin only", async () => {
+    await db.manager.upsert({
+      where: { login: "clerk" },
+      create: { login: "clerk", passwordHash: "x" },
+      update: { role: "manager", active: true },
+    })
+    session.current = { user: { name: "clerk" } }
+    expect((await discoverChats()).error).toBe(
+      "Искать группы может только суперадмин"
+    )
+    session.current = null
+    expect((await discoverChats()).error).toBe("Сессия истекла, войдите заново")
+    expect(await scan()).toBeNull()
   })
 })

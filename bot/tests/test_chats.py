@@ -1,6 +1,6 @@
 from datetime import UTC, datetime
 
-from bot.chats import delete_chats, handle_group_migration, handle_member_update
+from bot.chats import delete_chats, handle_group_migration, handle_member_update, register_chat
 
 
 def my_chat_member(chat_id: int, title: str, status: str) -> dict:
@@ -168,4 +168,40 @@ async def test_a_failing_leave_is_logged_once_not_every_tick(db, caplog):
         await delete_chats(db, LeavingTelegram("connection reset"))
     assert len([r for r in caplog.records if "leaving chat" in r.message]) == 1
     await delete_chats(db, LeavingTelegram())
+    assert await chats(db) == []
+
+
+def group_message(chat_id: int, title: str, kind: str = "supergroup", **extra) -> dict:
+    return {"message_id": 1, "chat": {"id": chat_id, "title": title, "type": kind}, "text": "/all", **extra}
+
+
+async def test_a_message_from_an_unknown_group_registers_it(db):
+    await register_chat(db, group_message(-100777, "Старая группа"))
+    await register_chat(db, group_message(-777, "Обычная", "group"))
+    assert await chats(db) == [(-100777, "Старая группа", True), (-777, "Обычная", True)]
+
+
+async def test_a_message_never_changes_a_known_chat(db):
+    await handle_member_update(db, my_chat_member(-100777, "ПВЗ", "member"))
+    await db.execute("UPDATE chats SET title = 'Пункт 1'")
+    await db.execute(
+        "INSERT INTO chats (telegram_id, title, active, deleting) VALUES (-100778, 'Ушёл', false, false), "
+        "(-100779, 'Удаляется', true, true)"
+    )
+    for chat_id in (-100777, -100778, -100779):
+        await register_chat(db, group_message(chat_id, "Из Telegram"))
+    rows = await db.fetch("SELECT telegram_id, title, active, deleting FROM chats ORDER BY id")
+    assert [tuple(r) for r in rows] == [
+        (-100777, "Пункт 1", True, False),
+        (-100778, "Ушёл", False, False),
+        (-100779, "Удаляется", True, True),
+    ]
+
+
+async def test_private_chats_and_the_migrated_group_are_not_registered(db):
+    await register_chat(db, {"message_id": 1, "chat": {"id": 5, "type": "private"}, "text": "/start"})
+    await register_chat(db, {"message_id": 2, "chat": {"id": -100, "title": "Канал", "type": "channel"}})
+    # the old basic group's last message: its row has just moved to the supergroup's id
+    await register_chat(db, group_message(-555, "ПВЗ", "group", migrate_to_chat_id=-100555))
+    await register_chat(db, group_message(-556, "ПВЗ", "group", left_chat_member={"id": 7, "is_bot": True}))
     assert await chats(db) == []

@@ -12,8 +12,9 @@ import asyncpg
 from goygram import GoyGram
 
 from bot.account import Account, connect, open_client
-from bot.chats import handle_group_migration, handle_member_update
+from bot.chats import handle_group_migration, handle_member_update, register_chat
 from bot.commands import BOT_COMMANDS, reply_for
+from bot.discover import run_forever as run_discover_forever
 from bot.intake import handle_edit, handle_private
 from bot.link import handle_link_start
 from bot.mention import handle_all
@@ -120,6 +121,7 @@ async def _serve(db: asyncpg.Pool, secret: str, settings: Settings, app: Any) ->
         if not message:
             return
         await handle_group_migration(db, message)
+        await register_chat(db, message)
         await handle_all(app, user, message)
         text = await handle_link_start(db, message) or await handle_private(db, message, os.environ.get("PANEL_URL"))
         if text is None:
@@ -143,6 +145,7 @@ async def _serve(db: asyncpg.Pool, secret: str, settings: Settings, app: Any) ->
     seen = await db.fetchval("SELECT bot_seen_at AT TIME ZONE 'UTC' FROM settings WHERE id = 1")
     scheduler = asyncio.create_task(run_forever(db, app, tz, user, seen))
     outbox = asyncio.create_task(run_outbox_forever(db, app, user))
+    discovery = asyncio.create_task(run_discover_forever(db, user))  # «Найти группы бота» in the panel
     retention = asyncio.create_task(purge_forever(db))
     runner = asyncio.create_task(app.run())
     # New token or API data: exit and let compose (restart: unless-stopped) start us with them.
@@ -162,6 +165,7 @@ async def _serve(db: asyncpg.Pool, secret: str, settings: Settings, app: Any) ->
         await user.stop()
         scheduler.cancel()
         outbox.cancel()
+        discovery.cancel()
         retention.cancel()
 
 

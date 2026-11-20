@@ -10,6 +10,7 @@ import {
   visibleSchedules,
 } from "@/lib/access"
 import { db } from "@/lib/db"
+import { discoveryView } from "@/lib/settings"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -18,6 +19,7 @@ import { Input } from "@/components/ui/input"
 import { ActionForm } from "@/components/action-form"
 import { renameChat } from "./actions"
 import { DeleteChatForm } from "./delete-chat-form"
+import { DiscoverChats } from "./discover-chats"
 
 export const metadata: Metadata = { title: "Чаты" }
 
@@ -25,7 +27,7 @@ export default async function ChatsPage() {
   // Layouts are not re-rendered on client navigation, so data pages check the session themselves.
   const v = await getViewer()
   if (!v) redirect("/login")
-  const [chats, schedules] = await Promise.all([
+  const [chats, schedules, scan] = await Promise.all([
     db.chat.findMany({
       where: visibleChats(v),
       orderBy: [{ active: "desc" }, { title: "asc" }],
@@ -34,6 +36,7 @@ export default async function ChatsPage() {
       where: visibleSchedules(v),
       select: { id: true, name: true },
     }),
+    isSuper(v) ? discoveryView() : null,
   ])
   const scheduleName = (id: number | null) =>
     id &&
@@ -46,6 +49,7 @@ export default async function ChatsPage() {
           <CardTitle>Чаты</CardTitle>
         </CardHeader>
         <CardContent>
+          {isSuper(v) && <DiscoverChats scan={scan} />}
           {chats.length === 0 ? (
             <p className="text-muted-foreground">
               Добавьте бота в группу — чат появится здесь.

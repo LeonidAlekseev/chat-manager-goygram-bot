@@ -7,6 +7,7 @@ import { z } from "zod"
 
 import { duplicated, getViewer, isSuper, visibleChats } from "@/lib/access"
 import { db } from "@/lib/db"
+import { discoveryView } from "@/lib/settings"
 
 // Postgres INT: a larger id can never exist
 const Id = z
@@ -103,5 +104,32 @@ export async function assignManagers(
     throw e
   }
   revalidatePath("/chats", "layout")
+  return {}
+}
+
+// «Найти группы бота» (#94): the bot runs the scan through the MTProto account and writes the result.
+// A scan already queued or running is left alone unless the bot does not answer (discoveryView).
+export async function discoverChats(): Promise<{ error?: string }> {
+  const v = await getViewer()
+  if (!v) return EXPIRED
+  if (!isSuper(v)) return { error: "Искать группы может только суперадмин" }
+  const s = await db.settings.findUnique({
+    where: { id: 1 },
+    select: { apiSession: true },
+  })
+  if (!s?.apiSession)
+    return {
+      error:
+        "Аккаунт Telegram не подключён: войдите в него в Настройках, поиск групп идёт через него.",
+    }
+  const scan = await discoveryView()
+  if (scan && scan.state !== "done" && !scan.stuck) return {}
+  const data = { state: "queued", found: null, added: null, error: null }
+  await db.chatDiscovery.upsert({
+    where: { id: 1 },
+    create: data,
+    update: data,
+  })
+  revalidatePath("/chats")
   return {}
 }
