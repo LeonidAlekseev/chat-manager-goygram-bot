@@ -54,7 +54,7 @@ test("a manager sees the superadmin's schedule read-only on /schedules", async (
   })
   const sch = await db.schedule.create({
     data: {
-      name: `Суперадмина ${tag}`,
+      name: `Расписание ${tag}`,
       items: {
         create: {
           templateId: tpl.id,
@@ -68,7 +68,8 @@ test("a manager sees the superadmin's schedule read-only on /schedules", async (
   try {
     await signIn(page, m.login, "pw-ro-test")
     await page.goto("/schedules")
-    const card = page.locator("details", { hasText: `Суперадмина ${tag}` })
+    const card = page.locator("details", { hasText: `Расписание ${tag}` })
+    await expect(card.getByText("Неизменяемый")).toBeVisible()
     await card.locator("summary").click()
     await expect(card.locator("select[name=templateId]")).toBeDisabled()
     await expect(card.getByText("только просмотр")).toBeVisible()
@@ -85,6 +86,53 @@ test("a manager sees the superadmin's schedule read-only on /schedules", async (
   } finally {
     await db.schedule.deleteMany({ where: { id: sch.id } })
     await db.template.deleteMany({ where: { id: tpl.id } })
+    await db.manager.deleteMany({ where: { id: m.id } })
+  }
+})
+
+test("/templates: a poll card lists its options, a foreign one is «Неизменяемый»", async ({
+  page,
+}) => {
+  const tag = Date.now()
+  const m = await db.manager.create({
+    data: {
+      login: `e2e-tp-${tag}`,
+      name: `TP ${tag}`,
+      passwordHash: await bcrypt.hash("pw-tp-test", 4),
+    },
+  })
+  const long = `Очень длинный вариант ответа без пробелов ${"ы".repeat(60)}`
+  const t = await db.template.create({
+    data: {
+      name: `Опрос ${tag}`,
+      kind: "poll",
+      text: "Вопрос?",
+      options: ["Да", long, "Нет"],
+      correctOptionId: 0,
+    },
+  })
+  try {
+    await signIn(page, m.login, "pw-tp-test")
+    for (const width of [360, 390]) {
+      await page.setViewportSize({ width, height: 844 })
+      await page.goto("/templates")
+      const card = page.locator("details", { hasText: `Опрос ${tag}` })
+      await expect(card.getByRole("listitem")).toHaveText([
+        /^Да\s*верный$/,
+        long,
+        "Нет",
+      ])
+      await expect(card.getByText("Неизменяемый")).toBeVisible()
+      expect(
+        await page.evaluate(
+          () => document.documentElement.scrollWidth <= window.innerWidth
+        )
+      ).toBe(true)
+    }
+    await page.locator("details", { hasText: `Опрос ${tag}` }).scrollIntoViewIfNeeded()
+    await page.screenshot({ path: "/tmp/shots116/templates.png" })
+  } finally {
+    await db.template.deleteMany({ where: { id: t.id } })
     await db.manager.deleteMany({ where: { id: m.id } })
   }
 })

@@ -98,7 +98,7 @@ export default async function SchedulesPage() {
                             title="Только суперадмин меняет"
                           >
                             <Lock aria-hidden />
-                            Суперадмина
+                            Неизменяемый
                           </Badge>
                         )}
                       </span>

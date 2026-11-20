@@ -89,6 +89,30 @@ export default async function TemplatesPage({
                       <span className="mt-1 line-clamp-2 text-sm break-words text-muted-foreground group-open:hidden">
                         {t.text}
                       </span>
+                      {t.kind === "poll" && t.options.length > 0 && (
+                        // spans: <summary> holds phrasing content; the open form lists the options itself
+                        <span
+                          role="list"
+                          className="mt-2 grid gap-1 text-sm group-open:hidden"
+                        >
+                          {t.options.map((o, i) => (
+                            <span
+                              role="listitem"
+                              key={i}
+                              className="flex min-w-0 items-center gap-2 rounded-lg bg-background px-2 py-1"
+                            >
+                              <span
+                                aria-hidden
+                                className="size-3 shrink-0 rounded-full border-2 border-primary"
+                              />
+                              <span className="min-w-0 break-words">{o}</span>
+                              {i === t.correctOptionId && (
+                                <Badge className="ml-auto">верный</Badge>
+                              )}
+                            </span>
+                          ))}
+                        </span>
+                      )}
                       <span className="mt-2 flex flex-wrap items-center gap-2">
                         <Badge>
                           <Icon aria-hidden />
@@ -100,7 +124,7 @@ export default async function TemplatesPage({
                             title="Только суперадмин меняет"
                           >
                             <Lock aria-hidden />
-                            Суперадмина
+                            Неизменяемый
                           </Badge>
                         )}
                         {t.author && (
