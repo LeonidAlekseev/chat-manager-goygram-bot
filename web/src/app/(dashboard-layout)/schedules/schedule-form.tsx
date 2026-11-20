@@ -2,6 +2,7 @@
 
 import { useActionState, useRef, useState } from "react"
 import Link from "next/link"
+import { Copy, Layers, Plus, Save, Trash2 } from "lucide-react"
 
 import type { ActionState } from "./actions"
 import type { ItemView } from "./item-view"
@@ -126,60 +127,63 @@ export function ScheduleForm({
         required
         maxLength={255}
       />
-      {rows.map((r) => (
-        <div
-          key={r.key}
-          className="grid gap-2 sm:grid-cols-[1fr_auto_auto_1fr_auto] sm:items-end"
-        >
-          <input type="hidden" name="itemId" value={r.id ?? ""} />
-          <label className={labelCls}>
-            Шаблон
-            <Select name="templateId" defaultValue={r.templateId}>
-              {templates.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.name}
-                </option>
-              ))}
-            </Select>
-          </label>
-          <label className={labelCls}>
-            Время ({timezone})
-            <Input
-              type="time"
-              name="time"
-              defaultValue={r.time}
-              required
-              className="sm:w-28"
-            />
-          </label>
-          <label className={labelCls}>
-            Дата старта
-            <Input
-              type="date"
-              name="startDate"
-              defaultValue={r.startDate}
-              required
-              className="sm:w-40"
-            />
-          </label>
-          <label className={labelCls}>
-            Периодичность
-            <Select name="period" defaultValue={r.period}>
-              {PERIODS.map(([v, label]) => (
-                <option key={v} value={v}>
-                  {label}
-                </option>
-              ))}
-            </Select>
-          </label>
-          <Button
-            type="button"
-            variant="ghost"
-            className="justify-self-start"
-            onClick={() => setRows(rows.filter((x) => x.key !== r.key))}
-          >
-            Убрать
-          </Button>
+      {rows.map((r, n) => (
+        <div key={r.key} className="grid gap-2 rounded-md border p-3">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-sm font-medium">Шаблон {n + 1}</span>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              aria-label={`Удалить пункт ${n + 1}`}
+              onClick={() => setRows(rows.filter((x) => x.key !== r.key))}
+            >
+              <Trash2 />
+            </Button>
+          </div>
+          <div className="grid gap-2 sm:grid-cols-[1fr_auto_auto_1fr] sm:items-end">
+            <input type="hidden" name="itemId" value={r.id ?? ""} />
+            <label className={labelCls}>
+              Шаблон
+              <Select name="templateId" defaultValue={r.templateId}>
+                {templates.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.name}
+                  </option>
+                ))}
+              </Select>
+            </label>
+            <label className={labelCls}>
+              Время ({timezone})
+              <Input
+                type="time"
+                name="time"
+                defaultValue={r.time}
+                required
+                className="sm:w-28"
+              />
+            </label>
+            <label className={labelCls}>
+              Дата старта
+              <Input
+                type="date"
+                name="startDate"
+                defaultValue={r.startDate}
+                required
+                className="sm:w-40"
+              />
+            </label>
+            <label className={labelCls}>
+              Периодичность
+              <Select name="period" defaultValue={r.period}>
+                {PERIODS.map(([v, label]) => (
+                  <option key={v} value={v}>
+                    {label}
+                  </option>
+                ))}
+              </Select>
+            </label>
+          </div>
         </div>
       ))}
       {templates.length === 0 && (
@@ -199,12 +203,14 @@ export function ScheduleForm({
           onClick={addRow}
           disabled={templates.length === 0}
         >
+          <Plus />
           Добавить шаблон
         </Button>
         {!own && !chatId ? null : own && chatId && sharedWith > 0 ? (
           <Dialog open={open} onOpenChange={setOpen}>
             <DialogTrigger asChild>
               <Button type="button" disabled={pending}>
+                <Save />
                 Сохранить
               </Button>
             </DialogTrigger>
@@ -234,6 +240,7 @@ export function ScheduleForm({
                       formRef.current!.requestSubmit()
                     }}
                   >
+                    {scope === "this" ? <Copy /> : <Layers />}
                     {label}
                   </Button>
                 ))}
@@ -242,6 +249,7 @@ export function ScheduleForm({
           </Dialog>
         ) : (
           <Button type="submit" disabled={pending}>
+            {schedule ? <Save /> : <Plus />}
             {schedule ? "Сохранить" : "Создать"}
           </Button>
         )}

@@ -2,6 +2,14 @@
 
 import { useActionState, useEffect } from "react"
 import { useRouter } from "next/navigation"
+import {
+  ExternalLink,
+  LogIn,
+  QrCode,
+  RotateCcw,
+  Send,
+  Unplug,
+} from "lucide-react"
 
 import type { accountView } from "@/lib/settings"
 import type { ActionState } from "./actions"
@@ -55,6 +63,7 @@ export function AccountForm({
   const startOver = (
     <form action={restart}>
       <Button type="submit" variant="link" className="px-0">
+        <RotateCcw />
         Начать заново
       </Button>
     </form>
@@ -73,6 +82,7 @@ export function AccountForm({
         >
           <p className="text-sm">Вход выполнен: {view.account}</p>
           <Button type="submit" variant="outline" disabled={login.pending}>
+            <Unplug />
             Отключить аккаунт Telegram
           </Button>
           {waiting}
@@ -115,7 +125,10 @@ export function AccountForm({
         {/* Same token as the QR: for a panel opened on the phone itself. */}
         <div className="grid w-fit gap-2">
           <Button asChild variant="outline">
-            <a href={login.qr}>Открыть в Telegram</a>
+            <a href={login.qr}>
+              <ExternalLink />
+              Открыть в Telegram
+            </a>
           </Button>
           <p className="text-sm text-muted-foreground">
             Если панель открыта на телефоне с Telegram — нажмите и подтвердите
@@ -145,6 +158,7 @@ export function AccountForm({
           <input type="hidden" name="value" value="" />
           <div>
             <Button type="submit" disabled={pending || login.pending}>
+              <QrCode />
               Войти по QR-коду
             </Button>
           </div>
@@ -172,6 +186,7 @@ export function AccountForm({
             variant={step === "phone" ? "outline" : "default"}
             disabled={pending || login.pending}
           >
+            <LogIn />
             {s.button}
           </Button>
           {waiting}
@@ -188,6 +203,7 @@ export function AccountForm({
               variant="outline"
               disabled={pending || login.pending}
             >
+              <Send />
               Отправить код другим способом
             </Button>
           </form>

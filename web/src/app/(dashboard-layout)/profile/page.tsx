@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation"
 import { auth } from "@/auth"
+import { Unlink } from "lucide-react"
 
 import type { Metadata } from "next"
 
@@ -30,6 +31,7 @@ export default async function ProfilePage() {
               <Badge>Привязан</Badge>
               <span className="font-mono">{String(me.telegramUserId)}</span>
               <Button type="submit" variant="outline">
+                <Unlink />
                 Отвязать
               </Button>
             </form>
