@@ -128,7 +128,11 @@ export default async function ChatsPage() {
                     className="flex items-center gap-2"
                   >
                     <ChatAvatar
-                      chat={chat}
+                      chat={{
+                        id: chat.id,
+                        title: chat.title,
+                        photo: chat.photo,
+                      }}
                       className={cn(
                         "size-11 rounded-xl text-base",
                         off && "bg-border text-muted-foreground grayscale"

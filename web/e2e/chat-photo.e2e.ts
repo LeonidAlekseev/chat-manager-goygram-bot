@@ -58,3 +58,42 @@ test("chat cards show the group's photo or its first letter", async ({
       .locator("span[aria-hidden]")
   ).toHaveText(CHAT.slice(0, 1))
 })
+
+test("a photo the browser cannot decode falls back to the first letter, not a broken image", async ({
+  page,
+}) => {
+  const id = BigInt(-999000114)
+  const chat = await db.chat.upsert({
+    where: { telegramId: id },
+    create: { telegramId: id, title: "Битое фото" },
+    update: { title: "Битое фото", active: true, deleting: false },
+  })
+  // truncated JPEG: the route serves it, the browser fails to decode it
+  const bad = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 1, 2, 3])
+  await db.chatPhoto.upsert({
+    where: { chatId: chat.id },
+    create: { chatId: chat.id, uniqueId: "bad", mime: "image/jpeg", data: bad },
+    update: { uniqueId: "bad", mime: "image/jpeg", data: bad },
+  })
+  try {
+    await page.goto("/login")
+    await page.getByLabel("Логин").fill(LOGIN)
+    await page.getByLabel("Пароль").fill(PASSWORD)
+    await page.getByRole("button", { name: "Войти" }).click()
+    await page.waitForURL("**/chats")
+    const form = page.locator("form", {
+      has: page.getByLabel(`Название чата ${id}`),
+    })
+    await expect(form.locator("span[aria-hidden]")).toHaveText("Б")
+    await expect(form.locator("img")).toHaveCount(0)
+    for (const path of [`/chats/${chat.id}`, "/send"]) {
+      await page.goto(path)
+      await expect(page.getByText("Битое фото").first()).toBeVisible()
+      await expect(
+        page.locator(`img[src="/api/chats/${chat.id}/photo?v=bad"]`)
+      ).toHaveCount(0)
+    }
+  } finally {
+    await db.chat.delete({ where: { id: chat.id } })
+  }
+})

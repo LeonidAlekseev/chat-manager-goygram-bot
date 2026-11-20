@@ -28,44 +28,47 @@ export function Layout({ children }: { children: ReactNode }) {
 
   return (
     <div className="min-h-dvh w-full lg:grid lg:grid-cols-[248px_minmax(0,1fr)]">
-      <aside className="sticky top-0 hidden h-dvh flex-col gap-6 overflow-y-auto border-r bg-card p-5 lg:flex">
-        <Brand />
-        <nav aria-label="Разделы" className="grid gap-1">
-          {sections.map((s) => (
-            <RailLink key={s.href} s={s} current={s === current} />
-          ))}
-          {admin.length > 0 && (
+      {/* the column carries the white background and border down the whole page; the menu itself stays on screen */}
+      <div className="hidden border-r bg-card lg:block">
+        <aside className="sticky top-0 flex h-dvh flex-col gap-6 overflow-y-auto p-5">
+          <Brand />
+          <nav aria-label="Разделы" className="grid gap-1">
+            {sections.map((s) => (
+              <RailLink key={s.href} s={s} current={s === current} />
+            ))}
+            {admin.length > 0 && (
+              <p className="mt-4 mb-1 px-3 text-xs font-bold text-muted-foreground">
+                Администрирование
+              </p>
+            )}
+            {admin.map((s) => (
+              <RailLink key={s.href} s={s} current={s === current} />
+            ))}
             <p className="mt-4 mb-1 px-3 text-xs font-bold text-muted-foreground">
-              Администрирование
+              Аккаунт
             </p>
-          )}
-          {admin.map((s) => (
-            <RailLink key={s.href} s={s} current={s === current} />
-          ))}
-          <p className="mt-4 mb-1 px-3 text-xs font-bold text-muted-foreground">
-            Аккаунт
-          </p>
-          <RailLink s={profileSection} current={profileSection === current} />
-        </nav>
-        <div className="mt-auto flex items-center gap-3 rounded-xl bg-background p-3">
-          <span className="grid size-9 shrink-0 place-items-center rounded-full bg-primary text-sm font-black text-primary-foreground uppercase">
-            {(user?.name ?? "?").slice(0, 1)}
-          </span>
-          <span className="min-w-0 flex-1 text-sm">
-            <span className="block truncate font-bold">{user?.name}</span>
-            <span className="text-muted-foreground">{role}</span>
-          </span>
-          <button
-            type="button"
-            onClick={() => signOut({ redirectTo: "/login" })}
-            aria-label="Выйти"
-            title="Выйти"
-            className="grid size-11 shrink-0 place-items-center rounded-xl text-muted-foreground hover:bg-accent hover:text-accent-foreground focus-visible:outline-2 focus-visible:outline-ring"
-          >
-            <LogOut className="size-5" aria-hidden />
-          </button>
-        </div>
-      </aside>
+            <RailLink s={profileSection} current={profileSection === current} />
+          </nav>
+          <div className="mt-auto flex items-center gap-3 rounded-xl bg-background p-3">
+            <span className="grid size-9 shrink-0 place-items-center rounded-full bg-primary text-sm font-black text-primary-foreground uppercase">
+              {(user?.name ?? "?").slice(0, 1)}
+            </span>
+            <span className="min-w-0 flex-1 text-sm">
+              <span className="block truncate font-bold">{user?.name}</span>
+              <span className="text-muted-foreground">{role}</span>
+            </span>
+            <button
+              type="button"
+              onClick={() => signOut({ redirectTo: "/login" })}
+              aria-label="Выйти"
+              title="Выйти"
+              className="grid size-11 shrink-0 place-items-center rounded-xl text-muted-foreground hover:bg-accent hover:text-accent-foreground focus-visible:outline-2 focus-visible:outline-ring"
+            >
+              <LogOut className="size-5" aria-hidden />
+            </button>
+          </div>
+        </aside>
+      </div>
 
       <div className="min-w-0">
         <header className="sticky top-0 z-30 flex items-center justify-between gap-3 border-b bg-card/85 px-4 py-2 backdrop-blur-md lg:hidden">
