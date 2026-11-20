@@ -1,5 +1,13 @@
 import { notFound, redirect } from "next/navigation"
-import { ChevronRight, ExternalLink, Link2, Save } from "lucide-react"
+import {
+  CalendarClock,
+  ChevronRight,
+  ExternalLink,
+  Link2,
+  MessagesSquare,
+  Save,
+  Users,
+} from "lucide-react"
 
 import type { Metadata } from "next"
 
@@ -19,6 +27,8 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Select } from "@/components/ui/select"
 import { ActionForm } from "@/components/action-form"
+import { chip } from "@/components/chip"
+import { Empty } from "@/components/empty"
 import { bindChat } from "../../schedules/actions"
 import { toItemView } from "../../schedules/item-view"
 import { ScheduleForm } from "../../schedules/schedule-form"
@@ -100,13 +110,18 @@ export default async function ChatPage({
   const link = chatLink(chat.telegramId)
 
   return (
-    <section className="container grid gap-4 p-4">
+    <section className="grid gap-4">
       <Card>
         <CardHeader className="flex-row flex-wrap items-center justify-between gap-2 space-y-0">
           <div className="flex min-w-0 flex-wrap items-center gap-2">
-            <CardTitle className="min-w-0 break-words">{chat.title}</CardTitle>
+            <CardTitle icon={MessagesSquare} className="break-words">
+              {chat.title}
+            </CardTitle>
             {linked && <NotAdminBadge status={myStatus} />}
           </div>
+          <span className="w-full font-mono text-xs text-muted-foreground tabular-nums">
+            {chat.telegramId.toString()}
+          </span>
           <div className="flex flex-wrap items-center gap-2">
             {link && (
               <Button asChild variant="outline">
@@ -155,12 +170,12 @@ export default async function ChatPage({
         <Card>
           {/* collapsed by default, like the template cards */}
           <details id="schedule" className="group">
-            <summary className="flex cursor-pointer list-none items-center gap-2 p-6 [&::-webkit-details-marker]:hidden">
+            <summary className="flex min-h-11 cursor-pointer list-none items-center gap-2 p-4 sm:p-5 [&::-webkit-details-marker]:hidden">
               <ChevronRight
                 className="size-4 shrink-0 transition-transform group-open:rotate-90"
                 aria-hidden
               />
-              <CardTitle>Расписание чата</CardTitle>
+              <CardTitle icon={CalendarClock}>Расписание чата</CardTitle>
             </summary>
             <CardContent>
               <ScheduleForm
@@ -177,30 +192,23 @@ export default async function ChatPage({
         </Card>
       )}
       {isSuper(v) && (
-        <Card id="managers" className="scroll-mt-24">
+        <Card id="managers" className="scroll-mt-20">
           <CardHeader>
-            <CardTitle>Менеджеры чата</CardTitle>
+            <CardTitle icon={Users}>Менеджеры чата</CardTitle>
           </CardHeader>
           <CardContent>
             <ActionForm action={assignManagers} className="grid gap-2">
               <input type="hidden" name="id" value={chat.id} />
-              {managers.length === 0 && (
-                <p className="text-sm text-muted-foreground">
-                  Менеджеров пока нет.
-                </p>
-              )}
+              {managers.length === 0 && <Empty>Менеджеров пока нет.</Empty>}
               {managers.map((m) => (
-                <label
-                  key={m.id}
-                  className="flex flex-wrap items-center gap-x-2 text-sm"
-                >
+                <label key={m.id} className={chip}>
                   <input
                     type="checkbox"
                     name="managerId"
                     value={m.id}
                     defaultChecked={assigned.has(m.id)}
                   />
-                  {m.name || m.login}
+                  <span className="font-bold">{m.name || m.login}</span>
                   {!m.active && (
                     <span className="text-muted-foreground">(отключён)</span>
                   )}

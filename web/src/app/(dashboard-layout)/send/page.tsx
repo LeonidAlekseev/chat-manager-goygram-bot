@@ -1,4 +1,12 @@
 import { redirect } from "next/navigation"
+import {
+  CircleAlert,
+  CircleCheck,
+  Clock,
+  History,
+  LoaderCircle,
+  Send,
+} from "lucide-react"
 
 import type { SendStatus } from "@prisma/client"
 import type { Metadata } from "next"
@@ -15,19 +23,22 @@ import { TIMEZONE } from "@/lib/timezone"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { DeleteForm } from "@/components/delete-form"
+import { Empty } from "@/components/empty"
+import { rows as t } from "@/components/rows"
 import { cancelSend } from "./actions"
 import { SendForm } from "./send-form"
 
 export const metadata: Metadata = { title: "Отправка" }
 export const dynamic = "force-dynamic"
 
-const STATUS: Record<SendStatus | "queued" | "scheduled", string> = {
-  scheduled: "Запланировано",
-  queued: "В очереди",
-  pending: "Отправляется",
-  sent: "Отправлено",
-  error: "Ошибка",
-}
+// icon + word, never color alone
+const STATUS = {
+  scheduled: { label: "Запланировано", variant: "action", icon: Clock },
+  queued: { label: "В очереди", variant: "secondary", icon: LoaderCircle },
+  pending: { label: "Отправляется", variant: "secondary", icon: LoaderCircle },
+  sent: { label: "Отправлено", variant: "default", icon: CircleCheck },
+  error: { label: "Ошибка", variant: "destructive", icon: CircleAlert },
+} as const satisfies Record<SendStatus | "queued" | "scheduled", unknown>
 
 const fmt = new Intl.DateTimeFormat("ru-RU", {
   dateStyle: "short",
@@ -73,10 +84,10 @@ export default async function SendPage() {
   const jobs = [...scheduled, ...recent.filter((j) => !ids.has(j.id))]
 
   return (
-    <section className="container grid gap-4 p-4">
+    <section className="grid gap-4">
       <Card>
         <CardHeader>
-          <CardTitle>Отправить сообщение</CardTitle>
+          <CardTitle icon={Send}>Отправить сообщение</CardTitle>
         </CardHeader>
         <CardContent>
           <SendForm templates={templates} chats={chats} timezone={TIMEZONE} />
@@ -84,66 +95,64 @@ export default async function SendPage() {
       </Card>
       <Card>
         <CardHeader>
-          <CardTitle>Последние задания</CardTitle>
+          <CardTitle icon={History}>Последние задания</CardTitle>
         </CardHeader>
         <CardContent>
           {jobs.length === 0 ? (
-            <p className="text-muted-foreground">Заданий пока нет.</p>
+            <Empty>Заданий пока нет.</Empty>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead className="text-left text-muted-foreground">
-                  <tr>
-                    <th className="py-2 font-medium">Когда</th>
-                    <th className="py-2 font-medium">Чат</th>
-                    <th className="py-2 font-medium">Что</th>
-                    <th className="py-2 font-medium">Статус</th>
-                    <th className="py-2 font-medium">Ошибка</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {jobs.map((j) => {
-                    const later = !j.sendLog && j.sendAt && j.sendAt > now
-                    const status =
-                      j.sendLog?.status ?? (later ? "scheduled" : "queued")
-                    return (
-                      <tr key={j.id} className="border-t align-top">
-                        <td className="py-2 pe-4 whitespace-nowrap">
-                          {fmt.format(j.sendAt ?? j.createdAt)}
-                        </td>
-                        <td className="py-2 pe-4">{j.chat.title}</td>
-                        <td className="py-2 pe-4">
-                          {j.options.length > 0 && "Опрос: "}
-                          {j.text ?? j.template?.name ?? "— удалён —"}
-                        </td>
-                        <td className="py-2 pe-4">
-                          <div className="relative flex items-center gap-2">
-                            <Badge
-                              variant={
-                                status === "error" ? "destructive" : "secondary"
-                              }
-                            >
-                              {STATUS[status]}
-                            </Badge>
-                            {later && (
-                              <DeleteForm
-                                action={cancelSend}
-                                id={j.id}
-                                label="Отменить отправку"
-                                confirmText="Отменить запланированную отправку?"
-                              />
-                            )}
-                          </div>
-                        </td>
-                        <td className="py-2 break-all text-destructive">
-                          {j.sendLog?.error}
-                        </td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-            </div>
+            <table className={t.table}>
+              <thead className={t.head}>
+                <tr>
+                  <th className={t.th}>Когда</th>
+                  <th className={t.th}>Чат</th>
+                  <th className={t.th}>Что</th>
+                  <th className={t.th}>Статус</th>
+                  <th className={t.th}>Ошибка</th>
+                </tr>
+              </thead>
+              <tbody className={t.body}>
+                {jobs.map((j) => {
+                  const later = !j.sendLog && j.sendAt && j.sendAt > now
+                  const status =
+                    j.sendLog?.status ?? (later ? "scheduled" : "queued")
+                  const s = STATUS[status]
+                  return (
+                    <tr key={j.id} className={t.tr}>
+                      <td className={t.when}>
+                        {fmt.format(j.sendAt ?? j.createdAt)}
+                      </td>
+                      <td className={`${t.td} font-bold`}>{j.chat.title}</td>
+                      <td className={t.td}>
+                        {j.options.length > 0 && "Опрос: "}
+                        {j.text ?? j.template?.name ?? "— удалён —"}
+                      </td>
+                      <td className={t.status}>
+                        <div className="relative flex items-center gap-2">
+                          <Badge variant={s.variant}>
+                            <s.icon aria-hidden />
+                            {s.label}
+                          </Badge>
+                          {later && (
+                            <DeleteForm
+                              action={cancelSend}
+                              id={j.id}
+                              label="Отменить отправку"
+                              confirmText="Отменить запланированную отправку?"
+                            />
+                          )}
+                        </div>
+                      </td>
+                      <td
+                        className={`${t.td} break-all text-destructive empty:hidden md:empty:table-cell`}
+                      >
+                        {j.sendLog?.error}
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
           )}
         </CardContent>
       </Card>

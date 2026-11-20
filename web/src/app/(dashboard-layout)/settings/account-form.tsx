@@ -78,7 +78,7 @@ export function AccountForm({
             // window.confirm: the project has no AlertDialog component.
             if (!window.confirm(DISCONNECT_CONFIRM)) e.preventDefault()
           }}
-          className="flex items-center gap-4"
+          className="flex flex-wrap items-center gap-4"
         >
           <p className="text-sm">Вход выполнен: {view.account}</p>
           <Button type="submit" variant="outline" disabled={login.pending}>
@@ -115,7 +115,7 @@ export function AccountForm({
           <li>Наведите камеру на QR-код ниже.</li>
         </ol>
         {/* White quiet zone: a scanner needs contrast in the dark theme too. */}
-        <div className="w-fit rounded-md bg-white p-4">
+        <div className="w-fit rounded-xl border bg-white p-4">
           <QRCodeSVG
             value={login.qr}
             size={220}

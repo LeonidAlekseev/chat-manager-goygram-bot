@@ -26,3 +26,13 @@ export function toItemView(i: {
 export const byTime = (a: ItemView, b: ItemView) =>
   +(a.period === "custom") - +(b.period === "custom") ||
   (a.time < b.time ? -1 : a.time > b.time ? 1 : 0)
+
+// a plain module: the server page reads the labels too (a "use client" export would arrive as a reference)
+export const PERIODS = [
+  ["none", "Один раз"],
+  ["day", "Каждый день"],
+  ["week", "Каждую неделю"],
+  ["twoweek", "Раз в две недели"],
+  ["month", "Каждый месяц"],
+  ["custom", "Своя периодичность (cron)"],
+] as const

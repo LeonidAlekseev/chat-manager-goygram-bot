@@ -32,6 +32,9 @@ const empty: TemplateView = {
   mentionAll: false,
 }
 
+const area =
+  "min-h-24 rounded-xl border bg-card p-3 text-base focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/20 focus-visible:outline-hidden"
+
 function Check({
   name,
   label,
@@ -42,8 +45,14 @@ function Check({
   on: boolean
 }) {
   return (
-    <label className="flex items-center gap-2 text-sm">
-      <input type="checkbox" name={name} defaultChecked={on} /> {label}
+    <label className="flex min-h-11 items-center gap-2 text-sm">
+      <input
+        type="checkbox"
+        name={name}
+        defaultChecked={on}
+        className="size-4"
+      />{" "}
+      {label}
     </label>
   )
 }
@@ -63,7 +72,7 @@ export function TemplateForm({
   const copy = t.kind === "copy"
   const poll = kind === "poll"
   return (
-    <form action={action} className="grid gap-2">
+    <form action={action} className="grid gap-3">
       {t.id && <input type="hidden" name="id" value={t.id} />}
       <Input
         name="name"
@@ -74,7 +83,7 @@ export function TemplateForm({
       />
       {copy ? (
         <>
-          <p className="rounded-md border bg-muted p-2 text-sm whitespace-pre-wrap">
+          <p className="rounded-xl border bg-background p-3 text-sm whitespace-pre-wrap">
             {t.text || "Без текста"}
           </p>
           <p className="text-sm text-muted-foreground">
@@ -100,7 +109,7 @@ export function TemplateForm({
             }
             required
             maxLength={4096}
-            className="min-h-20 rounded-md border bg-background p-2 text-sm"
+            className={area}
           />
           {poll && (
             <textarea
@@ -109,10 +118,10 @@ export function TemplateForm({
               placeholder={
                 "Варианты опроса — по одному в строке (2–10, до 100 символов)"
               }
-              className="min-h-20 rounded-md border bg-background p-2 text-sm"
+              className={area}
             />
           )}
-          <div className="flex flex-wrap gap-4">
+          <div className="flex flex-wrap gap-x-4">
             {poll && (
               <>
                 <Check name="anonymous" label="Анонимный" on={t.anonymous} />
@@ -151,7 +160,7 @@ export function DeleteTemplate({ id, name }: { id: number; name: string }) {
       id={id}
       label={`Удалить шаблон «${name}»`}
       confirmText={`Удалить шаблон «${name}»?`}
-      className="absolute right-2 top-2"
+      className="absolute top-2 right-2"
     />
   )
 }

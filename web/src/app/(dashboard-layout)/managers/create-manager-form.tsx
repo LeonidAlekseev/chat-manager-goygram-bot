@@ -15,7 +15,10 @@ export function CreateManagerForm() {
     null
   )
   return (
-    <form action={action} className="flex flex-wrap gap-2">
+    <form
+      action={action}
+      className="grid gap-2 sm:grid-cols-2 lg:grid-cols-[repeat(3,minmax(0,1fr))_auto]"
+    >
       <Input name="login" placeholder="Логин" required maxLength={64} />
       <Input name="name" placeholder="Имя" required maxLength={255} />
       <Input
@@ -32,7 +35,9 @@ export function CreateManagerForm() {
         Создать
       </Button>
       {state?.error && (
-        <p className="w-full text-sm text-destructive">{state.error}</p>
+        <p className="text-sm text-destructive sm:col-span-full">
+          {state.error}
+        </p>
       )}
     </form>
   )

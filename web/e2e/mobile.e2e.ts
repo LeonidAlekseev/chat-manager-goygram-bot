@@ -9,7 +9,7 @@ import { CHAT } from "./global-setup"
 
 test.use({ viewport: { width: 390, height: 844 } })
 
-test("mobile: no horizontal overflow, chat title visible, light only, TaskManager", async ({
+test("mobile: no horizontal overflow, chat title visible, light /v2 theme only, TaskManager", async ({
   page,
 }) => {
   await page.emulateMedia({ colorScheme: "dark" }) // the panel ignores the system theme
@@ -24,7 +24,7 @@ test("mobile: no horizontal overflow, chat title visible, light only, TaskManage
   await expect(page.locator("html")).not.toHaveClass(/dark/)
   expect(
     await page.evaluate(() => getComputedStyle(document.body).backgroundColor)
-  ).toBe("rgb(255, 255, 255)")
+  ).toBe("rgb(244, 248, 247)") // the /v2 mint-grey page background (#112), also under a dark system theme
   await expect(page.getByText("Qualiora")).toHaveCount(0)
 
   for (const path of [
@@ -94,7 +94,7 @@ test("mobile: delete buttons fit the screen; deleting a chat hands it to the bot
       await fits(item.getByRole("button", { name: "Удалить" })) // closed block
     }
     await page.goto("/chats")
-    const row = page.locator("div.border-t").filter({
+    const row = page.getByRole("listitem").filter({
       has: page.locator(`input[value="${name}"]`),
     })
     await fits(row.getByRole("button", { name: "Удалить" }))
@@ -153,7 +153,7 @@ test("mobile: deleting a schedule and a template from the closed list removes th
   }
 })
 
-test("mobile: menu order, Профиль duplicate, profile button has an icon", async ({
+test("mobile: bottom bar sections in order, the account menu holds Профиль and admin pages", async ({
   page,
 }) => {
   await page.goto("/login")
@@ -163,20 +163,36 @@ test("mobile: menu order, Профиль duplicate, profile button has an icon",
   await page.waitForURL("**/chats")
   const profile = page.getByRole("button", { name: "Пользователь" })
   await expect(profile.locator("svg")).toBeVisible()
-  await page.screenshot({
-    path: "/tmp/shots70/header.png",
-    clip: { x: 0, y: 0, width: 390, height: 80 },
-  })
-  await page.getByRole("button", { name: "Toggle Sidebar" }).first().click()
-  const links = page.locator("[data-sidebar=menu-button]")
-  await expect(links.nth(0)).toHaveText("Шаблоны")
-  await expect(links.nth(1)).toHaveText("Расписания")
-  await expect(links.nth(2)).toHaveText("Чаты")
+  const bar = page.getByRole("navigation", { name: "Разделы" }).last()
+  await expect(bar).toBeVisible()
+  await expect(bar.getByRole("link")).toHaveText([
+    "Чаты",
+    "Шаблоны",
+    "Расписания",
+    "Отправка",
+    "Журнал",
+  ])
+  await expect(bar.getByRole("link", { name: "Чаты" })).toHaveAttribute(
+    "aria-current",
+    "page"
+  )
+  await bar.getByRole("link", { name: "Расписания" }).click()
+  await page.waitForURL("**/schedules")
   await expect(
-    page.getByRole("link", { name: "Профиль" }).first()
-  ).toHaveAttribute("href", "/profile")
-  await page.waitForTimeout(500) // the drawer slides in
-  await page.screenshot({ path: "/tmp/shots70/menu.png" })
+    page.getByRole("heading", { level: 1, name: "Расписания" })
+  ).toBeVisible()
+
+  await profile.click()
+  const menu = page.getByRole("menu")
+  await expect(menu.getByRole("menuitem", { name: "Профиль" })).toHaveAttribute(
+    "href",
+    "/profile"
+  )
+  for (const name of ["Менеджеры", "Настройки", "Системные логи", "Выйти"])
+    await expect(menu.getByRole("menuitem", { name })).toBeVisible()
+  await page.screenshot({ path: "/tmp/shots-adopt-v2/menu.png" })
+  await menu.getByRole("menuitem", { name: "Настройки" }).click()
+  await page.waitForURL("**/settings")
 })
 
 test("mobile: a dropped connection shows a message and the button works again", async ({
@@ -211,7 +227,7 @@ test("mobile: a dropped connection shows a message and the button works again", 
   }
 })
 
-test("mobile: menu and profile buttons float over content with the same style, no header bar", async ({
+test("mobile: the frosted header and the bottom bar stay on screen while scrolling, content clears the bar", async ({
   page,
 }) => {
   await page.goto("/login")
@@ -220,37 +236,29 @@ test("mobile: menu and profile buttons float over content with the same style, n
   await page.getByRole("button", { name: "Войти" }).click()
   await page.waitForURL("**/chats")
 
-  const menu = page.getByRole("button", { name: "Toggle Sidebar" })
-  const profile = page.getByRole("button", { name: "Пользователь" })
-  const style = (l: Locator) =>
-    l.evaluate((el) => {
-      const s = getComputedStyle(el)
-      const r = el.getBoundingClientRect()
-      return {
-        border: s.border,
-        radius: s.borderRadius,
-        bg: s.backgroundColor,
-        shadow: s.boxShadow,
-        w: r.width,
-        h: r.height,
-      }
-    })
-
+  const header = page.locator("header")
+  const bar = page.getByRole("navigation", { name: "Разделы" }).last()
   await page.evaluate(() => (document.body.style.minHeight = "3000px"))
   await page.evaluate(() => window.scrollTo(0, 600))
-  await expect(menu).toBeInViewport()
-  await expect(profile).toBeInViewport()
-  const [m, p] = [await style(menu), await style(profile)]
-  expect(m).toEqual(p)
-  expect(m.bg).toBe("rgb(255, 255, 255)")
-  // no bar: the header strip has no height, border or background
-  expect(
-    await page.evaluate(() => {
-      const h = document.querySelector("header")!
-      const s = getComputedStyle(h)
-      return [h.offsetHeight, s.borderBottomWidth, s.backgroundColor]
-    })
-  ).toEqual([0, "0px", "rgba(0, 0, 0, 0)"])
+  await expect(
+    page.getByRole("button", { name: "Пользователь" })
+  ).toBeInViewport()
+  const box = async (l: Locator) => (await l.boundingBox())!
+  expect((await box(header)).y).toBe(0)
+  const b = await box(bar)
+  expect(b.y + b.height).toBeCloseTo(844, 0)
+  // matte: translucent white with a blur behind it
+  const style = await header.evaluate((el) => {
+    const s = getComputedStyle(el)
+    return [s.backdropFilter, s.backgroundColor]
+  })
+  expect(style[0]).toContain("blur")
+  expect(style[1]).toMatch(/^(rgba|oklab|color)\(/)
+  // the end of the page is not hidden behind the bar
+  const pad = await page
+    .locator("main")
+    .evaluate((m) => parseFloat(getComputedStyle(m).paddingBottom))
+  expect(pad).toBeGreaterThanOrEqual(b.height)
   const [scroll, inner] = await page.evaluate(() => [
     document.documentElement.scrollWidth,
     window.innerWidth,

@@ -1,4 +1,5 @@
 import Link from "next/link"
+import { CircleAlert, Info } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
 
@@ -15,6 +16,7 @@ export function NotAdminBadge({ status }: { status: string | null }) {
   const label = NOT_ADMIN[status ?? ""]
   return label ? (
     <Badge variant="destructive" title={HINT} className="w-fit">
+      <CircleAlert aria-hidden />
       {label}
     </Badge>
   ) : null
@@ -22,17 +24,20 @@ export function NotAdminBadge({ status }: { status: string | null }) {
 
 export function NotAdminHint({ linked }: { linked: boolean }) {
   return (
-    <p className="text-sm text-muted-foreground">
-      {linked ? (
-        `${HINT}.`
-      ) : (
-        <>
-          <Link href="/profile" className="underline underline-offset-4">
-            Привяжите Telegram в профиле
-          </Link>
-          , чтобы видеть, в каких чатах вы не администратор.
-        </>
-      )}
+    <p className="flex gap-2 rounded-xl bg-primary-soft p-3 text-sm">
+      <Info className="mt-0.5 size-4 shrink-0 text-primary" aria-hidden />
+      <span>
+        {linked ? (
+          `${HINT}.`
+        ) : (
+          <>
+            <Link href="/profile" className="underline underline-offset-4">
+              Привяжите Telegram в профиле
+            </Link>
+            , чтобы видеть, в каких чатах вы не администратор.
+          </>
+        )}
+      </span>
     </p>
   )
 }

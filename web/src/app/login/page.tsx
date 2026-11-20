@@ -1,7 +1,7 @@
 "use client"
 
 import { useActionState } from "react"
-import { LogIn } from "lucide-react"
+import { LogIn, Send } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -13,10 +13,16 @@ export default function LoginPage() {
   const [error, action, pending] = useActionState(login, null)
 
   return (
-    <main className="flex min-h-screen w-full items-center justify-center p-4">
+    <main className="flex min-h-dvh w-full flex-col items-center justify-center gap-6 p-4">
+      <p className="flex items-center gap-2">
+        <span className="grid size-10 place-items-center rounded-xl bg-primary text-primary-foreground">
+          <Send className="size-5" aria-hidden />
+        </span>
+        <span className="text-2xl font-black tracking-tight">TaskManager</span>
+      </p>
       <Card className="w-full max-w-sm">
         <CardHeader>
-          <CardTitle>Вход в панель</CardTitle>
+          <CardTitle className="text-xl font-black">Вход в панель</CardTitle>
         </CardHeader>
         <CardContent>
           <form action={action} className="grid gap-4">

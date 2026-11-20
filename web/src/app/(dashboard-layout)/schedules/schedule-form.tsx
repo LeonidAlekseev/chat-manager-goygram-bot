@@ -21,18 +21,9 @@ import { Input } from "@/components/ui/input"
 import { Select } from "@/components/ui/select"
 import { saveSchedule } from "./actions"
 import { CronField } from "./cron-field"
-import { byTime } from "./item-view"
+import { PERIODS, byTime } from "./item-view"
 
-const PERIODS = [
-  ["none", "Один раз"],
-  ["day", "Каждый день"],
-  ["week", "Каждую неделю"],
-  ["twoweek", "Раз в две недели"],
-  ["month", "Каждый месяц"],
-  ["custom", "Своя периодичность (cron)"],
-] as const
-
-const labelCls = "grid gap-1 text-sm font-medium"
+const labelCls = "grid gap-1.5 text-sm font-bold text-muted-foreground"
 
 export function ScheduleForm({
   schedule,
@@ -116,7 +107,7 @@ export function ScheduleForm({
   }
 
   return (
-    <form ref={formRef} action={action} className="grid gap-2">
+    <form ref={formRef} action={action} className="grid gap-3">
       {schedule && <input type="hidden" name="id" value={schedule.id} />}
       {chatId && <input type="hidden" name="chatId" value={chatId} />}
       <input
@@ -134,20 +125,26 @@ export function ScheduleForm({
         maxLength={255}
       />
       {rows.map((r, n) => (
-        <div key={r.key} className="grid gap-2 rounded-md border p-3">
+        <div
+          key={r.key}
+          className="grid gap-3 rounded-xl border bg-background p-3"
+        >
           <div className="flex items-center justify-between gap-2">
-            <span className="text-sm font-medium">Шаблон {n + 1}</span>
+            <span className="text-xs font-black text-primary">
+              Шаблон {n + 1}
+            </span>
             <Button
               type="button"
               variant="ghost"
               size="icon"
+              className="text-muted-foreground hover:bg-destructive-soft hover:text-destructive"
               aria-label={`Удалить пункт ${n + 1}`}
               onClick={() => setRows(rows.filter((x) => x.key !== r.key))}
             >
               <Trash2 />
             </Button>
           </div>
-          <div className="grid gap-2 sm:grid-cols-[1fr_auto_auto_1fr] sm:items-end">
+          <div className="grid gap-3 sm:grid-cols-[1fr_auto_auto_1fr] sm:items-end">
             <input type="hidden" name="itemId" value={r.id ?? ""} />
             <label className={labelCls}>
               Шаблон
@@ -173,7 +170,7 @@ export function ScheduleForm({
                   name="time"
                   defaultValue={r.time.includes(":") ? r.time : "08:00"}
                   required
-                  className="sm:w-28"
+                  className="sm:w-32"
                 />
               </label>
             )}
@@ -219,6 +216,7 @@ export function ScheduleForm({
         <Button
           type="button"
           variant="outline"
+          className="border-dashed border-primary"
           onClick={addRow}
           disabled={templates.length === 0}
         >

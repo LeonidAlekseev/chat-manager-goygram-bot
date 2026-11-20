@@ -1,6 +1,13 @@
 import { redirect } from "next/navigation"
 import { auth } from "@/auth"
-import { Power, PowerOff } from "lucide-react"
+import {
+  CircleCheck,
+  CircleSlash,
+  Power,
+  PowerOff,
+  UserPlus,
+  Users,
+} from "lucide-react"
 
 import type { Metadata } from "next"
 
@@ -9,6 +16,7 @@ import { db } from "@/lib/db"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Empty } from "@/components/empty"
 import { setManagerActive } from "./actions"
 import { CreateManagerForm } from "./create-manager-form"
 import { EditManagerForm } from "./edit-manager-form"
@@ -25,10 +33,10 @@ export default async function ManagersPage() {
   })
 
   return (
-    <section className="container space-y-4 p-4">
+    <section className="grid gap-4">
       <Card>
         <CardHeader>
-          <CardTitle>Новый менеджер</CardTitle>
+          <CardTitle icon={UserPlus}>Новый менеджер</CardTitle>
         </CardHeader>
         <CardContent>
           <CreateManagerForm />
@@ -36,11 +44,11 @@ export default async function ManagersPage() {
       </Card>
       <Card>
         <CardHeader>
-          <CardTitle>Менеджеры</CardTitle>
+          <CardTitle icon={Users}>Менеджеры · {managers.length}</CardTitle>
         </CardHeader>
         <CardContent>
           {managers.length === 0 ? (
-            <p className="text-muted-foreground">Менеджеров пока нет.</p>
+            <Empty>Менеджеров пока нет.</Empty>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
@@ -48,10 +56,12 @@ export default async function ManagersPage() {
                   {managers.map((m) => (
                     <tr
                       key={m.id}
-                      className="block border-t py-2 md:table-row md:py-0"
+                      className="block border-t py-3 first:border-0 md:table-row md:py-0"
                     >
                       <td className="block py-1 pe-4 md:table-cell md:py-2">
-                        <span className="font-mono">{m.login}</span>
+                        <span className="font-mono font-bold break-all">
+                          {m.login}
+                        </span>
                         <span className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
                           {m.telegramUserId ? (
                             <span className="font-mono text-muted-foreground">
@@ -63,9 +73,15 @@ export default async function ManagersPage() {
                             </span>
                           )}
                           {m.active ? (
-                            <Badge>Активен</Badge>
+                            <Badge>
+                              <CircleCheck aria-hidden />
+                              Активен
+                            </Badge>
                           ) : (
-                            <Badge variant="secondary">Отключён</Badge>
+                            <Badge variant="secondary">
+                              <CircleSlash aria-hidden />
+                              Отключён
+                            </Badge>
                           )}
                         </span>
                       </td>

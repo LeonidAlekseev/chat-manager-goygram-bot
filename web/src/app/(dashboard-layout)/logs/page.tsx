@@ -1,6 +1,13 @@
 import Link from "next/link"
 import { redirect } from "next/navigation"
-import { ChevronRight, Filter } from "lucide-react"
+import {
+  ChevronRight,
+  CircleAlert,
+  CircleCheck,
+  Filter,
+  History,
+  LoaderCircle,
+} from "lucide-react"
 
 import type { SendStatus } from "@prisma/client"
 import type { Metadata } from "next"
@@ -12,14 +19,17 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Select } from "@/components/ui/select"
+import { Empty } from "@/components/empty"
+import { rows as t } from "@/components/rows"
 
 export const metadata: Metadata = { title: "Журнал" }
 
-const STATUS: Record<SendStatus, string> = {
-  sent: "Отправлено",
-  error: "Ошибка",
-  pending: "В процессе",
-}
+// icon + word, never color alone
+const STATUS = {
+  sent: { label: "Отправлено", variant: "default", icon: CircleCheck },
+  error: { label: "Ошибка", variant: "destructive", icon: CircleAlert },
+  pending: { label: "В процессе", variant: "secondary", icon: LoaderCircle },
+} as const satisfies Record<SendStatus, unknown>
 
 const PAGE = 200
 
@@ -71,13 +81,13 @@ export default async function LogsPage({
   if (rows.length > PAGE) next.set("before", String(logs[PAGE - 1].id))
 
   return (
-    <section className="container p-4">
+    <section className="grid gap-4">
       <Card>
         <CardHeader>
-          <CardTitle>Журнал отправок</CardTitle>
+          <CardTitle icon={History}>Журнал отправок</CardTitle>
         </CardHeader>
         <CardContent className="grid grid-cols-[minmax(0,1fr)] gap-4">
-          <form className="flex flex-wrap gap-2">
+          <form className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_200px_auto]">
             <Select
               className="max-w-full"
               name="chat"
@@ -93,9 +103,9 @@ export default async function LogsPage({
             </Select>
             <Select name="status" defaultValue={st ?? ""} aria-label="Статус">
               <option value="">Все статусы</option>
-              {Object.entries(STATUS).map(([v, label]) => (
+              {Object.entries(STATUS).map(([v, s]) => (
                 <option key={v} value={v}>
-                  {label}
+                  {s.label}
                 </option>
               ))}
             </Select>
@@ -105,27 +115,26 @@ export default async function LogsPage({
             </Button>
           </form>
           {logs.length === 0 ? (
-            <p className="text-muted-foreground">Отправок пока нет.</p>
+            <Empty>Отправок пока нет.</Empty>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead className="text-left text-muted-foreground">
-                  <tr>
-                    <th className="py-2 font-medium">Когда</th>
-                    <th className="py-2 font-medium">Чат</th>
-                    <th className="py-2 font-medium">Шаблон</th>
-                    <th className="py-2 font-medium">Статус</th>
-                    <th className="py-2 font-medium">Ошибка</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {logs.map((l) => (
-                    <tr key={l.id} className="border-t align-top">
-                      <td className="py-2 pe-4 whitespace-nowrap">
-                        {fmt.format(l.slot)}
-                      </td>
-                      <td className="py-2 pe-4">{l.chat.title}</td>
-                      <td className="py-2 pe-4" title={l.text ?? undefined}>
+            <table className={t.table}>
+              <thead className={t.head}>
+                <tr>
+                  <th className={t.th}>Когда</th>
+                  <th className={t.th}>Чат</th>
+                  <th className={t.th}>Шаблон</th>
+                  <th className={t.th}>Статус</th>
+                  <th className={t.th}>Ошибка</th>
+                </tr>
+              </thead>
+              <tbody className={t.body}>
+                {logs.map((l) => {
+                  const s = STATUS[l.status]
+                  return (
+                    <tr key={l.id} className={t.tr}>
+                      <td className={t.when}>{fmt.format(l.slot)}</td>
+                      <td className={`${t.td} font-bold`}>{l.chat.title}</td>
+                      <td className={t.td} title={l.text ?? undefined}>
                         {l.template?.name ??
                           (l.outbox?.text != null
                             ? l.options.length
@@ -133,31 +142,30 @@ export default async function LogsPage({
                               : "Ручной текст"
                             : "— удалён —")}
                       </td>
-                      <td className="py-2 pe-4">
-                        <Badge
-                          variant={
-                            l.status === "error" ? "destructive" : "secondary"
-                          }
-                        >
-                          {STATUS[l.status]}
+                      <td className={t.status}>
+                        <Badge variant={s.variant}>
+                          <s.icon aria-hidden />
+                          {s.label}
                         </Badge>
                       </td>
-                      <td className="py-2 break-all text-destructive">
+                      <td
+                        className={`${t.td} break-all text-destructive empty:hidden md:empty:table-cell`}
+                      >
                         {l.error}
                         {l.pollId && (
                           <Link
                             href={`/logs/${l.id}`}
-                            className="text-foreground underline"
+                            className="inline-flex min-h-11 items-center font-bold text-primary underline underline-offset-4 md:min-h-0"
                           >
                             Ответы
                           </Link>
                         )}
                       </td>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  )
+                })}
+              </tbody>
+            </table>
           )}
           {rows.length > PAGE && (
             <Button asChild variant="outline" className="w-fit">

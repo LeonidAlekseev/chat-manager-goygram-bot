@@ -8,9 +8,12 @@ import type { ActionState } from "./actions"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Select } from "@/components/ui/select"
+import { chip } from "@/components/chip"
+import { Empty } from "@/components/empty"
 import { sendNow } from "./actions"
 
-const field = "min-h-20 w-full rounded-md border bg-background p-2 text-sm"
+const field =
+  "min-h-24 w-full rounded-xl border bg-card p-3 text-base focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/20 focus-visible:outline-hidden"
 
 function Radios<T extends string>({
   legend,
@@ -24,26 +27,40 @@ function Radios<T extends string>({
   choices: readonly (readonly [T, string])[]
 }) {
   return (
-    <fieldset className="flex flex-wrap gap-x-4 gap-y-2 text-sm">
-      <legend className="sr-only">{legend}</legend>
-      {choices.map(([v, label]) => (
-        <label key={v} className="flex items-center gap-2">
-          <input
-            type="radio"
-            checked={value === v}
-            onChange={() => onChange(v)}
-          />
-          {label}
-        </label>
-      ))}
+    // a /v2 segmented control; the real radio covers its label, so it stays clickable and focusable
+    <fieldset className="grid gap-1.5 text-sm">
+      <legend className="mb-1.5 font-bold text-muted-foreground">
+        {legend}
+      </legend>
+      <div
+        className="grid gap-1 rounded-xl bg-background p-1"
+        style={{
+          gridTemplateColumns: `repeat(${choices.length}, minmax(0, 1fr))`,
+        }}
+      >
+        {choices.map(([v, label]) => (
+          <label
+            key={v}
+            className="relative grid min-h-11 place-items-center rounded-lg px-2 text-center font-bold text-muted-foreground has-checked:bg-card has-checked:text-primary has-checked:shadow-sm has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-ring"
+          >
+            <input
+              type="radio"
+              checked={value === v}
+              onChange={() => onChange(v)}
+              className="absolute inset-0 cursor-pointer opacity-0"
+            />
+            {label}
+          </label>
+        ))}
+      </div>
     </fieldset>
   )
 }
 
 function Check({ name, label }: { name: string; label: string }) {
   return (
-    <label className="flex items-center gap-2 text-sm">
-      <input type="checkbox" name={name} /> {label}
+    <label className="flex min-h-11 items-center gap-2 text-sm">
+      <input type="checkbox" name={name} className="size-4" /> {label}
     </label>
   )
 }
@@ -64,7 +81,7 @@ export function SendForm({
   const [mode, setMode] = useState<"template" | "text" | "poll">("poll")
   const [when, setWhen] = useState<"now" | "later">("now")
   return (
-    <form action={action} className="grid gap-3">
+    <form action={action} className="grid gap-4">
       <Radios
         legend="Что отправить"
         value={mode}
@@ -125,13 +142,19 @@ export function SendForm({
           </div>
         </>
       )}
-      <fieldset className="grid gap-1">
-        <legend className="mb-1 text-sm text-muted-foreground">Чаты</legend>
-        {chats.map((c) => (
-          <label key={c.id} className="flex items-center gap-2 text-sm">
-            <input type="checkbox" name="chatIds" value={c.id} /> {c.title}
-          </label>
-        ))}
+      <fieldset className="grid gap-2">
+        <legend className="mb-1.5 text-sm font-bold text-muted-foreground">
+          Чаты · {chats.length}
+        </legend>
+        {chats.length === 0 && <Empty>Нет активных чатов.</Empty>}
+        <div className="flex flex-wrap gap-2">
+          {chats.map((c) => (
+            <label key={c.id} className={chip}>
+              <input type="checkbox" name="chatIds" value={c.id} />
+              <span className="font-bold">{c.title}</span>
+            </label>
+          ))}
+        </div>
       </fieldset>
       <Radios
         legend="Когда отправить"
@@ -144,7 +167,7 @@ export function SendForm({
       />
       {when === "later" && (
         <label className="grid gap-1 text-sm">
-          <span className="text-muted-foreground">
+          <span className="font-bold text-muted-foreground">
             Дата и время ({timezone})
           </span>
           <Input
@@ -163,10 +186,18 @@ export function SendForm({
           {when === "later" ? "Запланировано." : "Поставлено в очередь."}
         </p>
       )}
-      <Button type="submit" disabled={pending} className="w-fit">
-        <Send />
-        {when === "later" ? "Запланировать" : "Отправить"}
-      </Button>
+      <div className="border-t pt-4">
+        <Button
+          type="submit"
+          variant="action"
+          size="lg"
+          disabled={pending}
+          className="w-fit"
+        >
+          <Send />
+          {when === "later" ? "Запланировать" : "Отправить"}
+        </Button>
+      </div>
     </form>
   )
 }

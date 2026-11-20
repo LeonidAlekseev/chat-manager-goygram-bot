@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation"
 import { auth } from "@/auth"
-import { RefreshCw } from "lucide-react"
+import { RefreshCw, Terminal } from "lucide-react"
 
 import type { Metadata } from "next"
 
@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Select } from "@/components/ui/select"
+import { Empty } from "@/components/empty"
 
 export const metadata: Metadata = { title: "Системные логи" }
 
@@ -31,10 +32,10 @@ export default async function SystemLogsPage({
     await loadSystemLogs(params)
 
   return (
-    <section className="container p-4">
+    <section className="grid gap-4">
       <Card>
         <CardHeader>
-          <CardTitle>Системные логи</CardTitle>
+          <CardTitle icon={Terminal}>Системные логи</CardTitle>
         </CardHeader>
         <CardContent className="grid gap-4">
           <form className="flex flex-wrap items-center gap-2">
@@ -56,7 +57,7 @@ export default async function SystemLogsPage({
                 </option>
               ))}
             </Select>
-            <label className="flex items-center gap-2 text-sm">
+            <label className="flex min-h-11 items-center gap-2 text-sm">
               <input
                 type="checkbox"
                 name="errors"
@@ -80,10 +81,10 @@ export default async function SystemLogsPage({
           {error ? (
             <p className="text-destructive">{error}</p>
           ) : lines.length === 0 ? (
-            <p className="text-muted-foreground">Строк нет.</p>
+            <Empty>Строк нет.</Empty>
           ) : (
             // column-reverse opens the block scrolled to the newest lines at the bottom
-            <div className="flex max-h-[70vh] flex-col-reverse overflow-auto rounded-md border bg-muted p-2">
+            <div className="flex max-h-[70vh] flex-col-reverse overflow-auto rounded-xl border bg-background p-3">
               <pre className="font-mono text-xs break-all whitespace-pre-wrap">
                 {lines.join("\n")}
               </pre>

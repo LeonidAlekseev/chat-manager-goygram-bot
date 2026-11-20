@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation"
 import { auth } from "@/auth"
+import { Bot, KeyRound } from "lucide-react"
 
 import type { Metadata } from "next"
 
@@ -19,19 +20,21 @@ export default async function SettingsPage() {
   const [current, account] = await Promise.all([settingsView(), accountView()])
 
   return (
-    <section className="container space-y-4 p-4">
+    <section className="grid gap-4">
       <Card>
         <CardHeader>
-          <CardTitle>Telegram</CardTitle>
+          <CardTitle icon={Bot}>Telegram</CardTitle>
         </CardHeader>
         <CardContent className="grid gap-4">
-          <p className="text-sm">Состояние бота: {account.bot}</p>
+          <p className="w-fit rounded-xl bg-background px-3 py-2 text-sm">
+            Состояние бота: <b>{account.bot}</b>
+          </p>
           <SettingsForm current={current} />
         </CardContent>
       </Card>
       <Card>
         <CardHeader>
-          <CardTitle>Аккаунт Telegram (MTProto)</CardTitle>
+          <CardTitle icon={KeyRound}>Аккаунт Telegram (MTProto)</CardTitle>
         </CardHeader>
         <CardContent>
           <AccountForm view={account} />

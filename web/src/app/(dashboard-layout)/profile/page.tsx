@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation"
 import { auth } from "@/auth"
-import { Unlink } from "lucide-react"
+import { CircleCheck, CircleSlash, Send, Unlink } from "lucide-react"
 
 import type { Metadata } from "next"
 
@@ -20,23 +20,34 @@ export default async function ProfilePage() {
   const me = await db.manager.findUniqueOrThrow({ where: { login } })
 
   return (
-    <section className="container space-y-4 p-4">
+    <section className="grid gap-4">
       <Card>
         <CardHeader>
-          <CardTitle>Telegram</CardTitle>
+          <CardTitle icon={Send}>Telegram</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           {me.telegramUserId ? (
-            <form action={unlinkTelegram} className="flex items-center gap-2">
-              <Badge>Привязан</Badge>
-              <span className="font-mono">{String(me.telegramUserId)}</span>
+            <form
+              action={unlinkTelegram}
+              className="flex flex-wrap items-center gap-2"
+            >
+              <Badge>
+                <CircleCheck aria-hidden />
+                Привязан
+              </Badge>
+              <span className="font-mono tabular-nums">
+                {String(me.telegramUserId)}
+              </span>
               <Button type="submit" variant="outline">
                 <Unlink />
                 Отвязать
               </Button>
             </form>
           ) : (
-            <Badge variant="secondary">Не привязан</Badge>
+            <Badge variant="secondary">
+              <CircleSlash aria-hidden />
+              Не привязан
+            </Badge>
           )}
           <LinkTelegramForm />
         </CardContent>

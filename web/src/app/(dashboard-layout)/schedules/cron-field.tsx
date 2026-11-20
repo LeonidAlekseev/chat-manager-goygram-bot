@@ -17,7 +17,7 @@ const PRESETS = [
   ...[2, 3, 6, 12].map((n) => [`0 */${n} * * *`, `Каждые ${n} ч`]),
 ] as const
 
-const labelCls = "grid gap-1 text-sm font-medium"
+const labelCls = "grid gap-1.5 text-sm font-bold text-muted-foreground"
 
 /** A custom item's cron, posted as its `time`, with presets and a preview of the next runs. */
 export function CronField({
@@ -77,7 +77,7 @@ export function CronField({
         )}
         {runs.length > 1 &&
           runs[1].getTime() - runs[0].getTime() === 60_000 && (
-            <p className="text-amber-600">
+            <p className="text-action">
               Отправка каждую минуту: каждый привязанный чат получит сообщение
               ежеминутно.
             </p>
