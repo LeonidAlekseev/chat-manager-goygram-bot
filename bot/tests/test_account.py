@@ -9,7 +9,7 @@ import pytest
 from goygram.errors import FloodWaitError, RPCError, rpc_error
 
 import bot.account
-from bot.account import Account, GoyGramLogin, MembersClient, open_client
+from bot.account import NOT_READY, Account, GoyGramLogin, MembersClient, open_client
 from bot.mention import NO_SESSION, MentionError, fetch_users
 from bot.settings import decrypt, encrypt
 
@@ -89,6 +89,11 @@ class FakeClient:
         self.ping_error = None
         self.pings = 0
         self.home = True  # still on the session's own DC and key
+        self.restored = True  # run() has restored the session
+        self.asked = 0
+
+    def ready(self):
+        return self.restored
 
     def at_home(self):
         return self.home
@@ -113,6 +118,7 @@ class FakeClient:
             self.running = False
 
     async def members(self, chat_id):
+        self.asked += 1
         if self.members_error:
             raise self.members_error
         for uid in (1, 2):
@@ -1165,3 +1171,52 @@ async def test_bot_groups_without_a_session_explain_how_to_log_in(adb, account):
     await account.tick()
     with pytest.raises(MentionError, match=re.escape(NO_SESSION)):
         [g async for g in account.bot_groups("pvz_bot")]
+
+
+async def test_no_request_goes_out_before_the_session_is_restored(adb, account, clients):
+    await logged_in(adb, account)
+    clients[0].restored = False
+    assert not account.ready()
+    for items in (lambda: fetch_users(account, -100), lambda: anext(account.bot_groups("pvz_bot"))):
+        with pytest.raises(MentionError, match=re.escape(NOT_READY)):
+            await items()
+    assert clients[0].asked == 0
+    clients[0].restored = True
+    assert account.ready() and await fetch_users(account, -100) == [{"user_id": 1}, {"user_id": 2}]
+
+
+async def test_bot_groups_skip_a_group_telegram_refuses_but_stop_on_a_401(monkeypatch):
+    monkeypatch.setattr(bot.account, "PAUSE", 0)
+    page = {
+        "_": "messages.dialogs",
+        "dialogs": [dialog({"_": "peerChannel", "channel_id": 1}), dialog({"_": "peerChat", "chat_id": 2}),
+                    dialog({"_": "peerChannel", "channel_id": 3})],
+        "messages": [],
+        "chats": [channel(1, "Приватная"), basic(2, "Сбой"), channel(3, "С ботом")],
+        "users": [],
+    }
+    answers = {1: rpc_error(403, "CHANNEL_PRIVATE"), 2: rpc_error(500, "INTERNAL"), 3: participant()}
+    members, _ = scan_client([page], answers)
+    assert [g async for g in members.bot_groups("pvz_bot")] == [(-1000000000003, "С ботом")]
+    members, _ = scan_client([page], {**answers, 1: rpc_error(401, "AUTH_KEY_UNREGISTERED")})
+    with pytest.raises(RPCError):
+        [g async for g in members.bot_groups("pvz_bot")]
+
+
+async def test_next_dialog_page_takes_the_date_by_id_when_the_peer_does_not_match(monkeypatch, caplog):
+    monkeypatch.setattr(bot.account, "DIALOGS", 1)
+    monkeypatch.setattr(bot.account, "PAUSE", 0)
+    page1 = {
+        "_": "messages.dialogsSlice",
+        "dialogs": [dialog({"_": "peerChannel", "channel_id": 3})],
+        # the message carries its peer in another shape than the dialog
+        "messages": [{"_": "message", "id": 3, "date": 1700, "peer_id": {"_": "peerChannel", "channel_id": 3, "x": 1}}],
+        "chats": [channel(3, "Без бота")],
+        "users": [],
+    }
+    page2 = {"_": "messages.dialogsSlice", "dialogs": [], "messages": [], "chats": [], "users": []}
+    members, calls = scan_client([page1, page2], {3: rpc_error(400, "USER_NOT_PARTICIPANT")})
+    assert [g async for g in members.bot_groups("pvz_bot")] == []
+    dialogs = [kw for act, kw in calls if act == "messages.getDialogs"]
+    assert (dialogs[1]["offset_date"], dialogs[1]["offset_id"]) == (1700, 3)
+    assert "matching by id only" in caplog.text

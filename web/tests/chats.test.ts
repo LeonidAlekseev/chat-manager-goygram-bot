@@ -6,6 +6,7 @@ import {
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
 import { db } from "@/lib/db"
+import { discoveryView } from "@/lib/settings"
 
 const session = vi.hoisted(() => ({ current: null as unknown }))
 vi.mock("@/auth", () => ({ auth: async () => session.current }))
@@ -144,8 +145,8 @@ describe("discoverChats", () => {
     await db.chatDiscovery.deleteMany()
     await db.settings.upsert({
       where: { id: 1 },
-      create: { apiSession: "cipher" },
-      update: { apiSession: "cipher" },
+      create: { apiSession: "cipher", botSeenAt: new Date() },
+      update: { apiSession: "cipher", botSeenAt: new Date() },
     })
     await db.manager.upsert({
       where: { login: "boss" },
@@ -182,6 +183,24 @@ describe("discoverChats", () => {
     })
     await discoverChats()
     expect((await scan())?.state).toBe("running")
+  })
+
+  it("queues again a scan the bot has not answered", async () => {
+    const old = new Date(Date.now() - 3 * 60_000)
+    await db.chatDiscovery.create({ data: { state: "queued", updatedAt: old } })
+    await db.$executeRaw`UPDATE chat_discovery SET updated_at = ${old}`
+    expect((await discoveryView())?.stuck).toBe(true)
+    await discoverChats()
+    const row = await db.chatDiscovery.findUniqueOrThrow({ where: { id: 1 } })
+    expect(+row.updatedAt).toBeGreaterThan(+old)
+    expect((await discoveryView())?.stuck).toBe(false)
+    // a running scan may wait out a long FLOOD_WAIT: only a silent bot makes it stuck
+    await db.$executeRaw`UPDATE chat_discovery SET state = 'running', updated_at = ${old}`
+    expect((await discoveryView())?.stuck).toBe(false)
+    await db.settings.update({ where: { id: 1 }, data: { botSeenAt: old } })
+    expect((await discoveryView())?.stuck).toBe(true)
+    await discoverChats()
+    expect((await scan())?.state).toBe("queued")
   })
 
   it("explains that the scan needs the Telegram account", async () => {

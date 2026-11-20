@@ -37,6 +37,8 @@ from bot.settings import _open, decrypt, encrypt, load_settings
 
 log = logging.getLogger(__name__)
 
+NOT_READY = "Аккаунт Telegram ещё подключается: повторите через минуту."
+
 # Taking the step clears its input, so a code or password never stays in the DB; the step itself stays
 # until the answer is written (_report), so the panel keeps waiting meanwhile.
 CLAIM = (
@@ -160,6 +162,10 @@ class Account:
         self.denied: tuple[str | None, float] | None = None  # (session, time.monotonic()) of its first 401 at home
         self.hold: tuple[str | None, float] = (None, 0.0)  # a restarted session reopens only after that time
 
+    def ready(self) -> bool:
+        """The user client runs with its session restored: requests may go out."""
+        return self.client is not None and self.client.ready()
+
     async def iter_participants(self, chat_id: int) -> AsyncIterator[Any]:
         async for p in self._guarded(lambda c: c.members(chat_id)):
             yield p
@@ -172,6 +178,8 @@ class Account:
         """The user client's items; a 401 goes through _rejected."""
         if self.client is None:
             raise MentionError(NO_SESSION)
+        if not self.client.ready():  # a request now would make a fresh, unauthorised key (and a false 401)
+            raise MentionError(NOT_READY)
         session = self._session
         try:
             async for p in items(self.client):
@@ -569,10 +577,13 @@ class MembersClient(GoyGram):
         finally:
             shutil.rmtree(self.vault.parent, ignore_errors=True)  # logout or restart: no session copy on disk
 
+    def ready(self) -> bool:
+        """run() has restored the session: before that a call would make a fresh, unauthorised key (a false 401)."""
+        return self.mt.reader_task is not None
+
     async def alive(self) -> None:
         """updates.getState, the lightest call; retry=0: a FLOOD_WAIT is reported, not slept on."""
-        # Before run() restores the session a call would make a fresh, unauthorised key (and a false 401).
-        if self.mt.reader_task is None:
+        if not self.ready():
             raise TimeoutError("the session is not restored yet")
         await self.mt.call("updates.getState", retry=0)
 
@@ -621,8 +632,10 @@ class MembersClient(GoyGram):
             except FloodWaitError:
                 raise
             except RPCError as e:
-                if e.code != 400:  # 401 ends the scan (Account._rejected); USER_NOT_PARTICIPANT, CHAT_ADMIN_REQUIRED, …
+                if _ended(e):  # Account._rejected decides about the session; the scan stops
                     raise
+                # USER_NOT_PARTICIPANT, CHAT_ADMIN_REQUIRED (members hidden), CHANNEL_PRIVATE, a server error, …
+                log.info("group %s skipped: %s", chat["id"], e)
                 continue
             p = res.get("participant") or {}
             # kicked (Banned with `left`) or left: not a member any more
@@ -664,9 +677,14 @@ class MembersClient(GoyGram):
                 c = chats.get((False, peer.get("channel_id"))) or {}
                 offset["offset_peer"] = {"_": "inputPeerChannel", "channel_id": peer.get("channel_id"), "access_hash": c.get("access_hash", 0)}
             offset["offset_id"] = top
-            offset["offset_date"] = next(
-                (m.get("date") or 0 for m in res.get("messages") or [] if m.get("id") == top and m.get("peer_id") == peer), 0
-            )
+            # shortcut: message.peer_id equal to dialog.peer is unverified against a live account; on a miss the
+            # date comes by id alone (ids repeat across chats, so the page may shift), check this log if pages loop.
+            messages = res.get("messages") or []
+            date = next((m.get("date") for m in messages if m.get("id") == top and m.get("peer_id") == peer), None)
+            if date is None:
+                log.warning("getDialogs: no message %s of %s for the next page's date, matching by id only", top, peer)
+                date = next((m.get("date") for m in messages if m.get("id") == top), None)
+            offset["offset_date"] = date or 0
             await asyncio.sleep(PAUSE)
 
     async def _scan_call(self, act: str, **kw: Any) -> dict[str, Any]:

@@ -52,3 +52,23 @@ export async function accountView() {
     },
   }
 }
+
+// «Найти группы бота» (#94). Stuck: a scan while the bot is silent, or a queued one it has not taken by
+// STUCK_MS. A running scan may wait out a FLOOD_WAIT of minutes, so only the heartbeat counts for it.
+export async function discoveryView() {
+  const [s, scan] = await Promise.all([
+    db.settings.findUnique({ where: { id: 1 }, select: { botSeenAt: true } }),
+    db.chatDiscovery.findUnique({ where: { id: 1 } }),
+  ])
+  if (!scan) return null
+  const alive = !!s?.botSeenAt && Date.now() - +s.botSeenAt < ALIVE_MS
+  const old = Date.now() - +scan.updatedAt > STUCK_MS
+  return {
+    state: scan.state,
+    found: scan.found,
+    added: scan.added,
+    error: scan.error,
+    stuck:
+      scan.state !== "done" && (!alive || (scan.state === "queued" && old)),
+  }
+}

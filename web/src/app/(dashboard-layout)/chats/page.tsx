@@ -10,6 +10,7 @@ import {
   visibleSchedules,
 } from "@/lib/access"
 import { db } from "@/lib/db"
+import { discoveryView } from "@/lib/settings"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -35,12 +36,7 @@ export default async function ChatsPage() {
       where: visibleSchedules(v),
       select: { id: true, name: true },
     }),
-    isSuper(v)
-      ? db.chatDiscovery.findUnique({
-          where: { id: 1 },
-          select: { state: true, found: true, added: true, error: true },
-        })
-      : null,
+    isSuper(v) ? discoveryView() : null,
   ])
   const scheduleName = (id: number | null) =>
     id &&

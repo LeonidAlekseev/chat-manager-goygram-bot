@@ -7,7 +7,7 @@ from typing import Any
 import asyncpg
 from goygram.errors import FloodWaitError
 
-from bot.mention import MentionError
+from bot.mention import NO_SESSION, MentionError
 
 log = logging.getLogger(__name__)
 
@@ -21,8 +21,14 @@ async def reset_running(db: asyncpg.Pool) -> None:
 
 
 async def discover(db: asyncpg.Pool, user: Any) -> None:
+    connected = await db.fetchval("SELECT api_session IS NOT NULL FROM settings WHERE id = 1")
+    # a stored session the client has not restored yet (a restart, a login): the scan waits for it
+    if connected and not user.ready():
+        return
     if not await db.fetchval(CLAIM):
         return
+    if not connected:
+        return await _done(db, 0, 0, NO_ACCOUNT)
     found = added = 0
     error = None
     try:
@@ -35,13 +41,17 @@ async def discover(db: asyncpg.Pool, user: Any) -> None:
                 "ON CONFLICT (telegram_id) DO NOTHING RETURNING 1",
                 telegram_id, title,
             ) or 0
-    except MentionError:
-        error = NO_ACCOUNT
+    except MentionError as e:
+        error = NO_ACCOUNT if str(e) == NO_SESSION else str(e)  # NO_SESSION: a 401 ended the session mid-scan
     except FloodWaitError as e:
         error = f"Telegram ограничил запросы: повторите через {e.seconds} с."
     except Exception as e:  # any failure must reach the panel, not stop the loop
         log.exception("group scan failed")
         error = f"Ошибка: {str(e) or type(e).__name__}"
+    await _done(db, found, added, error)
+
+
+async def _done(db: asyncpg.Pool, found: int, added: int, error: str | None) -> None:
     log.info("group scan: found %d, added %d, error %s", found, added, error)
     await db.execute(
         "UPDATE chat_discovery SET state = 'done', found = $1, added = $2, error = $3, updated_at = now() WHERE id = 1",

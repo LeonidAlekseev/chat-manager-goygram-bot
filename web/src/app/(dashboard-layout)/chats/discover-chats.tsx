@@ -3,7 +3,7 @@
 import { useEffect } from "react"
 import { useRouter } from "next/navigation"
 
-import type { ChatDiscovery } from "@prisma/client"
+import type { discoveryView } from "@/lib/settings"
 
 import { Button } from "@/components/ui/button"
 import { ActionForm } from "@/components/action-form"
@@ -12,7 +12,7 @@ import { discoverChats } from "./actions"
 export function DiscoverChats({
   scan,
 }: {
-  scan: Pick<ChatDiscovery, "state" | "found" | "added" | "error"> | null
+  scan: Awaited<ReturnType<typeof discoveryView>>
 }) {
   const router = useRouter()
   const busy = scan?.state === "queued" || scan?.state === "running"
@@ -29,7 +29,11 @@ export function DiscoverChats({
         <Button type="submit" variant="outline">
           Найти группы бота
         </Button>
-        {busy ? (
+        {scan?.stuck ? (
+          <span role="status" className="text-sm text-destructive">
+            Бот не ответил — запустите поиск ещё раз.
+          </span>
+        ) : busy ? (
           <span role="status" className="text-sm text-muted-foreground">
             Ищем группы…
           </span>

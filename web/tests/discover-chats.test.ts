@@ -20,12 +20,42 @@ describe("DiscoverChats", () => {
 
   it("shows a running scan and the result of a finished one", () => {
     expect(
-      render({ state: "running", found: null, added: null, error: null })
+      render({
+        state: "running",
+        found: null,
+        added: null,
+        error: null,
+        stuck: false,
+      })
     ).toContain("Ищем группы…")
-    const done = render({ state: "done", found: 5, added: 2, error: null })
+    const done = render({
+      state: "done",
+      found: 5,
+      added: 2,
+      error: null,
+      stuck: false,
+    })
     expect(done).toContain("Найдено 5, добавлено 2")
     expect(
-      render({ state: "done", found: 1, added: 1, error: "Telegram ограничил" })
+      render({
+        state: "done",
+        found: 1,
+        added: 1,
+        error: "Telegram ограничил",
+        stuck: false,
+      })
     ).toContain("Telegram ограничил")
+  })
+
+  it("says when the bot has not answered", () => {
+    const html = render({
+      state: "queued",
+      found: null,
+      added: null,
+      error: null,
+      stuck: true,
+    })
+    expect(html).toContain("Бот не ответил")
+    expect(html).not.toContain("Ищем группы…")
   })
 })

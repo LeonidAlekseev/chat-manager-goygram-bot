@@ -9,6 +9,10 @@ class FakeUser:
 
     def __init__(self, groups, error=None):
         self.groups, self.error, self.asked = groups, error, []
+        self.restored = True
+
+    def ready(self):
+        return self.restored
 
     async def bot_groups(self, bot_username):
         self.asked.append(bot_username)
@@ -20,7 +24,7 @@ class FakeUser:
 
 async def queue(db, state="queued"):
     await db.execute("TRUNCATE chat_discovery, settings")
-    await db.execute("INSERT INTO settings (id, bot_username) VALUES (1, 'pvz_bot')")
+    await db.execute("INSERT INTO settings (id, bot_username, api_session) VALUES (1, 'pvz_bot', 'cipher')")
     await db.execute("INSERT INTO chat_discovery (id, state) VALUES (1, $1)", state)
 
 
@@ -57,9 +61,30 @@ async def test_nothing_happens_without_a_queued_scan(db):
 
 async def test_without_the_account_the_panel_is_told_to_log_in(db):
     await queue(db)
+    await db.execute("UPDATE settings SET api_session = NULL")
+    user = FakeUser([(-1002, "Новая")])
+    user.restored = False
+    await discover(db, user)
+    assert await result(db) == ("done", 0, 0, NO_ACCOUNT) and user.asked == []
+    assert "Настройк" in NO_ACCOUNT
+
+
+async def test_a_session_ended_mid_scan_asks_to_log_in_again(db):
+    await queue(db)
     await discover(db, FakeUser([], MentionError(NO_SESSION)))
     assert await result(db) == ("done", 0, 0, NO_ACCOUNT)
-    assert "Настройк" in NO_ACCOUNT
+
+
+async def test_a_queued_scan_waits_for_the_restored_session(db):
+    await queue(db, "running")
+    await reset_running(db)  # a restart: the job is queued again, the client is still opening
+    user = FakeUser([(-1002, "Новая")])
+    user.restored = False
+    await discover(db, user)
+    assert user.asked == [] and (await result(db))[0] == "queued"
+    user.restored = True
+    await discover(db, user)
+    assert await result(db) == ("done", 1, 1, None)
 
 
 async def test_a_long_flood_wait_keeps_what_was_found_and_says_when_to_retry(db):
