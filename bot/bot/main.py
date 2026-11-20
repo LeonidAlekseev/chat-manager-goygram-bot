@@ -20,6 +20,8 @@ from bot.intake import handle_edit, handle_private
 from bot.link import handle_link_start
 from bot.mention import handle_all
 from bot.outbox import run_forever as run_outbox_forever
+from bot.photos import queue_photo
+from bot.photos import run_forever as run_photos_forever
 from bot.polls import handle_poll, handle_poll_answer, purge_forever
 from bot.scheduler import run_forever
 from bot.settings import Settings, store_bot_username, vault_key, wait_for_token, watch_settings
@@ -123,6 +125,7 @@ async def _serve(db: asyncpg.Pool, secret: str, settings: Settings, app: Any) ->
             return
         await handle_group_migration(db, message)
         await register_chat(db, message)
+        await queue_photo(db, message)
         await handle_all(app, user, message)
         text = await handle_link_start(db, message) or await handle_private(db, message, os.environ.get("PANEL_URL"))
         if text is None:
@@ -150,6 +153,7 @@ async def _serve(db: asyncpg.Pool, secret: str, settings: Settings, app: Any) ->
     retention = asyncio.create_task(purge_forever(db))
     # «Вы не администратор» in the panel; start_bot already passed getMe, bot_req works without polling
     admin_checks = asyncio.create_task(run_admin_checks_forever(db, app))
+    photos = asyncio.create_task(run_photos_forever(db, app))  # chat photos for the panel (#113)
     runner = asyncio.create_task(app.run())
     # New token or API data: exit and let compose (restart: unless-stopped) start us with them.
     watcher = asyncio.create_task(watch_settings(db, secret, settings))
@@ -171,6 +175,7 @@ async def _serve(db: asyncpg.Pool, secret: str, settings: Settings, app: Any) ->
         discovery.cancel()
         retention.cancel()
         admin_checks.cancel()
+        photos.cancel()
 
 
 def run() -> None:

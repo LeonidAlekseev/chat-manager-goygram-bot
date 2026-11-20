@@ -47,8 +47,23 @@ model Chat {
   sendLogs   SendLog[]
   outbox     Outbox[]
   managers   ChatManager[] // who may see and work with the chat; the superadmin sees all
+  photo      ChatPhoto?
+  // when the bot last looked at the group's photo (#113); NULL = due (a new chat, a photo change)
+  photoCheckedAt DateTime? @map("photo_checked_at") @db.Timestamptz(3)
 
   @@map("chats")
+}
+
+// The group's small (160×160) photo, downloaded by the bot; no row = no photo, the panel shows a letter.
+model ChatPhoto {
+  chatId    Int      @id @map("chat_id")
+  chat      Chat     @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  uniqueId  String   @map("unique_id") // Telegram's file_unique_id: a new one means a new photo
+  mime      String
+  data      Bytes
+  updatedAt DateTime @default(now()) @map("updated_at") @db.Timestamptz(3)
+
+  @@map("chat_photos")
 }
 
 // Assigned by the superadmin; a manager sees only the chats assigned to them.
