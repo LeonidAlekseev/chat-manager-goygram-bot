@@ -108,7 +108,7 @@ export default async function ChatPage({
   const hidden =
     !!chat.scheduleId && !schedules.some((s) => s.id === chat.scheduleId)
 
-  const link = chatLink(chat.telegramId)
+  const link = chatLink(chat.username)
 
   return (
     <section className="grid gap-4">

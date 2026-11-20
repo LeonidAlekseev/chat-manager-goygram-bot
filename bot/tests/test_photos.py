@@ -131,3 +131,20 @@ async def test_bot_added_again_queues_a_check(db):
     member = {"chat": {"id": -1, "type": "group"}, "new_chat_member": {"status": "member"}}
     await handle_member_update(db, {"my_chat_member": member})
     assert await db.fetchval("SELECT photo_checked_at FROM chats WHERE telegram_id = -1") is None
+
+
+async def test_public_username_is_saved_updated_and_cleared(db):
+    chat = await add_chat(db, -1)
+    name = lambda: db.fetchval("SELECT username FROM chats WHERE id = $1", chat)
+    bot = FakeBot({-1: {"username": "goy_chat"}})
+    await check_due(db, bot, pause=0)
+    assert await name() == "goy_chat"
+    bot.chats[-1] = {"username": "renamed", **photo("u1")}
+    bot.files["f-u1"] = b"x"
+    await db.execute("UPDATE chats SET photo_checked_at = NULL")
+    await check_due(db, bot, pause=0)
+    assert await name() == "renamed"
+    bot.chats[-1] = {**photo("u1")}  # photo unchanged (early return): username still cleared
+    await db.execute("UPDATE chats SET photo_checked_at = NULL")
+    await check_due(db, bot, pause=0)
+    assert await name() is None
