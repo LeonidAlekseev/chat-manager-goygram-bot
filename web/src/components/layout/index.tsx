@@ -151,7 +151,7 @@ export function Brand() {
       <span className="grid size-9 place-items-center rounded-xl bg-primary text-primary-foreground">
         <Send className="size-4" aria-hidden />
       </span>
-      <span className="text-lg font-black tracking-tight">TaskManager</span>
+      <span className="text-lg font-black tracking-tight">ChatManager</span>
     </Link>
   )
 }
