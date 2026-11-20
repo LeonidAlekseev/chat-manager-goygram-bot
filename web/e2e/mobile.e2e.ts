@@ -263,6 +263,7 @@ test("mobile: send — template, own text or own poll, now or later; cancel a sc
   const db = new PrismaClient()
   const text = `E2E send ${Date.now()}`
   const question = `E2E poll ${Date.now()}`
+  const filler = `E2E filler ${Date.now()}`
   try {
     await page.goto("/login")
     await page.getByLabel("Логин").fill(LOGIN)
@@ -306,6 +307,13 @@ test("mobile: send — template, own text or own poll, now or later; cancel a sc
     expect(poll.options).toEqual(["Да", "Нет"])
     expect(poll.anonymous).toBe(true)
     expect(poll.sendAt).not.toBeNull()
+    // 50 newer jobs push it past the "recent" limit: a scheduled one is still listed
+    await db.outbox.createMany({
+      data: Array.from({ length: 50 }, () => ({
+        chatId: poll.chatId,
+        text: filler,
+      })),
+    })
 
     await page.reload()
     const row = page.getByRole("row").filter({ hasText: question })
@@ -323,7 +331,9 @@ test("mobile: send — template, own text or own poll, now or later; cancel a sc
     ).toHaveCount(0)
     expect(await db.outbox.count({ where: { text: question } })).toBe(0)
   } finally {
-    await db.outbox.deleteMany({ where: { text: { in: [text, question] } } })
+    await db.outbox.deleteMany({
+      where: { text: { in: [text, question, filler] } },
+    })
     await db.$disconnect()
   }
 })

@@ -35,10 +35,17 @@ const fmt = new Intl.DateTimeFormat("ru-RU", {
   timeZone: TIMEZONE,
 })
 
+const include = {
+  chat: { select: { title: true } },
+  template: { select: { name: true } },
+  sendLog: { select: { status: true, error: true } },
+} as const
+
 export default async function SendPage() {
   const v = await getViewer()
   if (!v) redirect("/login")
-  const [templates, chats, jobs] = await Promise.all([
+  const now = new Date()
+  const [templates, chats, scheduled, recent] = await Promise.all([
     db.template.findMany({
       where: visibleTemplates(v),
       orderBy: { name: "asc" },
@@ -49,18 +56,21 @@ export default async function SendPage() {
       orderBy: { title: "asc" },
       select: { id: true, title: true },
     }),
+    // every scheduled job, however many sends came after it, so it can still be cancelled
+    db.outbox.findMany({
+      where: { ...visibleSends(v), sendAt: { gt: now }, sendLog: null },
+      orderBy: { sendAt: "asc" },
+      include,
+    }),
     db.outbox.findMany({
       where: visibleSends(v),
       orderBy: { id: "desc" },
       take: 50,
-      include: {
-        chat: { select: { title: true } },
-        template: { select: { name: true } },
-        sendLog: { select: { status: true, error: true } },
-      },
+      include,
     }),
   ])
-  const now = new Date()
+  const ids = new Set(scheduled.map((j) => j.id))
+  const jobs = [...scheduled, ...recent.filter((j) => !ids.has(j.id))]
 
   return (
     <section className="container grid gap-4 p-4">

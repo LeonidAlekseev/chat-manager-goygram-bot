@@ -134,11 +134,12 @@ export async function cancelSend(
   if (duplicated(formData, "id")) return { error: NOT_FOUND }
   const id = z.coerce.number().int().safeParse(formData.get("id"))
   if (!id.success) return { error: NOT_FOUND }
-  // one statement: the bot claims only due jobs (send_at <= now) by inserting their log row
+  // the DB clock, as the bot's; a job claimed meanwhile has a log row, and one deleted under the bot is skipped there
+  const [{ now }] = await db.$queryRaw<{ now: Date }[]>`SELECT now() AS now`
   const { count } = await db.outbox.deleteMany({
     where: {
       id: id.data,
-      sendAt: { gt: new Date() },
+      sendAt: { gt: now },
       sendLog: null,
       AND: [visibleSends(v), isSuper(v) ? {} : { authorId: v.id }],
     },

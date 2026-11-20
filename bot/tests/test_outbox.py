@@ -196,3 +196,37 @@ async def test_custom_poll_with_mention_all_mentions_after_the_poll(world):
     await run_outbox(world, tg, FakeUser())
     assert [m for m, _ in tg.calls] == ["sendPoll", "sendMessage"]
     assert "tg://user?id=5" in tg.calls[1][1]["text"]
+
+
+async def test_a_scheduled_job_found_over_15_minutes_late_is_an_error_not_sent(world):
+    await world.execute(
+        "INSERT INTO outbox (chat_id, text, send_at) VALUES "
+        "(1, 'бот лежал', (now() AT TIME ZONE 'UTC') - interval '16 minutes'), "
+        "(2, 'чуть позже', (now() AT TIME ZONE 'UTC') - interval '14 minutes')"
+    )
+    tg = FakeTelegram()
+    await run_outbox(world, tg)
+    assert [k["text"] for _, k in tg.calls] == ["чуть позже"]
+    rows = await jobs(world)
+    assert (rows[0][1], rows[0][4]) == ("error", "Не отправлено: бот был недоступен, время прошло")
+    assert rows[1][1] == "sent"
+
+
+async def test_a_job_cancelled_between_the_read_and_the_claim_is_skipped(world):
+    await world.execute("INSERT INTO outbox (chat_id, text) VALUES (1, 'отменено'), (2, 'идёт')")
+
+    class CancelAfterRead:
+        """The panel deletes job 1 right after the bot has read it."""
+
+        def __getattr__(self, name):
+            return getattr(world, name)
+
+        async def fetch(self, *args):
+            rows = await world.fetch(*args)
+            await world.execute("DELETE FROM outbox WHERE id = 1")
+            return rows
+
+    tg = FakeTelegram()
+    await run_outbox(CancelAfterRead(), tg)
+    assert [k["text"] for _, k in tg.calls] == ["идёт"]
+    assert await world.fetchval("SELECT count(*) FROM send_logs") == 1
