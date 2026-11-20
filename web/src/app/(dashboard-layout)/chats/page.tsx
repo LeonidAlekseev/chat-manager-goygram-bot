@@ -35,7 +35,7 @@ import { Empty } from "@/components/empty"
 import { renameChat } from "./actions"
 import { DeleteChatForm } from "./delete-chat-form"
 import { DiscoverChats } from "./discover-chats"
-import { NotAdminBadge, NotAdminHint } from "./member-status"
+import { AbsentBadge, MentionHint } from "./member-status"
 
 export const metadata: Metadata = { title: "Чаты" }
 
@@ -104,7 +104,7 @@ export default async function ChatsPage() {
       {isSuper(v) && <DiscoverChats scan={scan} />}
       {!isSuper(v) &&
         chats.some((c) => !linked || myStatus(c) === "absent") && (
-          <NotAdminHint linked={linked} />
+          <MentionHint linked={linked} />
         )}
       {chats.length === 0 ? (
         <Empty>Добавьте бота в группу — чат появится здесь.</Empty>
@@ -182,7 +182,7 @@ export default async function ChatsPage() {
                       Бот удалён
                     </Badge>
                   )}
-                  {linked && <NotAdminBadge status={myStatus(chat)} />}
+                  {linked && <AbsentBadge status={myStatus(chat)} />}
                 </div>
                 {!chat.deleting && (
                   <dl className="grid gap-1">
