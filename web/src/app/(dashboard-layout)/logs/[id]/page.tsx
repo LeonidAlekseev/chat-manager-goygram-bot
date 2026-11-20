@@ -22,7 +22,7 @@ export default async function PollAnswersPage({
   if (!Number.isInteger(id) || id < 1 || id > 2147483647) notFound()
   const log = await db.sendLog.findFirst({
     where: { id, ...visibleSends(v) },
-    include: { chat: true, template: true },
+    include: { chat: true, template: true, outbox: true },
   })
   if (!log?.pollId) notFound()
   const answers = await db.pollAnswer.findMany({
@@ -36,7 +36,11 @@ export default async function PollAnswersPage({
     where: { pollId: log.pollId },
   })
   // Telegram sends no answers for an anonymous poll, only counts (once someone has voted).
-  const anonymous = result?.anonymous ?? log.template?.anonymous ?? false
+  const anonymous =
+    result?.anonymous ??
+    log.template?.anonymous ??
+    log.outbox?.anonymous ??
+    false
   // the snapshot taken at send time; rows sent before it existed fall back to the template
   const text = log.text ?? log.template?.text
   const options = log.text != null ? log.options : (log.template?.options ?? [])

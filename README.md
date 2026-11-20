@@ -118,6 +118,10 @@ docker compose exec -T db pg_dump -U chatmanager chatmanager > backup.sql
 
 # обновление: миграции применятся при старте web; сборка web ограничена кучей 1 ГБ (web/Dockerfile), чтобы OOM не убил db/bot
 git pull && docker compose up -d --build
+
+# обновление с миграцией 20261120130000_outbox_send_later (отложенная отправка, #97): старый бот отправил бы
+# запланированное сразу, поэтому сначала остановите его, затем web (применит миграцию), затем бот
+git pull && docker compose stop bot && docker compose up -d --build web && docker compose up -d --build bot
 docker builder prune -f --filter until=72h && docker image prune -f  # кэш сборки растёт с каждым деплоем
 
 # восстановление в пустую БД

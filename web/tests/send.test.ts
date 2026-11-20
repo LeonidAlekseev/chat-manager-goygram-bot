@@ -1,4 +1,4 @@
-import { sendNow } from "@/app/(dashboard-layout)/send/actions"
+import { cancelSend, sendNow } from "@/app/(dashboard-layout)/send/actions"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
 import { db } from "@/lib/db"
@@ -112,7 +112,9 @@ describe("sendNow", () => {
         chatIds: String(chats[0]),
       })
     )
-    expect(r.error).toBe("Выберите что-то одно: шаблон или свой текст")
+    expect(r.error).toBe(
+      "Выберите что-то одно: шаблон, свой текст или свой опрос"
+    )
   })
 
   it("needs exactly one of template and text, and at least one chat", async () => {
@@ -165,5 +167,185 @@ describe("sendNow", () => {
       sendNow(null, form({ text: "x", chatIds: String(chats[0]) }))
     ).rejects.toThrow("Unauthorized")
     expect(await db.outbox.count()).toBe(0)
+  })
+
+  it("records the signed-in manager as the job's author", async () => {
+    await sendNow(null, form({ text: "x", chatIds: String(chats[0]) }))
+    const boss = await db.manager.findUniqueOrThrow({
+      where: { login: "boss" },
+    })
+    expect((await db.outbox.findFirstOrThrow()).authorId).toBe(boss.id)
+  })
+
+  describe("custom poll", () => {
+    const poll = (extra: Record<string, string | string[]> = {}) =>
+      sendNow(
+        null,
+        form({
+          question: " Обед? ",
+          options: " Да \n\n Нет \n",
+          chatIds: String(chats[0]),
+          ...extra,
+        })
+      )
+
+    it("queues the question, options and flags", async () => {
+      expect(
+        await poll({ anonymous: "on", multiple: "on", mentionAll: "on" })
+      ).toEqual({})
+      const o = await db.outbox.findFirstOrThrow()
+      expect([
+        o.templateId,
+        o.text,
+        o.options,
+        o.anonymous,
+        o.multiple,
+        o.mentionAll,
+      ]).toEqual([null, "Обед?", ["Да", "Нет"], true, true, true])
+    })
+
+    it("needs 2-10 options of up to 100 chars and a question of up to 300", async () => {
+      expect((await poll({ options: "Да" })).error).toBe(
+        "Нужно минимум 2 варианта"
+      )
+      expect(
+        (await poll({ options: Array(11).fill("x").join("\n") })).error
+      ).toBe("Не больше 10 вариантов")
+      expect(
+        (await poll({ options: `Да\n${"x".repeat(101)}` })).error
+      ).toBeTruthy()
+      expect((await poll({ question: "x".repeat(301) })).error).toBeTruthy()
+      expect(await db.outbox.count()).toBe(0)
+    })
+
+    it("is one choice: not together with a template or text", async () => {
+      expect(
+        (await poll({ templateId: String(templateId) })).error
+      ).toBeTruthy()
+      expect((await poll({ text: "x" })).error).toBeTruthy()
+      expect(await db.outbox.count()).toBe(0)
+    })
+
+    it("plain text never carries poll options", async () => {
+      await sendNow(
+        null,
+        form({ text: "x", options: "a\nb", chatIds: String(chats[0]) })
+      )
+      expect((await db.outbox.findFirstOrThrow()).options).toEqual([])
+    })
+  })
+
+  describe("send later", () => {
+    it("stores the local time (Europe/Moscow) as UTC", async () => {
+      expect(
+        await sendNow(
+          null,
+          form({
+            text: "x",
+            sendAt: "2030-01-01T10:00",
+            chatIds: String(chats[0]),
+          })
+        )
+      ).toEqual({})
+      const o = await db.outbox.findFirstOrThrow()
+      expect(o.sendAt?.toISOString()).toBe("2030-01-01T07:00:00.000Z")
+    })
+
+    it("without a time sends at once", async () => {
+      await sendNow(null, form({ text: "x", chatIds: String(chats[0]) }))
+      expect((await db.outbox.findFirstOrThrow()).sendAt).toBeNull()
+    })
+
+    it("refuses a time that has passed or is malformed", async () => {
+      const past = await sendNow(
+        null,
+        form({
+          text: "x",
+          sendAt: "2020-01-01T10:00",
+          chatIds: String(chats[0]),
+        })
+      )
+      expect(past.error).toBe(
+        "Время отправки уже прошло (Europe/Moscow) — укажите будущее"
+      )
+      expect(
+        (
+          await sendNow(
+            null,
+            form({ text: "x", sendAt: "завтра", chatIds: String(chats[0]) })
+          )
+        ).error
+      ).toBeTruthy()
+      expect(
+        (
+          await sendNow(
+            null,
+            form({
+              text: "x",
+              sendAt: "2030-13-01T10:00",
+              chatIds: String(chats[0]),
+            })
+          )
+        ).error
+      ).toBe("Укажите дату и время")
+      expect(await db.outbox.count()).toBe(0)
+    })
+  })
+
+  describe("cancelSend", () => {
+    const later = new Date(Date.now() + 3600_000)
+    const job = async (data: { authorId?: number; sendAt?: Date | null }) =>
+      (
+        await db.outbox.create({
+          data: { chatId: chats[0], text: "x", sendAt: later, ...data },
+        })
+      ).id
+    const cancel = (id: number) => cancelSend(form({ id: String(id) }))
+    let m1: number, m2: number
+
+    beforeEach(async () => {
+      await db.manager.deleteMany({ where: { login: { startsWith: "send-" } } })
+      ;[m1, m2] = (
+        await Promise.all(
+          ["send-m1", "send-m2"].map((login) =>
+            db.manager.create({ data: { login, passwordHash: "x" } })
+          )
+        )
+      ).map((m) => m.id)
+      await db.chatManager.createMany({
+        data: [m1, m2].map((managerId) => ({ chatId: chats[0], managerId })),
+      })
+    })
+
+    it("lets the author cancel a scheduled job before it is sent", async () => {
+      session.current = { user: { name: "send-m1" } }
+      const id = await job({ authorId: m1 })
+      expect(await cancel(id)).toEqual({})
+      expect(await db.outbox.count()).toBe(0)
+    })
+
+    it("lets the superadmin cancel anyone's scheduled job", async () => {
+      const id = await job({ authorId: m1 })
+      expect(await cancel(id)).toEqual({})
+      expect(await db.outbox.count()).toBe(0)
+    })
+
+    it("refuses another manager's job, a due or claimed job, and a hidden chat", async () => {
+      session.current = { user: { name: "send-m2" } }
+      const other = await job({ authorId: m1 })
+      expect((await cancel(other)).error).toBeTruthy()
+      session.current = { user: { name: "send-m1" } }
+      const due = await job({ authorId: m1, sendAt: null })
+      expect((await cancel(due)).error).toBeTruthy()
+      const claimed = await job({ authorId: m1 })
+      await db.sendLog.create({
+        data: { chatId: chats[0], slot: new Date(), outboxId: claimed },
+      })
+      expect((await cancel(claimed)).error).toBeTruthy()
+      await db.chatManager.deleteMany({ where: { managerId: m1 } })
+      const hidden = await job({ authorId: m1 })
+      expect((await cancel(hidden)).error).toBeTruthy()
+      expect(await db.outbox.count()).toBe(4)
+    })
   })
 })
