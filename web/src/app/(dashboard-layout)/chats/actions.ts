@@ -105,3 +105,26 @@ export async function assignManagers(
   revalidatePath("/chats", "layout")
   return {}
 }
+
+// «Найти группы бота» (#94): the bot runs the scan through the MTProto account and writes the result.
+// A scan already queued or running is left alone, a finished one makes way for a new one.
+export async function discoverChats(): Promise<{ error?: string }> {
+  const v = await getViewer()
+  if (!v) return EXPIRED
+  if (!isSuper(v)) return { error: "Искать группы может только суперадмин" }
+  const s = await db.settings.findUnique({
+    where: { id: 1 },
+    select: { apiSession: true },
+  })
+  if (!s?.apiSession)
+    return {
+      error:
+        "Аккаунт Telegram не подключён: войдите в него в Настройках, поиск групп идёт через него.",
+    }
+  await db.$executeRaw`
+    INSERT INTO chat_discovery (id, state) VALUES (1, 'queued')
+    ON CONFLICT (id) DO UPDATE SET state = 'queued', found = NULL, added = NULL, error = NULL, updated_at = now()
+    WHERE chat_discovery.state = 'done'`
+  revalidatePath("/chats")
+  return {}
+}

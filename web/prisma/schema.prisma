@@ -244,3 +244,16 @@ model MtprotoLogin {
 
   @@map("mtproto_login")
 }
+
+// «Найти группы бота» (one row, #94): the panel queues a scan, the bot runs it through the MTProto
+// account and writes how many groups with the bot it found and how many of them were new.
+model ChatDiscovery {
+  id        Int      @id @default(1)
+  state     String   @default("queued") // queued | running | done
+  found     Int?
+  added     Int?
+  error     String?
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at")
+
+  @@map("chat_discovery")
+}

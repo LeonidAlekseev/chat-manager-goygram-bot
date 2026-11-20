@@ -161,11 +161,20 @@ class Account:
         self.hold: tuple[str | None, float] = (None, 0.0)  # a restarted session reopens only after that time
 
     async def iter_participants(self, chat_id: int) -> AsyncIterator[Any]:
+        async for p in self._guarded(lambda c: c.members(chat_id)):
+            yield p
+
+    async def bot_groups(self, bot_username: str) -> AsyncIterator[tuple[int, str]]:
+        async for g in self._guarded(lambda c: c.bot_groups(bot_username)):
+            yield g
+
+    async def _guarded(self, items: Callable[[Any], AsyncIterator[Any]]) -> AsyncIterator[Any]:
+        """The user client's items; a 401 goes through _rejected."""
         if self.client is None:
             raise MentionError(NO_SESSION)
         session = self._session
         try:
-            async for p in self.client.members(chat_id):
+            async for p in items(self.client):
                 yield p
         except RPCError as e:
             if not _ended(e):
@@ -539,6 +548,9 @@ async def connect(api_id: int, api_hash: str) -> GoyGramLogin:
 
 
 PAGE = 200  # channels.getParticipants page, as in goygram
+DIALOGS = 100  # messages.getDialogs page, Telegram's maximum
+PAUSE = 1.0  # s between the requests of a group scan, to stay clear of FLOOD_WAIT
+MAX_FLOOD = 300  # s; a longer FLOOD_WAIT stops the scan instead of holding it
 
 
 class MembersClient(GoyGram):
@@ -583,6 +595,93 @@ class MembersClient(GoyGram):
             if len(page) < PAGE:
                 return
             offset += len(page)
+
+    async def bot_groups(self, bot_username: str) -> AsyncIterator[tuple[int, str]]:
+        """(Bot API chat id, title) of the account's groups and supergroups the bot is a member of (#94)."""
+        found = await self._scan_call("contacts.resolveUsername", username=bot_username)
+        bot_id = (found.get("peer") or {}).get("user_id")
+        bot = next((u for u in found.get("users") or [] if u.get("id") == bot_id), None)
+        if bot is None:
+            raise RuntimeError(f"Telegram не нашёл бота @{bot_username}")
+        bot_peer = {"_": "inputPeerUser", "user_id": bot_id, "access_hash": bot.get("access_hash", 0)}
+        async for chat in self._groups():
+            await asyncio.sleep(PAUSE)
+            try:
+                if chat["_"] == "chat":
+                    full = await self._scan_call("messages.getFullChat", chat_id=chat["id"])
+                    # chatParticipantsForbidden (members hidden from the account) has no list: not found
+                    users = ((full.get("full_chat") or {}).get("participants") or {}).get("participants") or []
+                    if any(u.get("user_id") == bot_id for u in users):
+                        yield -chat["id"], chat.get("title") or str(-chat["id"])
+                    continue
+                res = await self._scan_call(
+                    "channels.getParticipant", participant=bot_peer,
+                    channel={"_": "inputChannel", "channel_id": chat["id"], "access_hash": chat.get("access_hash", 0)},
+                )
+            except FloodWaitError:
+                raise
+            except RPCError as e:
+                if e.code != 400:  # 401 ends the scan (Account._rejected); USER_NOT_PARTICIPANT, CHAT_ADMIN_REQUIRED, …
+                    raise
+                continue
+            p = res.get("participant") or {}
+            # kicked (Banned with `left`) or left: not a member any more
+            if p.get("_") != "channelParticipantLeft" and not (p.get("_") == "channelParticipantBanned" and p.get("left")):
+                yield -1000000000000 - chat["id"], chat.get("title") or str(chat["id"])
+
+    async def _groups(self) -> AsyncIterator[dict[str, Any]]:
+        """The account's groups and supergroups, from every page of messages.getDialogs (archived ones too)."""
+        offset: dict[str, Any] = {"offset_date": 0, "offset_id": 0, "offset_peer": {"_": "inputPeerEmpty"}}
+        seen: set[tuple[str, int]] = set()
+        while True:
+            res = await self._scan_call("messages.getDialogs", **offset, limit=DIALOGS, hash=0)
+            dialogs = [d for d in res.get("dialogs") or [] if isinstance(d.get("peer"), dict)]
+            chats = {(c["_"] == "chat", c.get("id")): c for c in res.get("chats") or []}
+            users = {u.get("id"): u for u in res.get("users") or []}
+            new = False
+            for d in dialogs:
+                peer = d["peer"]
+                key = (peer["_"], peer.get("user_id") or peer.get("chat_id") or peer.get("channel_id") or 0)
+                if key in seen:  # a pinned dialog again, or Telegram repeating a page
+                    continue
+                new = True
+                seen.add(key)
+                c = chats.get((peer["_"] == "peerChat", peer.get("chat_id") or peer.get("channel_id")))
+                if not c or c.get("left") or c.get("deactivated"):
+                    continue  # a user, a forbidden chat, one the account left, a group moved to a supergroup
+                if c["_"] == "chat" or (c["_"] == "channel" and c.get("megagroup")):
+                    yield c
+            if res.get("_") != "messages.dialogsSlice" or len(dialogs) < DIALOGS or not new:
+                return
+            last = dialogs[-1]
+            peer, top = last["peer"], last.get("top_message") or 0
+            if peer["_"] == "peerUser":
+                user = users.get(peer["user_id"]) or {}
+                offset["offset_peer"] = {"_": "inputPeerUser", "user_id": peer["user_id"], "access_hash": user.get("access_hash", 0)}
+            elif peer["_"] == "peerChat":
+                offset["offset_peer"] = {"_": "inputPeerChat", "chat_id": peer["chat_id"]}
+            else:
+                c = chats.get((False, peer.get("channel_id"))) or {}
+                offset["offset_peer"] = {"_": "inputPeerChannel", "channel_id": peer.get("channel_id"), "access_hash": c.get("access_hash", 0)}
+            offset["offset_id"] = top
+            offset["offset_date"] = next(
+                (m.get("date") or 0 for m in res.get("messages") or [] if m.get("id") == top and m.get("peer_id") == peer), 0
+            )
+            await asyncio.sleep(PAUSE)
+
+    async def _scan_call(self, act: str, **kw: Any) -> dict[str, Any]:
+        """A scan request: waits out a FLOOD_WAIT up to MAX_FLOOD itself (goygram would cut it to 300 s and retry)."""
+        req: Callable[..., Awaitable[dict[str, Any]]] = self.mt_req  # the stub types only literal method names
+        while True:
+            try:
+                res = await req(act, retry=0, **kw)
+            except FloodWaitError as e:
+                if e.seconds > MAX_FLOOD:
+                    raise
+                log.info("%s: FLOOD_WAIT %s s", act, e.seconds)
+                await asyncio.sleep(e.seconds)
+                continue
+            return res["result"] if isinstance(res.get("result"), dict) else res
 
     async def end_session(self) -> None:
         if err := _extract_error(await self.mt_req("auth.logOut")):

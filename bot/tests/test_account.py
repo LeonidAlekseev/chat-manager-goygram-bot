@@ -6,7 +6,7 @@ import stat
 import time
 
 import pytest
-from goygram.errors import RPCError, rpc_error
+from goygram.errors import FloodWaitError, RPCError, rpc_error
 
 import bot.account
 from bot.account import Account, GoyGramLogin, MembersClient, open_client
@@ -1021,3 +1021,147 @@ async def test_members_survive_an_odd_response(res):
     members.mt_req = mt_req
     got = [m async for m in members.members(-100)]
     assert got == ([{"user_id": 1, "first_name": None, "last_name": None, "username": None}] if "users" in res else [])
+
+
+BOT = {"_": "user", "id": 700, "access_hash": 70, "bot": True, "username": "pvz_bot"}
+BOT_PEER = {"_": "inputPeerUser", "user_id": 700, "access_hash": 70}
+
+
+def dialog(peer):
+    return {"_": "dialog", "peer": peer, "top_message": peer.get("channel_id") or peer.get("chat_id") or peer["user_id"]}
+
+
+def scan_client(pages, answers):
+    """A MembersClient over canned getDialogs pages; `answers` maps a group to its participant check."""
+    members = MembersClient.__new__(MembersClient)
+    calls = []
+
+    async def mt_req(act, **kw):
+        calls.append((act, kw))
+        if act == "contacts.resolveUsername":
+            return {"ok": True, "result": {"peer": {"_": "peerUser", "user_id": 700}, "users": [BOT], "chats": []}}
+        if act == "messages.getDialogs":
+            return {"ok": True, "result": pages[sum(a == "messages.getDialogs" for a, _ in calls) - 1]}
+        key = kw["channel"]["channel_id"] if act == "channels.getParticipant" else kw["chat_id"]
+        answer = answers[key].pop(0) if isinstance(answers[key], list) else answers[key]
+        if isinstance(answer, Exception):
+            raise answer
+        return {"ok": True, "result": answer}
+
+    members.mt_req = mt_req
+    return members, calls
+
+
+def channel(cid, title, **flags):
+    return {"_": "channel", "id": cid, "access_hash": cid * 10, "title": title, "megagroup": True, "left": False, **flags}
+
+
+def basic(cid, title, **flags):
+    return {"_": "chat", "id": cid, "title": title, "left": False, "deactivated": False, **flags}
+
+
+def full_chat(*user_ids):
+    parts = [{"_": "chatParticipant", "user_id": u} for u in user_ids]
+    return {"_": "messages.chatFull", "full_chat": {"_": "chatFull", "participants": {"_": "chatParticipants", "participants": parts}}}
+
+
+def participant(kind="channelParticipant", **extra):
+    return {"_": "channels.channelParticipant", "participant": {"_": kind, **extra}, "chats": [], "users": []}
+
+
+async def test_bot_groups_walks_every_dialog_page_and_checks_the_bot_in_each_group(monkeypatch):
+    monkeypatch.setattr(bot.account, "DIALOGS", 3)
+    monkeypatch.setattr(bot.account, "PAUSE", 0)
+    page1 = {
+        "_": "messages.dialogsSlice",
+        "count": 6,
+        "dialogs": [dialog({"_": "peerChannel", "channel_id": 1}), dialog({"_": "peerChat", "chat_id": 2}),
+                    dialog({"_": "peerChannel", "channel_id": 3})],
+        "messages": [{"_": "message", "id": 3, "date": 1700, "peer_id": {"_": "peerChannel", "channel_id": 3}}],
+        "chats": [channel(1, "С ботом"), basic(2, "Обычная с ботом"), channel(3, "Без бота")],
+        "users": [],
+    }
+    page2 = {
+        "_": "messages.dialogsSlice",
+        "count": 6,
+        "dialogs": [dialog({"_": "peerUser", "user_id": 9}), dialog({"_": "peerChannel", "channel_id": 4}),
+                    dialog({"_": "peerChat", "chat_id": 5})],
+        "messages": [],
+        "chats": [channel(4, "Новости", megagroup=False, broadcast=True), basic(5, "Обычная без бота")],
+        "users": [{"_": "user", "id": 9, "access_hash": 90}],
+    }
+    page3 = {
+        "_": "messages.dialogsSlice",
+        "count": 6,
+        "dialogs": [dialog({"_": "peerChannel", "channel_id": 6}), dialog({"_": "peerChannel", "channel_id": 7}),
+                    dialog({"_": "peerChat", "chat_id": 8})],
+        "messages": [],
+        "chats": [channel(6, "Бота выгнали"), channel(7, "Аккаунт вышел", left=True), basic(8, "Стала супергруппой", deactivated=True)],
+        "users": [],
+    }
+    page4 = {"_": "messages.dialogsSlice", "count": 6, "dialogs": [], "messages": [], "chats": [], "users": []}
+    answers = {
+        1: participant(),
+        2: full_chat(1, 700),
+        3: rpc_error(400, "USER_NOT_PARTICIPANT"),
+        5: full_chat(1),
+        6: participant("channelParticipantBanned", left=True),
+    }
+    members, calls = scan_client([page1, page2, page3, page4], answers)
+    assert [g async for g in members.bot_groups("pvz_bot")] == [(-1000000000001, "С ботом"), (-2, "Обычная с ботом")]
+    assert calls[0] == ("contacts.resolveUsername", {"username": "pvz_bot", "retry": 0})
+    assert ("channels.getParticipant", {"channel": {"_": "inputChannel", "channel_id": 1, "access_hash": 10},
+                                        "participant": BOT_PEER, "retry": 0}) in calls
+    assert ("messages.getFullChat", {"chat_id": 2, "retry": 0}) in calls
+    dialogs = [kw for act, kw in calls if act == "messages.getDialogs"]
+    assert [(d["offset_date"], d["offset_id"], d["offset_peer"]) for d in dialogs] == [
+        (0, 0, {"_": "inputPeerEmpty"}),
+        (1700, 3, {"_": "inputPeerChannel", "channel_id": 3, "access_hash": 30}),
+        (0, 5, {"_": "inputPeerChat", "chat_id": 5}),
+        (0, 8, {"_": "inputPeerChat", "chat_id": 8}),
+    ]
+    assert all("folder_id" not in d for d in dialogs)  # archived chats too
+    checked = {kw.get("chat_id") or kw["channel"]["channel_id"] for act, kw in calls if act != "messages.getDialogs" and act != "contacts.resolveUsername"}
+    assert checked == {1, 2, 3, 5, 6}  # no broadcast channel, nothing the account left
+
+
+async def test_bot_groups_stop_on_a_full_list_and_skip_a_group_they_may_not_check(monkeypatch):
+    monkeypatch.setattr(bot.account, "PAUSE", 0)
+    page = {
+        "_": "messages.dialogs",  # the whole list in one answer
+        "dialogs": [dialog({"_": "peerChannel", "channel_id": 1}), dialog({"_": "peerChannel", "channel_id": 2})],
+        "messages": [],
+        "chats": [channel(1, "Скрытые участники"), channel(2, "С ботом")],
+        "users": [],
+    }
+    members, calls = scan_client([page], {1: rpc_error(400, "CHAT_ADMIN_REQUIRED"), 2: participant()})
+    assert [g async for g in members.bot_groups("pvz_bot")] == [(-1000000000002, "С ботом")]
+    assert sum(act == "messages.getDialogs" for act, _ in calls) == 1
+
+
+async def test_bot_groups_wait_out_a_short_flood_wait_and_give_up_on_a_long_one(monkeypatch):
+    monkeypatch.setattr(bot.account, "PAUSE", 0)
+    slept = []
+    real_sleep = asyncio.sleep
+
+    async def sleep(s):
+        slept.append(s)
+        await real_sleep(0)
+
+    monkeypatch.setattr(bot.account.asyncio, "sleep", sleep)
+    page = {"_": "messages.dialogs", "dialogs": [dialog({"_": "peerChannel", "channel_id": 1})], "messages": [],
+            "chats": [channel(1, "С ботом")], "users": []}
+    members, calls = scan_client([page], {1: [rpc_error(420, "FLOOD_WAIT_7"), participant()]})
+    assert [g async for g in members.bot_groups("pvz_bot")] == [(-1000000000001, "С ботом")]
+    assert 7 in slept and sum(act == "channels.getParticipant" for act, _ in calls) == 2
+
+    members, _ = scan_client([page], {1: rpc_error(420, "FLOOD_WAIT_3600")})
+    with pytest.raises(FloodWaitError):  # an hour: the scan stops and the panel says when to retry
+        [g async for g in members.bot_groups("pvz_bot")]
+    assert 3600 not in slept
+
+
+async def test_bot_groups_without_a_session_explain_how_to_log_in(adb, account):
+    await account.tick()
+    with pytest.raises(MentionError, match=re.escape(NO_SESSION)):
+        [g async for g in account.bot_groups("pvz_bot")]
