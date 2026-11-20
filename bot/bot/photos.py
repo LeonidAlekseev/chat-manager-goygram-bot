@@ -36,7 +36,10 @@ async def queue_photo(db: asyncpg.Pool, message: dict[str, Any]) -> None:
 
 async def sync_photo(db: asyncpg.Pool, tg: Telegram, chat_id: int, telegram_id: int, known: str | None) -> None:
     chat = await asyncio.wait_for(tg.bot_req("getChat", chat_id=telegram_id), TIMEOUT)
-    photo = chat.get("result", chat).get("photo")  # as in admins: bot_req may or may not unwrap "result"
+    chat = chat.get("result", chat)  # as in admins: bot_req may or may not unwrap "result"
+    # a public group's @username for the panel's t.me link (#116); cleared when it is gone
+    await db.execute("UPDATE chats SET username = $2 WHERE id = $1", chat_id, chat.get("username"))
+    photo = chat.get("photo")
     if photo and photo["small_file_unique_id"] == known:
         return
     data = photo and await asyncio.wait_for(tg.download_file(photo["small_file_id"]), TIMEOUT)

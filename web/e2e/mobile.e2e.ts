@@ -463,7 +463,7 @@ test("mobile: long names, options and logins do not overflow any page", async ({
   }
 })
 
-test("mobile: managers anchor, collapsed bound schedule, t.me link for supergroups", async ({
+test("mobile: managers anchor, collapsed bound schedule, t.me link only for a public group", async ({
   page,
 }) => {
   const db = new PrismaClient()
@@ -476,6 +476,7 @@ test("mobile: managers anchor, collapsed bound schedule, t.me link for supergrou
       telegramId: BigInt(`-100${stamp}`),
       title: `E2E anchor ${stamp}`,
       scheduleId: sch.id,
+      username: `e2e_anchor_${stamp}`,
     },
   })
   try {
@@ -496,7 +497,19 @@ test("mobile: managers anchor, collapsed bound schedule, t.me link for supergrou
     await expect(page.locator("details#schedule")).not.toHaveAttribute("open")
     await expect(
       page.getByRole("link", { name: "Открыть в Telegram" })
-    ).toHaveAttribute("href", `https://t.me/c/${stamp}`)
+    ).toHaveAttribute("href", `https://t.me/e2e_anchor_${stamp}`)
+    // a private group (no @username): no link and no «no link» caption, on the card or the page
+    await db.chat.update({ where: { id: chat.id }, data: { username: null } })
+    await page.reload()
+    await expect(
+      page.getByRole("link", { name: "Открыть в Telegram" })
+    ).toHaveCount(0)
+    await page.goto("/chats")
+    await expect(
+      page.getByRole("link", { name: "Открыть в Telegram" })
+    ).toHaveCount(0)
+    await expect(page.getByText("Ссылки нет")).toHaveCount(0)
+    await page.goto(`/chats/${chat.id}#managers`)
     const top = await page
       .locator("#managers")
       .evaluate((e) => e.getBoundingClientRect().top)

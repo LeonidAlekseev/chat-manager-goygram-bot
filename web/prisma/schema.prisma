@@ -50,6 +50,8 @@ model Chat {
   photo      ChatPhoto?
   // when the bot last looked at the group's photo (#113); NULL = due (a new chat, a photo change)
   photoCheckedAt DateTime? @map("photo_checked_at") @db.Timestamptz(3)
+  // public @username from the bot's getChat (#116); NULL = a private group, no t.me link
+  username String?
 
   @@map("chats")
 }

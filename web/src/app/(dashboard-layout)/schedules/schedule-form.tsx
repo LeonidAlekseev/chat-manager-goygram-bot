@@ -41,6 +41,7 @@ export function ScheduleForm({
   // false: the superadmin's schedule seen by a manager — read-only, or a copy for the chat on its page
   own?: boolean
 }) {
+  const readOnly = !own && !chatId // the superadmin's schedule on /schedules: view only
   const formRef = useRef<HTMLFormElement>(null)
   const scopeRef = useRef<HTMLInputElement>(null)
   const [open, setOpen] = useState(false)
@@ -116,92 +117,97 @@ export function ScheduleForm({
         name="scope"
         defaultValue={own ? undefined : "this"}
       />
-      <Input
-        name="name"
-        value={name}
-        onChange={(e) => setName(e.target.value)}
-        placeholder="Название"
-        required
-        maxLength={255}
-      />
-      {rows.map((r, n) => (
-        <div
-          key={r.key}
-          className="grid gap-3 rounded-xl border bg-background p-3"
-        >
-          <div className="flex items-center justify-between gap-2">
-            <span className="text-xs font-black text-primary">
-              Шаблон {n + 1}
-            </span>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              className="text-muted-foreground hover:bg-destructive-soft hover:text-destructive"
-              aria-label={`Удалить пункт ${n + 1}`}
-              onClick={() => setRows(rows.filter((x) => x.key !== r.key))}
-            >
-              <Trash2 />
-            </Button>
-          </div>
-          <div className="grid gap-3 sm:grid-cols-[1fr_auto_auto_1fr] sm:items-end">
-            <input type="hidden" name="itemId" value={r.id ?? ""} />
-            <label className={labelCls}>
-              Шаблон
-              <Select name="templateId" defaultValue={r.templateId}>
-                {templates.map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.name}
-                  </option>
-                ))}
-              </Select>
-            </label>
-            {r.period === "custom" ? (
-              <CronField
-                defaultValue={r.time.includes(" ") ? r.time : "0 * * * *"}
-                timezone={timezone}
-                startDate={r.startDate}
-              />
-            ) : (
+      {/* read-only: the fields are disabled too, not only the buttons hidden */}
+      <fieldset disabled={readOnly} className="contents">
+        <Input
+          name="name"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="Название"
+          required
+          maxLength={255}
+        />
+        {rows.map((r, n) => (
+          <div
+            key={r.key}
+            className="grid gap-3 rounded-xl border bg-background p-3"
+          >
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-xs font-black text-primary">
+                Шаблон {n + 1}
+              </span>
+              {!readOnly && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="text-muted-foreground hover:bg-destructive-soft hover:text-destructive"
+                  aria-label={`Удалить пункт ${n + 1}`}
+                  onClick={() => setRows(rows.filter((x) => x.key !== r.key))}
+                >
+                  <Trash2 />
+                </Button>
+              )}
+            </div>
+            <div className="grid gap-3 sm:grid-cols-[1fr_auto_auto_1fr] sm:items-end">
+              <input type="hidden" name="itemId" value={r.id ?? ""} />
               <label className={labelCls}>
-                Время ({timezone})
+                Шаблон
+                <Select name="templateId" defaultValue={r.templateId}>
+                  {templates.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.name}
+                    </option>
+                  ))}
+                </Select>
+              </label>
+              {r.period === "custom" ? (
+                <CronField
+                  defaultValue={r.time.includes(" ") ? r.time : "0 * * * *"}
+                  timezone={timezone}
+                  startDate={r.startDate}
+                />
+              ) : (
+                <label className={labelCls}>
+                  Время ({timezone})
+                  <Input
+                    type="time"
+                    name="time"
+                    defaultValue={r.time.includes(":") ? r.time : "08:00"}
+                    required
+                    className="sm:w-32"
+                  />
+                </label>
+              )}
+              <label className={labelCls}>
+                Дата старта
                 <Input
-                  type="time"
-                  name="time"
-                  defaultValue={r.time.includes(":") ? r.time : "08:00"}
+                  type="date"
+                  name="startDate"
+                  defaultValue={r.startDate}
+                  onChange={(e) => edit(r.key, { startDate: e.target.value })}
                   required
-                  className="sm:w-32"
+                  className="sm:w-40"
                 />
               </label>
-            )}
-            <label className={labelCls}>
-              Дата старта
-              <Input
-                type="date"
-                name="startDate"
-                defaultValue={r.startDate}
-                onChange={(e) => edit(r.key, { startDate: e.target.value })}
-                required
-                className="sm:w-40"
-              />
-            </label>
-            <label className={labelCls}>
-              Периодичность
-              <Select
-                name="period"
-                value={r.period}
-                onChange={(e) => edit(r.key, { period: e.target.value })}
-              >
-                {PERIODS.map(([v, label]) => (
-                  <option key={v} value={v}>
-                    {label}
-                  </option>
-                ))}
-              </Select>
-            </label>
+              <label className={labelCls}>
+                Периодичность
+                <Select
+                  name="period"
+                  value={r.period}
+                  onChange={(e) => edit(r.key, { period: e.target.value })}
+                >
+                  {PERIODS.map(([v, label]) => (
+                    <option key={v} value={v}>
+                      {label}
+                    </option>
+                  ))}
+                </Select>
+              </label>
+            </div>
           </div>
-        </div>
-      ))}
+        ))}
+      </fieldset>
       {templates.length === 0 && (
         <p className="text-sm text-muted-foreground">
           Сначала создайте шаблон: перешлите сообщение или опрос боту или
@@ -213,16 +219,18 @@ export function ScheduleForm({
         </p>
       )}
       <div className="flex flex-wrap items-center gap-2">
-        <Button
-          type="button"
-          variant="outline"
-          className="border-dashed border-primary"
-          onClick={addRow}
-          disabled={templates.length === 0}
-        >
-          <Plus />
-          Добавить шаблон
-        </Button>
+        {!readOnly && (
+          <Button
+            type="button"
+            variant="outline"
+            className="border-dashed border-primary"
+            onClick={addRow}
+            disabled={templates.length === 0}
+          >
+            <Plus />
+            Добавить шаблон
+          </Button>
+        )}
         {!own && !chatId ? null : own && chatId && sharedWith > 0 ? (
           <Dialog open={open} onOpenChange={setOpen}>
             <DialogTrigger asChild>

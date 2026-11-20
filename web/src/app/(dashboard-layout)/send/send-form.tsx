@@ -30,7 +30,7 @@ function Radios<T extends string>({
   return (
     // a /v2 segmented control; the real radio covers its label, so it stays clickable and focusable
     <fieldset className="grid gap-1.5 text-sm">
-      <legend className="mb-1.5 font-bold text-muted-foreground">
+      <legend className="mb-1.5 font-bold whitespace-nowrap text-muted-foreground">
         {legend}
       </legend>
       <div

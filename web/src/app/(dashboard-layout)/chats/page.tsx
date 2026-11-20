@@ -111,7 +111,7 @@ export default async function ChatsPage() {
       ) : (
         <ul className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
           {chats.map((chat) => {
-            const link = chatLink(chat.telegramId)
+            const link = chatLink(chat.username)
             const off = !chat.active || chat.deleting
             return (
               <li
@@ -214,7 +214,7 @@ export default async function ChatsPage() {
                   </dl>
                 )}
                 <div className="mt-auto flex min-h-11 items-center gap-2 border-t pt-3">
-                  {link ? (
+                  {link && (
                     <a
                       href={link}
                       target="_blank"
@@ -224,10 +224,6 @@ export default async function ChatsPage() {
                       <ExternalLink className="size-4" aria-hidden />
                       Открыть в Telegram
                     </a>
-                  ) : (
-                    <span className="text-xs text-muted-foreground">
-                      Ссылки нет — обычная группа
-                    </span>
                   )}
                   {!chat.deleting && isSuper(v) && (
                     <DeleteChatForm chat={chat} className="relative ml-auto" />
